@@ -10,12 +10,16 @@
             <li class="nav-item">
                 <a class="nav-link" :class="{active: mode === 2}" @click="mode = 2">Mechanics</a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" :class="{active: mode === 3}" @click="mode = 3">Analysis</a>
+            </li>
         </ul>
         <div class="squad-details">
             <keep-alive>
                 <combat-replay-players-stats-component v-if="mode === 0" :key="'players-cr-details'" :time="time" :selectedplayerid="selectedactorid"></combat-replay-players-stats-component>
                 <combat-replay-targets-stats-component v-if="mode === 1" :key="'targets-cr-details'" :time="time" :selectedtargetid="selectedactorid"></combat-replay-targets-stats-component>
                 <combat-replay-mechanics-list-component v-if="mode === 2" :key="'mechanics-cr-details'" :selectedplayerid="selectedactorid"></combat-replay-mechanics-list-component>
+                <combat-replay-players-stats-component v-if="mode === 3" :key="'analysis-cr-details'" :time="time" :selectedplayerid="selectedactorid" :analysis="true"></combat-replay-players-stats-component>
             </keep-alive>
         </div>
     </div>

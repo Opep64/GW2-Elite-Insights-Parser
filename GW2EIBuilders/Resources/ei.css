@@ -118,12 +118,23 @@
     height: 48px;
 }
 
+.player-status-rotation-compact {
+    height: 44px;
+}
+
 .player-status {
     color: #DDDDDD;
     width: 170px;
     height: 35px;
     cursor: pointer;
     user-select: none;
+}
+
+.player-status-compact {
+    width: 82px;
+    height: 44px;
+    position: relative;
+    overflow: hidden;
 }
 
 .actor-rotation {
@@ -201,6 +212,15 @@ h6.actor-shorten-cr {
     vertical-align: middle;
 }
 
+h6.actor-shorten-cr-compact {
+    height: 16px;
+    margin-top: 3px;
+    margin-bottom: 0;
+    font-size: 0.60rem;
+    position: relative;
+    z-index: 1;
+}
+
 .squad-details {
     width: 450px;
 }
@@ -236,6 +256,69 @@ h6.actor-shorten-cr {
 
 .theme-yeti .target-data.active {
     background-color: rgba(220, 220, 220, 0.9);
+}
+
+.combat-replay-analysis-group {
+    width: 100%;
+    border: 2px solid #888;
+    margin: 0;
+    padding: 0 0.15rem 0.15rem 0.15rem;
+    flex-wrap: nowrap;
+}
+
+.combat-replay-analysis-player-data {
+    margin-right: 0.15rem;
+}
+
+.combat-replay-analysis-player-data:last-child {
+    margin-right: 0;
+}
+
+.combat-actor-status-container-analysis {
+    height: auto;
+    max-height: 700px;
+}
+
+.cr-barrier-compact {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    z-index: 0;
+}
+
+.combat-replay-analysis-footer {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    bottom: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 1;
+}
+
+.combat-replay-analysis-footer-section {
+    display: flex;
+    align-items: center;
+    flex: 1 1 0;
+    min-width: 0;
+    gap: 2px;
+}
+
+.combat-replay-analysis-footer-icon {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 0 1px #000);
+}
+
+.combat-replay-analysis-might {
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+    text-shadow: -1px -1px 2px #000, -1px 1px 2px #000, 1px -1px 2px #000, 1px 1px 2px #000;
 }
 
 

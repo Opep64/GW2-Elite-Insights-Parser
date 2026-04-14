@@ -1,17 +1,28 @@
 <template>
-    <div class="player-status" :style="{'background': getHPGradient(time, status)}" @click="select" :data-original-title="player.name + ' - ' + player.acc">
-        <h6 class="actor-shorten-cr text-center">     
-            <img v-for="(marker, index) in activeMarkers()" :src="marker.imageUrl" height="16" width="16">
-            <img :src="player.icon" :alt="player.profession" height="16" width="16">
+    <div class="player-status" :class="{'player-status-compact': compact}" :style="playerStatusStyle" @click="select" :data-original-title="player.name + ' - ' + player.acc">
+        <h6 class="actor-shorten-cr text-center" :class="{'actor-shorten-cr-compact': compact}">
+            <img v-for="(marker, index) in activeMarkers()" :src="marker.imageUrl" :height="iconSize" :width="iconSize">
+            <img :src="player.icon" :alt="player.profession" :height="iconSize" :width="iconSize">
             {{player.name}}
         </h6>     
-        <p v-if="hasHealth" class="text-right cr-hp-display cr-hp-display-player">
+        <div v-if="compact" class="combat-replay-analysis-footer">
+            <div class="combat-replay-analysis-footer-section justify-content-start">
+                <img v-for="buff in compactBoonIcons" :key="buff.id" :src="buff.icon" :title="buff.name" :alt="buff.name" class="combat-replay-analysis-footer-icon">
+            </div>
+            <div class="combat-replay-analysis-footer-section justify-content-center">
+                <span class="combat-replay-analysis-might">{{mightStacks}}</span>
+            </div>
+            <div class="combat-replay-analysis-footer-section justify-content-end">
+                <img v-for="buff in compactConditionIcons" :key="buff.id" :src="buff.icon" :title="buff.name" :alt="buff.name" class="combat-replay-analysis-footer-icon">
+            </div>
+        </div>
+        <p v-if="!compact && hasHealth" class="text-right cr-hp-display cr-hp-display-player">
             {{(Math.round(100*getHPPercent(time))/100).toFixed(2)}} %
         </p>
-        <p v-if="hasBarrier" class="text-right cr-barrier-display cr-barrier-display-player">
+        <p v-if="!compact && hasBarrier" class="text-right cr-barrier-display cr-barrier-display-player">
             {{(Math.round(100*getBarrierPercent(time))/100).toFixed(2)}} %
         </p>      
-        <div v-if="hasBarrier" class="cr-barrier cr-barrier-player" :style="{'background': getBarrierGradient(time)}">
+        <div v-if="hasBarrier" class="cr-barrier cr-barrier-player" :class="{'cr-barrier-compact': compact}" :style="{'background': getBarrierGradient(time)}">
 
         </div>
     </div>
@@ -19,9 +30,26 @@
 
 <script>
     Vue.component("combat-replay-player-status-component", {
-        props: ["playerindex", "time"],
+        props: ["playerindex", "time", "compact"],
         template: `${template}`,
         methods: {
+            getCurrentBuffInfo: function (names) {
+                if (!this.currentBuffData) {
+                    return null;
+                }
+                for (var i = 0; i < this.currentBuffData.length; i++) {
+                    var buffState = this.currentBuffData[i];
+                    var buff = findSkill(true, buffState.id);
+                    if (!buff || names.indexOf(buff.name) === -1) {
+                        continue;
+                    }
+                    return {
+                        buff: buff,
+                        state: findState(buffState.states, this.time / 1000.0, 0, buffState.states.length - 1),
+                    };
+                }
+                return null;
+            },
             getHPPercent: function (time) {
                 if (!this.hasHealth) {
                     return 100;
@@ -35,7 +63,7 @@
                 return findState(this.barriers, time/1000.0, 0, this.barriers.length - 1);
             },
             getHPGradient: function (time, status) {
-                var color = status === 0 ? 'black' : status === 1 ? 'red' : status === 2 ? 'grey' : 'green';
+                var color = status === 0 ? 'black' : status === 1 ? 'red' : status === 2 ? 'grey' : this.compact ? '#0b8f0b' : 'green';
                 return computeGradient(color, this.getHPPercent(time), 'black');
             },
             getBarrierGradient: function (time) {
@@ -52,8 +80,80 @@
             phase: function () {
                 return logData.phases[0];
             },
+            iconSize: function () {
+                return this.compact ? 12 : 16;
+            },
+            playerStatusStyle: function () {
+                var style = {
+                    background: this.getHPGradient(this.time, this.status),
+                };
+                if (this.compact) {
+                    style.boxShadow = 'inset 0 0 0 4px ' + this.stabilityOutlineColor;
+                }
+                return style;
+            },
             player: function () {
                 return logData.players[this.playerindex];
+            },
+            currentBuffData: function () {
+                return this.player.details && this.player.details.boonGraph ? this.player.details.boonGraph[0] : null;
+            },
+            protectionInfo: function () {
+                return this.getCurrentBuffInfo(["Protection"]);
+            },
+            aegisInfo: function () {
+                return this.getCurrentBuffInfo(["Aegis"]);
+            },
+            mightInfo: function () {
+                return this.getCurrentBuffInfo(["Might"]);
+            },
+            resistanceInfo: function () {
+                return this.getCurrentBuffInfo(["Resistance"]);
+            },
+            immobilizeInfo: function () {
+                return this.getCurrentBuffInfo(["Immobile", "Immobilized", "Immobilize"]);
+            },
+            poisonInfo: function () {
+                return this.getCurrentBuffInfo(["Poison", "Poisoned"]);
+            },
+            compactBoonIcons: function () {
+                var res = [];
+                if (this.protectionInfo && this.protectionInfo.state > 0) {
+                    res.push(this.protectionInfo.buff);
+                }
+                if (this.aegisInfo && this.aegisInfo.state > 0) {
+                    res.push(this.aegisInfo.buff);
+                }
+                return res;
+            },
+            mightStacks: function () {
+                return this.mightInfo && this.mightInfo.state > 0 ? this.mightInfo.state : 0;
+            },
+            compactConditionIcons: function () {
+                var res = [];
+                if (this.poisonInfo && this.poisonInfo.state > 0) {
+                    res.push(this.poisonInfo.buff);
+                }
+                if (this.immobilizeInfo && this.immobilizeInfo.state > 0 && (!this.resistanceInfo || this.resistanceInfo.state <= 0)) {
+                    res.push(this.immobilizeInfo.buff);
+                }
+                return res;
+            },
+            stabilityStacks: function () {
+                var stabilityInfo = this.getCurrentBuffInfo(["Stability"]);
+                return stabilityInfo ? stabilityInfo.state : 0;
+            },
+            stabilityOutlineColor: function () {
+                if (this.stabilityStacks <= 0) {
+                    return 'red';
+                }
+                if (this.stabilityStacks < 3) {
+                    return 'yellow';
+                }
+                if (this.stabilityStacks < 10) {
+                    return 'green';
+                }
+                return '#c77dff';
             },
             healths: function () {
                 return graphData.phases[0].players[this.playerindex].healthStates;

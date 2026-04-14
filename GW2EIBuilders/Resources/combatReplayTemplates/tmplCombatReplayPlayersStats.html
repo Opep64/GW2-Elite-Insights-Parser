@@ -1,6 +1,6 @@
 <template>
     <div class="d-flex flex-row flex-wrap justify-content-center align-items-start mb-2">
-        <ul class="nav nav-pills d-flex flex-row justify-content-center mb-1 scale85">
+        <ul v-if="!analysis" class="nav nav-pills d-flex flex-row justify-content-center mb-1 scale85">
             <li class="nav-item">
                 <a class="nav-link" :class="{active: buffs}" @click="buffs = !buffs">
                     Show Buffs
@@ -10,19 +10,19 @@
                 <a class="nav-link" :class="{active: rotation}" @click="rotation = !rotation">Show Rotation</a>
             </li>
         </ul>                    
-        <ul class="nav nav-pills d-flex flex-row justify-content-center mb-1 scale65">
+        <ul v-if="!analysis" class="nav nav-pills d-flex flex-row justify-content-center mb-1 scale65">
             <li v-for="(buffType, index) in possibleBuffs" class="ml-1 mr-1">
                 <input :id="'crpl-possibleBuffs-' + index" type="checkbox" :value="buffType" v-model="buffsToShow" />
                 <label :for="'crpl-possibleBuffs-' + index">{{buffType}}</label>
             </li>
         </ul>
-        <div class="d-flex flex-column combat-actor-status-container scrollable-y" :style="!singleGroup ? {'transform': 'translate(-24px,0);'} : null">
-            <div v-for="(group,id) in groups" v-if="group" class="d-flex flex-row align-items-center ml-2">
-                <fieldset class="d-flex flex-row flex-wrap align-items-center" style="width:340px; border: 2px solid #888; margin: 0;">
+        <div class="d-flex flex-column combat-actor-status-container scrollable-y" :class="{'combat-actor-status-container-analysis': analysis}" :style="groupContainerStyle">
+            <div v-for="(group,id) in groups" v-if="group" class="d-flex flex-row align-items-center" :class="groupRowClass">
+                <fieldset class="d-flex flex-row align-items-center" :class="groupFieldsetClass" :style="groupFieldsetStyle">
                     <legend v-if="!singleGroup" style="font-size: 0.80rem; width: auto; padding: 0 5px; margin-left: 5px;">Group {{id}}</legend>
-                    <div class="d-flex flex-row flex-wrap align-items-center ml-1 mr-1">
-                        <div v-for="playerData in group" class="player-data ml-1" :class="{active: selectedplayerid === playerData.player.uniqueID}">
-                            <combat-replay-player-stats-component :time="time" :buffs="buffs" :rotation="rotation" :playerindex="playerData.player.id" :buffstoshow="buffsToShow"></combat-replay-player-stats-component>
+                    <div class="d-flex flex-row align-items-center ml-1 mr-1" :class="groupMembersClass">
+                        <div v-for="playerData in group" class="player-data" :class="[playerDataClass, {active: selectedplayerid === playerData.player.uniqueID}]">
+                            <combat-replay-player-stats-component :time="time" :buffs="buffs" :rotation="rotationEnabled" :playerindex="playerData.player.id" :buffstoshow="buffsToShow" :compact="analysis"></combat-replay-player-stats-component>
                         </div>
                     </div>
                 </fieldset>
@@ -33,7 +33,14 @@
 
 <script>
     Vue.component("combat-replay-players-stats-component", {
-        props: ["time", "selectedplayerid"],
+        props: {
+            time: Number,
+            selectedplayerid: Number,
+            analysis: {
+                type: Boolean,
+                default: false,
+            },
+        },
         mixins: [encounterPhaseComponent],
         template: `${template}`,
         data: function () {
@@ -49,6 +56,30 @@
             },
             possibleBuffs: function() {
                 return [ "Boons", "Conditions", "Encounter Specifics","Shared", "Consumables", "Others"];
+            },
+            rotationEnabled: function () {
+                return this.analysis ? false : this.rotation;
+            },
+            groupContainerStyle: function () {
+                if (this.analysis || this.singleGroup) {
+                    return null;
+                }
+                return {'transform': 'translate(-24px,0);'};
+            },
+            groupRowClass: function () {
+                return this.analysis ? "justify-content-center mb-1" : "ml-2";
+            },
+            groupFieldsetClass: function () {
+                return this.analysis ? "combat-replay-analysis-group" : "flex-wrap";
+            },
+            groupFieldsetStyle: function () {
+                return this.analysis ? null : {'width':'340px', 'border':'2px solid #888', 'margin':'0'};
+            },
+            groupMembersClass: function () {
+                return this.analysis ? "flex-nowrap justify-content-between w-100" : "flex-wrap";
+            },
+            playerDataClass: function () {
+                return this.analysis ? "combat-replay-analysis-player-data" : "ml-1";
             },
             groups: function () {
                 var res = [];
