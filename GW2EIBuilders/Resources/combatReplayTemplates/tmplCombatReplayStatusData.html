@@ -11,7 +11,7 @@
                 <a class="nav-link" :class="{active: mode === 2}" @click="mode = 2">Mechanics</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" :class="{active: mode === 3}" @click="mode = 3">Analysis</a>
+                <a class="nav-link" :class="{active: mode === 3}" @click="mode = 3">Overview</a>
             </li>
         </ul>
         <div class="squad-details">
@@ -19,13 +19,22 @@
                 <combat-replay-players-stats-component v-if="mode === 0" :key="'players-cr-details'" :time="time" :selectedplayerid="selectedactorid"></combat-replay-players-stats-component>
                 <combat-replay-targets-stats-component v-if="mode === 1" :key="'targets-cr-details'" :time="time" :selectedtargetid="selectedactorid"></combat-replay-targets-stats-component>
                 <combat-replay-mechanics-list-component v-if="mode === 2" :key="'mechanics-cr-details'" :selectedplayerid="selectedactorid"></combat-replay-mechanics-list-component>
-                <combat-replay-players-stats-component v-if="mode === 3" :key="'analysis-cr-details'" :time="time" :selectedplayerid="selectedactorid" :analysis="true"></combat-replay-players-stats-component>
+                <combat-replay-analysis-stats-component v-if="mode === 3" :key="'analysis-cr-details'" :time="time" :selectedactorid="selectedactorid" :targetless="targetless"></combat-replay-analysis-stats-component>
             </keep-alive>
         </div>
     </div>
 </template>
 
 <script>
+    Vue.component("combat-replay-analysis-stats-component", {
+        props: ["time", "selectedactorid", "targetless"],
+        template: `
+        <div class="d-flex flex-column">
+            <combat-replay-players-stats-component :time="time" :selectedplayerid="selectedactorid" :analysis="true"></combat-replay-players-stats-component>
+            <combat-replay-targets-stats-component v-if="!targetless" :time="time" :selectedtargetid="selectedactorid" :analysis="true"></combat-replay-targets-stats-component>
+        </div>
+        `,
+    });
     Vue.component("combat-replay-status-data-component", {
         template: `${template}`,
         props: ["time", "selectedactorid"],

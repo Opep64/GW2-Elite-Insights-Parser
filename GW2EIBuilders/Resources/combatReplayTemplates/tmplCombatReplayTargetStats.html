@@ -1,11 +1,11 @@
 ﻿<template>
     <div>
-        <combat-replay-actor-buffs-stats-component v-if="buffstoshow.length > 0" :time="time" :actorindex="targetindex" :enemy="true" :buffstoshow="buffstoshow"/>
-        <div class="d-flex mb-1 mt-1">
-            <combat-replay-target-status-component :time="time" :targetindex="targetindex"/>
-            <combat-replay-actor-rotation-component :time="time" :actorindex="targetindex" :enemy="true"/>
+        <combat-replay-actor-buffs-stats-component v-if="!analysis && buffstoshow.length > 0" :time="time" :actorindex="targetindex" :enemy="true" :buffstoshow="buffstoshow"/>
+        <div class="d-flex mb-1 mt-1" :class="{'player-status-rotation-compact': analysis}">
+            <combat-replay-target-status-component :time="time" :targetindex="targetindex" :compact="analysis"/>
+            <combat-replay-actor-rotation-component v-if="!analysis" :time="time" :actorindex="targetindex" :enemy="true"/>
         </div>
-        <div v-if="hasBreakbarPercent" class="cr-breakbar-phase-display mb-1">
+        <div v-if="!analysis && hasBreakbarPercent" class="cr-breakbar-phase-display mb-1">
             <ul class="nav nav-pills d-flex flex-row flex-wrap justify-content-center">
                 <li class="nav-item" v-for="(phase, id) in breakbarPhases"
                     @click="updatePhaseTime(phase.start * 1000, phase.end * 1000, phase.name)"
@@ -19,7 +19,7 @@
 
 <script>
     Vue.component("combat-replay-target-stats-component", {
-        props: ["targetindex", "time", "buffstoshow"],
+        props: ["targetindex", "time", "buffstoshow", "analysis"],
         template: `${template}`,
         methods: {
             updatePhaseTime: function (min, max, name) {

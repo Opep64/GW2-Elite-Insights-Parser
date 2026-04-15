@@ -1,20 +1,26 @@
 <template>
     <div class="d-flex flex-column justify-content-center align-items-center">
-        <div class="target-status" :style="{'background': getHPGradient(time, status)}" @click="select" :title="target.name + ' - ' + target.health + ' health'">
-            <h6 class="actor-shorten-cr text-center">
-                <img v-for="(marker, index) in activeMarkers()" :src="marker.imageUrl" height="16" width="16">
-                <img :src="target.icon" height="18" width="18"/>
+        <div class="target-status" :class="{'target-status-compact': compact}" :style="targetStatusStyle" @click="select" :title="target.name + ' - ' + target.health + ' health'">
+            <h6 class="actor-shorten-cr text-center" :class="{'actor-shorten-cr-compact': compact}">
+                <img v-if="!compact" v-for="(marker, index) in activeMarkers()" :src="marker.imageUrl" :height="markerIconSize" :width="markerIconSize">
+                <img :src="target.icon" :height="targetIconSize" :width="targetIconSize"/>
                 {{target.name}}
             </h6>
-            <p class="text-right cr-hp-display">
+            <div v-if="compact" class="combat-replay-analysis-target-footer">
+                <div v-for="buff in compactConditionIcons" :key="buff.id" class="combat-replay-analysis-target-condition">
+                    <img :src="buff.icon" :title="buff.name" :alt="buff.name" class="combat-replay-analysis-target-icon">
+                    <div v-if="buff.showStacks" class="combat-replay-analysis-target-condition-count">{{buff.state}}</div>
+                </div>
+            </div>
+            <p v-if="!compact" class="text-right cr-hp-display">
                 {{(Math.round(100*getHPPercent(time))/100).toFixed(2)}} %
             </p>
-            <p v-if="hasBarrier" class="text-right cr-barrier-display cr-barrier-display-target">
+            <p v-if="!compact && hasBarrier" class="text-right cr-barrier-display cr-barrier-display-target">
                 {{(Math.round(100*getBarrierPercent(time))/100).toFixed(2)}} %
             </p>
-            <div v-if="hasBarrier" class="cr-barrier" :style="{'background': getBarrierGradient(time, status)}"></div>
+            <div v-if="hasBarrier" class="cr-barrier" :class="{'cr-barrier-compact': compact}" :style="{'background': getBarrierGradient(time, status)}"></div>
         </div>
-        <div v-if="hasBreakbarPercent" class="cr-breakbar-display">
+        <div v-if="!compact && hasBreakbarPercent" class="cr-breakbar-display">
             <div class="cr-breakbar-bar" :style="{'background': getBreakbarGradient(time)}">
                 <p class="text-center" style="margin: 0;">
                     {{(Math.round(100*getBreakbarPercent(time))/100).toFixed(2)}} %
@@ -26,9 +32,26 @@
 
 <script>
     Vue.component("combat-replay-target-status-component", {
-        props: ["targetindex", "time"],
+        props: ["targetindex", "time", "compact"],
         template: `${template}`,
         methods: {
+            getCurrentBuffInfo: function (names) {
+                if (!this.currentBuffData) {
+                    return null;
+                }
+                for (var i = 0; i < this.currentBuffData.length; i++) {
+                    var buffState = this.currentBuffData[i];
+                    var buff = findSkill(true, buffState.id);
+                    if (!buff || names.indexOf(buff.name) === -1) {
+                        continue;
+                    }
+                    return {
+                        buff: buff,
+                        state: findState(buffState.states, this.time / 1000.0, 0, buffState.states.length - 1),
+                    };
+                }
+                return null;
+            },
             select() {
                 animator.selectActor(this.target.uniqueID);
             },
@@ -51,7 +74,7 @@
                 return findState(this.barriers, time/1000.0, 0, this.barriers.length - 1);
             },
             getHPGradient: function (time, status) {
-                var color = status === 0 ? 'black' : status === 1 ? 'red' : status === 2 ? 'grey' : 'green';
+                var color = status === 0 ? 'black' : status === 1 ? 'red' : status === 2 ? 'grey' : this.compact ? '#0b8f0b' : 'green';
                 return computeGradient(color, this.getHPPercent(time), 'black');
             },    
             getBreakbarGradient: function (time) {
@@ -65,6 +88,72 @@
         computed: {
             phase: function () {
                 return logData.phases[0];
+            },
+            markerIconSize: function () {
+                return this.compact ? 12 : 16;
+            },
+            targetIconSize: function () {
+                return this.compact ? 12 : 18;
+            },
+            currentBuffData: function () {
+                return this.target.details && this.target.details.boonGraph ? this.target.details.boonGraph[0] : null;
+            },
+            poisonInfo: function () {
+                return this.getCurrentBuffInfo(["Poison", "Poisoned"]);
+            },
+            burningInfo: function () {
+                return this.getCurrentBuffInfo(["Burning", "Burn"]);
+            },
+            vulnerabilityInfo: function () {
+                return this.getCurrentBuffInfo(["Vulnerability", "Vulnerable"]);
+            },
+            immobilizeInfo: function () {
+                return this.getCurrentBuffInfo(["Immobile", "Immobilized", "Immobilize"]);
+            },
+            compactConditionIcons: function () {
+                var res = [];
+                if (this.poisonInfo && this.poisonInfo.state > 0) {
+                    res.push({
+                        id: this.poisonInfo.buff.id,
+                        name: this.poisonInfo.buff.name,
+                        icon: this.poisonInfo.buff.icon,
+                        state: this.poisonInfo.state,
+                        showStacks: false,
+                    });
+                }
+                if (this.burningInfo && this.burningInfo.state > 0) {
+                    res.push({
+                        id: this.burningInfo.buff.id,
+                        name: this.burningInfo.buff.name,
+                        icon: this.burningInfo.buff.icon,
+                        state: this.burningInfo.state,
+                        showStacks: true,
+                    });
+                }
+                if (this.vulnerabilityInfo && this.vulnerabilityInfo.state > 0) {
+                    res.push({
+                        id: this.vulnerabilityInfo.buff.id,
+                        name: this.vulnerabilityInfo.buff.name,
+                        icon: this.vulnerabilityInfo.buff.icon,
+                        state: this.vulnerabilityInfo.state,
+                        showStacks: true,
+                    });
+                }
+                if (this.immobilizeInfo && this.immobilizeInfo.state > 0) {
+                    res.push({
+                        id: this.immobilizeInfo.buff.id,
+                        name: this.immobilizeInfo.buff.name,
+                        icon: this.immobilizeInfo.buff.icon,
+                        state: this.immobilizeInfo.state,
+                        showStacks: false,
+                    });
+                }
+                return res;
+            },
+            targetStatusStyle: function () {
+                return {
+                    background: this.getHPGradient(this.time, this.status),
+                };
             },
             status: function () {
                 var crTData = animator.getActorData(this.target.uniqueID);

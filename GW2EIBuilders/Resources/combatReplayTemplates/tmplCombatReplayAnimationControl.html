@@ -1,5 +1,5 @@
 <template>
-    <div class="d-flex flex-column justify-content-center align-items-center" style="width: 750px;">
+    <div class="d-flex flex-column justify-content-start align-items-center" style="width: 750px;">
         <div v-if="showNormalPhases" class="mb-1">
             <ul class="nav nav-pills d-flex flex-row justify-content-center max-wd-700px">
                 <li class="nav-item" v-for="(phase, id) in phases"
@@ -9,7 +9,7 @@
                 </li>
             </ul>
         </div>
-        <div class="d-flex flex-column justify-content-center flex-wrap mt-1"
+        <div class="d-flex flex-column justify-content-start flex-wrap mt-1"
             :style="{'width': Math.max(canvasSize.x, canvasSize.y) + 'px'}">
             <div class="d-flex flex-column justify-content-center align-items-center"
                 :style="{'width': '100%', 'min-width': canvasSize.x + 'px', 'height': canvasSize.y + 'px', 'position': 'relative'}">

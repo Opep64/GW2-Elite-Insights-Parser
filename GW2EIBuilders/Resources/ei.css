@@ -150,6 +150,13 @@
     user-select: none;
 }
 
+.target-status-compact {
+    width: 82px;
+    height: 44px;
+    position: relative;
+    overflow: hidden;
+}
+
 .cr-hp-display {
     font-size: 0.65rem;
     position: relative;
@@ -279,6 +286,68 @@ h6.actor-shorten-cr-compact {
     max-height: 700px;
 }
 
+.combat-replay-analysis-target-grid {
+    width: 100%;
+    align-content: flex-start;
+}
+
+.combat-replay-analysis-section-label {
+    font-size: 0.80rem;
+    margin-top: 0.25rem;
+    margin-bottom: 0.15rem;
+    text-align: center;
+}
+
+.combat-replay-analysis-target-data {
+    margin: 0 0.15rem 0.15rem 0.15rem;
+}
+
+.combat-replay-analysis-target-footer {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    bottom: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 2px;
+    z-index: 1;
+}
+
+.combat-replay-analysis-target-condition {
+    position: relative;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    border-radius: 2px;
+    box-shadow: 0 0 2px rgba(0, 0, 0, 0.7);
+}
+
+.combat-replay-analysis-target-icon {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 0 1px #000);
+}
+
+.combat-replay-analysis-target-condition-count {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    color: #fff;
+    font-size: 0.48rem;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    text-shadow: -1px -1px 2px #000, -1px 1px 2px #000, 1px -1px 2px #000, 1px 1px 2px #000;
+    pointer-events: none;
+}
+
 .cr-barrier-compact {
     position: absolute;
     top: 0;
@@ -310,6 +379,16 @@ h6.actor-shorten-cr-compact {
     width: 14px;
     height: 14px;
     flex: 0 0 auto;
+    filter: drop-shadow(0 0 1px #000);
+}
+
+.combat-replay-analysis-guard-icon {
+    position: absolute;
+    top: 3px;
+    right: 4px;
+    width: 14px;
+    height: 14px;
+    z-index: 2;
     filter: drop-shadow(0 0 1px #000);
 }
 
