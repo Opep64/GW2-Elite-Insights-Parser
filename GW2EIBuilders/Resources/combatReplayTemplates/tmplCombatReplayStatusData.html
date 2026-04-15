@@ -19,14 +19,88 @@
                 <combat-replay-players-stats-component v-if="mode === 0" :key="'players-cr-details'" :time="time" :selectedplayerid="selectedactorid"></combat-replay-players-stats-component>
                 <combat-replay-targets-stats-component v-if="mode === 1" :key="'targets-cr-details'" :time="time" :selectedtargetid="selectedactorid"></combat-replay-targets-stats-component>
                 <combat-replay-mechanics-list-component v-if="mode === 2" :key="'mechanics-cr-details'" :selectedplayerid="selectedactorid"></combat-replay-mechanics-list-component>
-                <combat-replay-analysis-stats-component v-if="mode === 3" :key="'analysis-cr-details'" :time="time" :selectedactorid="selectedactorid" :targetless="targetless"></combat-replay-analysis-stats-component>
+                <combat-replay-overview-panel-component
+                    v-if="mode === 3"
+                    :key="'overview-cr-details'"
+                    :time="time"
+                    :selectedactorid="selectedactorid"
+                    :targetless="targetless"
+                    :hasanalysis="hasAnalysis">
+                </combat-replay-overview-panel-component>
             </keep-alive>
         </div>
     </div>
 </template>
 
 <script>
-    Vue.component("combat-replay-analysis-stats-component", {
+    const combatReplayWvWAnalysisMixin = {
+        computed: {
+            crAnalysis: function () {
+                return crData && crData.analysis ? crData.analysis : null;
+            },
+            snapshotIndex: function () {
+                if (!this.crAnalysis || !this.crAnalysis.times || this.crAnalysis.times.length === 0) {
+                    return -1;
+                }
+                return this.findNearestSnapshotIndex(this.crAnalysis.times, this.time);
+            },
+        },
+        methods: {
+            findNearestSnapshotIndex: function (times, time) {
+                let low = 0;
+                let high = times.length - 1;
+                while (low < high) {
+                    const mid = Math.floor((low + high) / 2);
+                    if (times[mid] < time) {
+                        low = mid + 1;
+                    } else {
+                        high = mid;
+                    }
+                }
+                if (low === 0) {
+                    return 0;
+                }
+                return Math.abs(times[low] - time) < Math.abs(times[low - 1] - time) ? low : low - 1;
+            },
+            getPlayerByUniqueId: function (uniqueId) {
+                return logData.players.find(player => player.uniqueID === uniqueId) || null;
+            },
+            getTargetByUniqueId: function (uniqueId) {
+                return logData.targets.find(target => target.uniqueID === uniqueId) || null;
+            },
+            getSeriesValue: function (series, index) {
+                if (!series || index < 0 || index >= series.length) {
+                    return 0;
+                }
+                return series[index];
+            },
+            getSeriesArrayValue: function (series, index) {
+                if (!series || index < 0 || index >= series.length || !series[index]) {
+                    return [];
+                }
+                return series[index];
+            },
+            formatCount: function (value) {
+                return Number(value || 0).toLocaleString();
+            },
+            formatPercent: function (value) {
+                return (Number(value || 0)).toFixed(1) + "%";
+            },
+            formatTime: function (time) {
+                return (Number(time || 0) / 1000.0).toFixed(3) + "s";
+            },
+            jumpToBurst: function (time) {
+                if (!animator) {
+                    return;
+                }
+                animator.stopAnimate(true);
+                animator.updateTime(time);
+                animator.updateTextInput();
+            },
+        }
+    };
+
+    Vue.component("combat-replay-overview-stats-component", {
         props: ["time", "selectedactorid", "targetless"],
         template: `
         <div class="d-flex flex-column">
@@ -35,6 +109,300 @@
         </div>
         `,
     });
+
+    Vue.component("combat-replay-overview-panel-component", {
+        props: ["time", "selectedactorid", "targetless", "hasanalysis"],
+        template: `
+        <div class="d-flex flex-column">
+            <ul v-if="hasanalysis" class="nav nav-pills d-flex flex-row justify-content-center mb-2 scale85 combat-replay-wvw-analysis-subtabs">
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: overviewMode === 0}" @click="overviewMode = 0">Overview</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: overviewMode === 1}" @click="overviewMode = 1">Analysis</a>
+                </li>
+            </ul>
+            <combat-replay-overview-stats-component v-if="!hasanalysis || overviewMode === 0" :time="time" :selectedactorid="selectedactorid" :targetless="targetless"></combat-replay-overview-stats-component>
+            <combat-replay-wvw-analysis-component v-else :time="time" :selectedactorid="selectedactorid"></combat-replay-wvw-analysis-component>
+        </div>
+        `,
+        data: function () {
+            return {
+                overviewMode: 0,
+            };
+        },
+    });
+
+    Vue.component("combat-replay-wvw-analysis-squad-card", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time"],
+        template: `
+        <div class="combat-replay-wvw-analysis-card">
+            <div v-if="topBursts.length > 0" class="combat-replay-wvw-analysis-bursts">
+                <div class="combat-replay-wvw-analysis-card-title">Top 5 Bursts</div>
+                <button v-for="(burst, index) in topBursts" type="button" class="combat-replay-wvw-analysis-burst-entry" @click="jumpToBurst(burst.time)">
+                    <span class="combat-replay-wvw-analysis-burst-rank">{{index + 1}}.</span>
+                    <span class="combat-replay-wvw-analysis-burst-time">{{formatTime(burst.time)}}</span>
+                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatCount(burst.damage)}} damage</span>
+                    <span class="combat-replay-wvw-analysis-burst-detail">{{burst.downs}} ({{burst.downsTotal}}) downs</span>
+                    <span class="combat-replay-wvw-analysis-burst-detail">{{burst.kills}} ({{burst.killsTotal}}) kills</span>
+                    <span class="combat-replay-wvw-analysis-burst-detail">{{burst.strips}} strips</span>
+                </button>
+            </div>
+            <div class="combat-replay-wvw-analysis-card-title">Squad Now (last 3s)</div>
+            <div class="combat-replay-wvw-analysis-grid">
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Burst strength</div>
+                    <div class="combat-replay-wvw-analysis-value">
+                        {{formatCount(damage)}} damage
+                        <span class="combat-replay-wvw-analysis-pill" :class="'combat-replay-wvw-analysis-pill-' + burstStrength">{{burstStrength}}</span>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-detail">{{downs}} ({{downsTotal}}) downs, {{kills}} ({{killsTotal}}) kills</div>
+                </div>
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Strip to burst</div>
+                    <div class="combat-replay-wvw-analysis-value">
+                        {{formatCount(strips)}} strips
+                        <span class="combat-replay-wvw-analysis-pill" :class="stripSynced ? 'combat-replay-wvw-analysis-pill-success' : 'combat-replay-wvw-analysis-pill-muted'">
+                            {{stripSynced ? "synced" : "not synced"}}
+                        </span>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-detail">Peak gap {{stripPeakGap}} ms</div>
+                </div>
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Focus fire</div>
+                    <div class="combat-replay-wvw-analysis-value">
+                        {{topTargetName}}
+                        <span class="combat-replay-wvw-analysis-pill" :class="focused ? 'combat-replay-wvw-analysis-pill-success' : 'combat-replay-wvw-analysis-pill-muted'">
+                            {{focused ? "focused" : "spread"}}
+                        </span>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-detail">
+                        {{formatPercent(topTargetShare)}} top target, {{formatPercent(topThreeShare)}} top 3, {{contributors}} contributors
+                    </div>
+                </div>
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Target saturation</div>
+                    <div class="combat-replay-wvw-analysis-value">
+                        {{formatCount(targetCount)}} targets
+                        <span class="combat-replay-wvw-analysis-pill" :class="'combat-replay-wvw-analysis-pill-' + targetSaturation">{{targetSaturation}}</span>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-detail">Counts hostile players hit in the current 3s window</div>
+                </div>
+            </div>
+        </div>
+        `,
+        computed: {
+            topBursts: function () {
+                return this.crAnalysis && this.crAnalysis.topBursts ? this.crAnalysis.topBursts : [];
+            },
+            damage: function () {
+                return this.getSeriesValue(this.crAnalysis.squadDamage, this.snapshotIndex);
+            },
+            downs: function () {
+                return this.getSeriesValue(this.crAnalysis.squadDowns, this.snapshotIndex);
+            },
+            downsTotal: function () {
+                return this.getSeriesValue(this.crAnalysis.squadDownsTotal, this.snapshotIndex);
+            },
+            kills: function () {
+                return this.getSeriesValue(this.crAnalysis.squadKills, this.snapshotIndex);
+            },
+            killsTotal: function () {
+                return this.getSeriesValue(this.crAnalysis.squadKillsTotal, this.snapshotIndex);
+            },
+            burstStrength: function () {
+                return this.getSeriesValue(this.crAnalysis.burstStrength, this.snapshotIndex) || "normal";
+            },
+            strips: function () {
+                return this.getSeriesValue(this.crAnalysis.squadStrips, this.snapshotIndex);
+            },
+            stripPeakGap: function () {
+                return this.getSeriesValue(this.crAnalysis.stripPeakGap, this.snapshotIndex);
+            },
+            stripSynced: function () {
+                return !!this.getSeriesValue(this.crAnalysis.stripSynced, this.snapshotIndex);
+            },
+            topTargetId: function () {
+                return this.getSeriesValue(this.crAnalysis.squadTopTargetIds, this.snapshotIndex);
+            },
+            topTargetName: function () {
+                const target = this.getTargetByUniqueId(this.topTargetId);
+                return target ? target.name : "No focus target";
+            },
+            topTargetShare: function () {
+                return this.getSeriesValue(this.crAnalysis.squadTopTargetShare, this.snapshotIndex);
+            },
+            topThreeShare: function () {
+                return this.getSeriesValue(this.crAnalysis.squadTopThreeTargetShare, this.snapshotIndex);
+            },
+            contributors: function () {
+                return this.getSeriesValue(this.crAnalysis.squadTopTargetContributors, this.snapshotIndex);
+            },
+            focused: function () {
+                return !!this.getSeriesValue(this.crAnalysis.squadFocused, this.snapshotIndex);
+            },
+            targetCount: function () {
+                return this.getSeriesValue(this.crAnalysis.squadTargetSaturationCount, this.snapshotIndex);
+            },
+            targetSaturation: function () {
+                return this.getSeriesValue(this.crAnalysis.squadTargetSaturation, this.snapshotIndex) || "optimal";
+            },
+        },
+    });
+
+    Vue.component("combat-replay-wvw-analysis-selected-card", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time", "selectedactorid"],
+        template: `
+        <div class="combat-replay-wvw-analysis-card">
+            <div class="combat-replay-wvw-analysis-card-title">Selected Actor (last 3s)</div>
+            <div v-if="selectedPlayer && selectedPlayerTimeline" class="combat-replay-wvw-analysis-selected">
+                <div class="combat-replay-wvw-analysis-selected-header">
+                    <img :src="selectedPlayer.icon" :alt="selectedPlayer.profession" class="combat-replay-wvw-analysis-selected-icon">
+                    <div>
+                        <div class="combat-replay-wvw-analysis-selected-name">{{selectedPlayer.name}}</div>
+                        <div class="combat-replay-wvw-analysis-selected-type">Squad player</div>
+                    </div>
+                </div>
+                <div class="combat-replay-wvw-analysis-grid">
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Outgoing damage</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(playerDamage)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Outgoing boon strips</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(playerStrips)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Current focus contribution</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatPercent(playerTopTargetContribution)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Hostile players hit</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(playerHostilesHit)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Hostiles within 1200</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(playerNearbyHostiles)}}</div>
+                    </div>
+                </div>
+            </div>
+            <div v-else-if="selectedTarget && selectedTargetTimeline" class="combat-replay-wvw-analysis-selected">
+                <div class="combat-replay-wvw-analysis-selected-header">
+                    <img :src="selectedTarget.icon" :alt="selectedTarget.name" class="combat-replay-wvw-analysis-selected-icon">
+                    <div>
+                        <div class="combat-replay-wvw-analysis-selected-name">{{selectedTarget.name}}</div>
+                        <div class="combat-replay-wvw-analysis-selected-type">Hostile target</div>
+                    </div>
+                </div>
+                <div class="combat-replay-wvw-analysis-grid">
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Incoming damage</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(targetDamageTaken)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Incoming boon strips</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(targetStripsTaken)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Squad attackers</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(targetAttackers)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Allies within 1200</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(targetNearbyAllies)}}</div>
+                    </div>
+                </div>
+                <div class="combat-replay-wvw-analysis-attackers" v-if="topAttackers.length > 0">
+                    <div class="combat-replay-wvw-analysis-label">Top attackers</div>
+                    <div v-for="attacker in topAttackers" class="combat-replay-wvw-analysis-attacker-row">
+                        <div class="combat-replay-wvw-analysis-attacker-name">
+                            <img :src="attacker.player.icon" :alt="attacker.player.profession" class="combat-replay-wvw-analysis-attacker-icon">
+                            {{attacker.player.name}}
+                        </div>
+                        <div class="combat-replay-wvw-analysis-attacker-damage">{{formatCount(attacker.damage)}}</div>
+                    </div>
+                </div>
+            </div>
+            <div v-else class="combat-replay-wvw-analysis-helper">
+                Select a squad player or a real hostile player on the replay to view actor-specific analysis.
+            </div>
+        </div>
+        `,
+        computed: {
+            selectedPlayerTimeline: function () {
+                return this.crAnalysis && this.selectedactorid != null ? this.crAnalysis.players[this.selectedactorid] : null;
+            },
+            selectedTargetTimeline: function () {
+                return this.crAnalysis && this.selectedactorid != null ? this.crAnalysis.targets[this.selectedactorid] : null;
+            },
+            selectedPlayer: function () {
+                return this.selectedPlayerTimeline ? this.getPlayerByUniqueId(this.selectedactorid) : null;
+            },
+            selectedTarget: function () {
+                return this.selectedTargetTimeline ? this.getTargetByUniqueId(this.selectedactorid) : null;
+            },
+            playerDamage: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.damage, this.snapshotIndex) : 0;
+            },
+            playerStrips: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.strips, this.snapshotIndex) : 0;
+            },
+            playerTopTargetContribution: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.topTargetContribution, this.snapshotIndex) : 0;
+            },
+            playerHostilesHit: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.hostilesHit, this.snapshotIndex) : 0;
+            },
+            playerNearbyHostiles: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.nearbyHostiles, this.snapshotIndex) : 0;
+            },
+            targetDamageTaken: function () {
+                return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.damageTaken, this.snapshotIndex) : 0;
+            },
+            targetStripsTaken: function () {
+                return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.stripsTaken, this.snapshotIndex) : 0;
+            },
+            targetAttackers: function () {
+                return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.squadAttackers, this.snapshotIndex) : 0;
+            },
+            targetNearbyAllies: function () {
+                return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.nearbyAllies, this.snapshotIndex) : 0;
+            },
+            topAttackers: function () {
+                if (!this.selectedTargetTimeline) {
+                    return [];
+                }
+                const attackerIds = this.getSeriesArrayValue(this.selectedTargetTimeline.topAttackerIds, this.snapshotIndex);
+                const attackerDamage = this.getSeriesArrayValue(this.selectedTargetTimeline.topAttackerDamage, this.snapshotIndex);
+                const result = [];
+                for (let index = 0; index < attackerIds.length; index++) {
+                    const player = this.getPlayerByUniqueId(attackerIds[index]);
+                    if (!player) {
+                        continue;
+                    }
+                    result.push({
+                        player: player,
+                        damage: attackerDamage[index] || 0,
+                    });
+                }
+                return result;
+            },
+        },
+    });
+
+    Vue.component("combat-replay-wvw-analysis-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time", "selectedactorid"],
+        template: `
+        <div v-if="crAnalysis" class="combat-replay-wvw-analysis-panel">
+            <combat-replay-wvw-analysis-squad-card :time="time"></combat-replay-wvw-analysis-squad-card>
+            <combat-replay-wvw-analysis-selected-card :time="time" :selectedactorid="selectedactorid"></combat-replay-wvw-analysis-selected-card>
+        </div>
+        `,
+    });
+
     Vue.component("combat-replay-status-data-component", {
         template: `${template}`,
         props: ["time", "selectedactorid"],
@@ -43,7 +411,11 @@
                 targetless: logData.targetless,
                 mode: 0,
             };
-        }
+        },
+        computed: {
+            hasAnalysis: function () {
+                return !!(crData && crData.analysis);
+            },
+        },
     });
 </script>
-
