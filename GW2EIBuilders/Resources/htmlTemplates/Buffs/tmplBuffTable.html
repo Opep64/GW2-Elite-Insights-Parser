@@ -71,6 +71,23 @@
             };
         },
         methods: {
+            applyPresetSortByBuffId: function(buffId) {
+                let buffIndex = -1;
+                for (let i = 0; i < this.buffs.length; i++) {
+                    if (this.buffs[i] && (this.buffs[i].id === buffId || this.buffs[i].skillId === buffId)) {
+                        buffIndex = i;
+                        break;
+                    }
+                }
+                if (buffIndex < 0) {
+                    return;
+                }
+                this.sortdata.key = "Data";
+                this.sortdata.index = buffIndex;
+                this.sortdata.order = "desc";
+                const maxOffset = Math.max(this.colPageCount, 0);
+                this.colStructure.offset = Math.min(buffIndex, maxOffset);
+            },
             sortBy: function(key, index) {
                 this.sortByBase(this.sortdata, key, index);
             },

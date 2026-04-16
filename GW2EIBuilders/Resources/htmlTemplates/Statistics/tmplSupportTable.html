@@ -107,6 +107,11 @@
             };
         },
         methods: {
+            applyPresetSort: function(key, index, order) {
+                this.sortdata.key = key;
+                this.sortdata.index = index >= 0 ? index : -1;
+                this.sortdata.order = order;
+            },
             sortBy: function (key, index) {
                 this.sortByBase(this.sortdata, key, index);
             },

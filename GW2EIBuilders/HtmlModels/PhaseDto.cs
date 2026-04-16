@@ -130,6 +130,7 @@ internal class PhaseDto
     public List<GameplayStatDataItem> GameplayStats;
     public List<DefensiveStatDataItem> DefStats;
     public List<SupportStatDataItem> SupportStats;
+    public WvwSummaryDto? WvwSummary;
 
     public BuffsContainerDto BuffsStatContainer;
     public BuffVolumesContainerDto BuffVolumesStatContainer;
@@ -302,6 +303,7 @@ internal class PhaseDto
         GameplayStats         = BuildGameplayStatsData(log, phase);
         DefStats              = BuildDefenseData(log, phase);
         SupportStats          = BuildSupportData(log, phase);
+        WvwSummary            = WvwSummaryDto.Build(log, phase);
         
         DmgModifiersCommon    = DamageModData.BuildOutgoingDmgModifiersData(log, phase, commonOutDamageModifiers);
         DmgModifiersItem      = DamageModData.BuildOutgoingDmgModifiersData(log, phase, itemOutDamageModifiers);

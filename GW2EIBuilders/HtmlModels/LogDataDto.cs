@@ -60,6 +60,7 @@ internal class LogDataDto
     public string EvtcRecordingDuration;
     public string LogName;
     public bool Wvw;
+    public bool DetailedWvw;
     public bool HasCommander;
     public bool Targetless;
     public bool LightTheme;
@@ -144,6 +145,7 @@ internal class LogDataDto
         }
         EvtcRecordingDuration = log.LogData.EvtcRecordingDuration;
         Wvw = log.LogData.Logic.ParseMode == LogLogic.ParseModeEnum.WvW;
+        DetailedWvw = Wvw && log.LogData.Logic.Extension == "detailed_wvw";
         Targetless = log.LogData.Logic.Targetless;
         switch (log.LogData.InstancePrivacy)
         {

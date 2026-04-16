@@ -25,7 +25,7 @@
             </ul>
         </div>
         <keep-alive>
-            <buff-table-component v-if="type === 0" :key="'boon-stats-table'" :condition="false" :generation="buffMode > 0"
+            <buff-table-component v-if="type === 0" :key="'boon-stats-table'" ref="boonStatsTable" :condition="false" :generation="buffMode > 0"
                 :id="'boon-stats-table'" :buffs="boons" :playerdata="buffData.boonsData[buffMode]"
                 :sums="buffMode === 0 ? buffData.boonsData[5] : []" :playerindex="playerindex" :hidecustom="buffMode > 1">
             </buff-table-component>
@@ -60,6 +60,15 @@
             };
         },
         methods: {
+            showBoonGenerationGroup: function(buffId) {
+                var component = this;
+                this.buffMode = 2;
+                this.$nextTick(function() {
+                    if (component.$refs.boonStatsTable && component.$refs.boonStatsTable.applyPresetSortByBuffId) {
+                        component.$refs.boonStatsTable.applyPresetSortByBuffId(buffId);
+                    }
+                });
+            },
             getData: function (name, container) {
                 const activeduration = !!this.activeduration;
                 const activeTimes = this.phase.playerActiveTimes;

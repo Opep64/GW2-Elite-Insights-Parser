@@ -28,7 +28,7 @@
             </offensive-stats-component>
             <defense-stats-component v-if="tab === 2" :key="'defense'" :phaseindex="phaseindex"
                 :playerindex="playerindex"></defense-stats-component>
-            <support-stats-component v-if="tab === 3" :key="'support'" :phaseindex="phaseindex"
+            <support-stats-component v-if="tab === 3" :key="'support'" ref="supportStats" :phaseindex="phaseindex"
                 :playerindex="playerindex"></support-stats-component>
         </keep-alive>
     </div>
@@ -63,6 +63,17 @@
             return {
                 tab: getDefaultStatsSubComponent(),
             };
+        },
+        methods: {
+            showSupportCleanses: function() {
+                var component = this;
+                this.tab = 3;
+                this.$nextTick(function() {
+                    if (component.$refs.supportStats && component.$refs.supportStats.applyPresetSort) {
+                        component.$refs.supportStats.applyPresetSort("Data", 0, "desc");
+                    }
+                });
+            }
         },
     });
 </script>

@@ -12,7 +12,10 @@
                 <player-component :players="reactiveLogdata.players" :phaseindex="activePhase"></player-component>
             </div>
         </div>     
-        <ul class="nav nav-tabs">
+        <ul class="nav nav-tabs" ref="statisticsTabs">
+            <li v-if="hasWvwSummary">
+                <a class="nav-link" :class="{active: tab === 8}" @click="tab = 8">Summary</a>
+            </li>
             <li>
                 <a class="nav-link" :class="{active: tab === 0}" @click="tab = 0">General Stats</a>
             </li>
@@ -40,10 +43,18 @@
         </ul>
 
         <keep-alive>
+            <wvw-summary-component v-if="tab === 8" :key="'wvw-summary'"
+                :phaseindex="activePhase" @select-player="showPlayerSummary"
+                @select-player-support="showSupportSummary"
+                @select-player-healing="showHealingSummary"
+                @select-player-boon-generation="showBoonGenerationSummary"
+                @select-target="showTargetSummary"></wvw-summary-component>
             <stat-tables-component v-if="tab === 0" :key="'stat-tables'"
+                ref="statTables"
                 :phaseindex="activePhase" :playerindex="activePlayer" 
                 :activetargets="activePhaseTargets"></stat-tables-component>
             <buff-tab-component v-if="tab === 1" :key="'buff-tables'"
+                ref="buffTab"
                 :phaseindex="activePhase" :playerindex="activePlayer"></buff-tab-component>
             <dmgmodifier-stats-container-component v-if="tab === 2" :key="'modifier'"
                 :phaseindex="activePhase" :playerindex="activePlayer" :activetargets="activePhaseTargets">
@@ -70,11 +81,13 @@
 
     function getDefaultMainSubComponent() {
         if (!validateStartPath("Statistics")) {
-            return 0;
+            return hasWvwSummary() ? 8 : 0;
         }
         const setting = EIUrlParams.get("startPage");
         const compo = setting.split('/')[1];
         switch (compo) {
+            case "Summary":
+                return hasWvwSummary() ? 8 : 0;
             case "GeneralStats":
                 return 0;
             case "Buffs":
@@ -92,7 +105,7 @@
             case "PlayerSummary":
                 return 6;
         }
-        return 0;
+        return hasWvwSummary() ? 8 : 0;
     }
     Vue.component("main-view-component", {
         props: ['light'],
@@ -102,6 +115,84 @@
                 tab: getDefaultMainSubComponent(),
                 reactiveLogdata: reactiveLogdata
             };
+        },
+        methods: {
+            getActiveEncounterIndex: function() {
+                var activeEncounterIndex = 0;
+                for (var i = 0; i < this.reactiveLogdata.encounters.length; i++) {
+                    if (this.reactiveLogdata.encounters[i].active) {
+                        activeEncounterIndex = i;
+                        break;
+                    }
+                }
+                return activeEncounterIndex;
+            },
+            selectPlayer: function(playerIndex) {
+                var activeEncounterIndex = this.getActiveEncounterIndex();
+                for (var i = 0; i < this.reactiveLogdata.players.length; i++) {
+                    this.reactiveLogdata.players[i].active = i === playerIndex;
+                }
+                this.reactiveLogdata.activeEncounterPhaseData[activeEncounterIndex].player = playerIndex;
+            },
+            showPlayerSummary: function(playerIndex) {
+                this.selectPlayer(playerIndex);
+                this.tab = 6;
+                this.scrollStatisticsTabsIntoView();
+            },
+            showSupportSummary: function(playerIndex) {
+                var component = this;
+                this.selectPlayer(playerIndex);
+                this.tab = 0;
+                this.$nextTick(function() {
+                    if (component.$refs.statTables && component.$refs.statTables.showSupportCleanses) {
+                        component.$refs.statTables.showSupportCleanses();
+                    }
+                    component.scrollStatisticsTabsIntoView();
+                });
+            },
+            showHealingSummary: function(playerIndex) {
+                var component = this;
+                this.selectPlayer(playerIndex);
+                this.$root.mode = 2;
+                this.$root.$nextTick(function() {
+                    if (component.$root.$refs.healingExtensionView && component.$root.$refs.healingExtensionView.showPlayerHealingSummary) {
+                        component.$root.$refs.healingExtensionView.showPlayerHealingSummary(playerIndex);
+                    }
+                });
+            },
+            showBoonGenerationSummary: function(selection) {
+                var component = this;
+                if (!selection) {
+                    return;
+                }
+                this.selectPlayer(selection.playerIndex);
+                this.tab = 1;
+                this.$nextTick(function() {
+                    if (component.$refs.buffTab && component.$refs.buffTab.showBoonGenerationGroup) {
+                        component.$refs.buffTab.showBoonGenerationGroup(selection.buffId);
+                    }
+                    component.scrollStatisticsTabsIntoView();
+                });
+            },
+            showTargetSummary: function(targetIndex) {
+                var phaseTargets = this.reactiveLogdata.targets;
+                for (var i = 0; i < phaseTargets.length; i++) {
+                    if (phaseTargets[i] && phaseTargets[i][this.activePhase]) {
+                        phaseTargets[i][this.activePhase].active = i === targetIndex;
+                    }
+                }
+                this.reactiveLogdata.phases[this.activePhase].focus = targetIndex;
+                this.tab = 5;
+                this.scrollStatisticsTabsIntoView();
+            },
+            scrollStatisticsTabsIntoView: function() {
+                var component = this;
+                this.$nextTick(function() {
+                    if (component.$refs.statisticsTabs && component.$refs.statisticsTabs.scrollIntoView) {
+                        component.$refs.statisticsTabs.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }
+                });
+            }
         },
         computed: {
             activePhase: function () {
@@ -148,6 +239,9 @@
             },
             hasTargets: function() {
                 return hasTargets();
+            },
+            hasWvwSummary: function() {
+                return hasWvwSummary();
             },
             hasRotations: function() {
                 return hasRotations();

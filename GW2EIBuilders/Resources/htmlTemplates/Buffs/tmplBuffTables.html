@@ -48,7 +48,7 @@
             </ul>
         </div>
         <keep-alive>
-            <buff-stats-component v-if="tab < 4" :key="'buffs'" :type="tab" :phaseindex="phaseindex"
+            <buff-stats-component v-if="tab < 4" :key="'buffs'" ref="buffStats" :type="tab" :phaseindex="phaseindex"
                 :playerindex="playerindex" :activeduration="activeduration"></buff-stats-component>
             <gear-buff-table-component v-if="tab === 4" :key="'gearbuffs'" :phaseindex="phaseindex"
                 :playerindex="playerindex" :activeduration="activeduration"></gear-buff-table-component>
@@ -109,6 +109,18 @@
                 activeduration: 0,
                 tab: getDefaultBuffTableSubComponent(),
             };
+        },
+        methods: {
+            showBoonGenerationGroup: function(buffId) {
+                var component = this;
+                this.tab = 0;
+                this.activeduration = 0;
+                this.$nextTick(function() {
+                    if (component.$refs.buffStats && component.$refs.buffStats.showBoonGenerationGroup) {
+                        component.$refs.buffStats.showBoonGenerationGroup(buffId);
+                    }
+                });
+            },
         },
         computed: {
             showActiveDuration: function () {

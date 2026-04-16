@@ -2044,6 +2044,12 @@ namespace GW2EIBuilders.Properties {
                 return ResourceManager.GetString("tmplSupportTable", resourceCulture);
             }
         }
+
+        internal static string tmplWvWSummary {
+            get {
+                return ResourceManager.GetString("tmplWvWSummary", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Looks up a localized string similar to &lt;template&gt;

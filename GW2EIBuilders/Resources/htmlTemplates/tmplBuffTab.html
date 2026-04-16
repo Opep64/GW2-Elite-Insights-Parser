@@ -9,7 +9,7 @@
             </li>
         </ul>
         <keep-alive>
-            <buff-tables-component v-if="tab == 0" :key="'buff-tables'" :type="tab" :phaseindex="phaseindex"
+            <buff-tables-component v-if="tab == 0" :key="'buff-tables'" ref="buffTables" :type="tab" :phaseindex="phaseindex"
                 :playerindex="playerindex"></buff-tables-component>
             <buff-volume-tables-component v-if="tab == 1" :key="'buff-volume-tables'" :type="tab" :phaseindex="phaseindex"
                 :playerindex="playerindex"></buff-volume-tables-component>
@@ -46,6 +46,17 @@
             return {
                 tab: getDefaultBuffTabSubComponent(this.$vnode.key),
             };
+        },
+        methods: {
+            showBoonGenerationGroup: function(buffId) {
+                var component = this;
+                this.tab = 0;
+                this.$nextTick(function() {
+                    if (component.$refs.buffTables && component.$refs.buffTables.showBoonGenerationGroup) {
+                        component.$refs.buffTables.showBoonGenerationGroup(buffId);
+                    }
+                });
+            },
         },
     });
 </script>

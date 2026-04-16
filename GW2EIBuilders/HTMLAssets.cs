@@ -116,6 +116,7 @@ public class HTMLAssets
             Properties.Resources.tmplFood,
             Properties.Resources.tmplGameplayTable,
             Properties.Resources.tmplOffensiveTable,
+            Properties.Resources.tmplWvWSummary,
             Properties.Resources.tmplBuffTab,
             Properties.Resources.tmplStatTables,
             Properties.Resources.tmplMechanicsStats,

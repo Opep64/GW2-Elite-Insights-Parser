@@ -996,6 +996,10 @@ function hasTargets() {
     return !logData.targetless ;
 }
 
+function hasWvwSummary() {
+    return !!(logData.wvw && logData.detailedWvw);
+}
+
 function hasOffBuffs() {
     return logData.offBuffs.length > 0;
 };

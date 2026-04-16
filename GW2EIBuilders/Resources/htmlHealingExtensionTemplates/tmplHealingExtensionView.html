@@ -12,7 +12,7 @@
             </div>
         </div>     
         <h6 class="text-center" v-if="!everybodyRunning">Data may be incomplete due to not everybody running the <a href="https://github.com/Krappa322/arcdps_healing_stats/releases">healing stats addon</a>. Make sure to enable its logging features.</h6>
-        <ul class="nav nav-tabs">
+        <ul class="nav nav-tabs" ref="healingTabs">
             <li>
                 <a class="nav-link" :class="{active: tab === 0}" @click="tab = 0">Healing Stats</a>
             </li>    
@@ -83,6 +83,31 @@
                 tab: getDefaultHealingSubComponent(),
                 reactiveLogdata: reactiveLogdata
             };
+        },
+        methods: {
+            showPlayerHealingSummary: function(playerIndex) {
+                var activeEncounterIndex = 0;
+                for (let i = 0; i < this.reactiveLogdata.encounters.length; i++) {
+                    if (this.reactiveLogdata.encounters[i].active) {
+                        activeEncounterIndex = i;
+                        break;
+                    }
+                }
+                for (let i = 0; i < this.reactiveLogdata.players.length; i++) {
+                    this.reactiveLogdata.players[i].active = i === playerIndex;
+                }
+                this.reactiveLogdata.activeEncounterPhaseData[activeEncounterIndex].player = playerIndex;
+                this.tab = 5;
+                this.scrollHealingTabsIntoView();
+            },
+            scrollHealingTabsIntoView: function() {
+                const component = this;
+                this.$nextTick(function() {
+                    if (component.$refs.healingTabs && component.$refs.healingTabs.scrollIntoView) {
+                        component.$refs.healingTabs.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }
+                });
+            }
         },
         computed: {
             activePhase: function () {

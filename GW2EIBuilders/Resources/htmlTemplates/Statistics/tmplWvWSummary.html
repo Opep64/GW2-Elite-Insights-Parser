@@ -1,0 +1,314 @@
+<template>
+    <div>
+        <div v-if="summary" class="wvw-summary-panel">
+            <div class="wvw-summary-header">
+                <div class="wvw-summary-header-title">WvW Fight Summary</div>
+                <div class="wvw-summary-header-detail">{{summary.healStatsNotice}}</div>
+            </div>
+            <div class="wvw-summary-layout">
+                <div class="wvw-summary-table-wrap">
+                    <table class="table table-sm table-striped table-hover wvw-summary-table" cellspacing="0" width="100%">
+                        <thead>
+                            <tr>
+                                <th class="text-left wvw-summary-metric-column">Metric</th>
+                                <th class="text-right">{{summary.squad.label}}</th>
+                                <th class="text-right">{{summary.enemy.label}}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="row in summary.metricRows" :key="row.label">
+                                <td class="text-left wvw-summary-metric-column">{{row.label}}</td>
+                                <td class="text-right" :class="getValueClass(row, 'squad')">{{formatRowValue(row.squadValue, row)}}</td>
+                                <td class="text-right" :class="getValueClass(row, 'enemy')">{{formatRowValue(row.enemyValue, row)}}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="wvw-summary-side-panels">
+                    <div class="wvw-summary-side-column">
+                        <div class="wvw-summary-side-panel">
+                            <div class="wvw-summary-side-panel-title">Top 5 Squad Player Damage</div>
+                            <div class="wvw-summary-side-panel-subtitle">Damage to enemy players. Click a player to see details.</div>
+                            <button v-for="(player, index) in summary.topDamagePlayers" :key="'squad-' + player.playerIndex"
+                                type="button" class="wvw-summary-top-player"
+                                @click="openPlayerSummary(player.playerIndex)">
+                                <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                                <img :src="player.icon" :alt="player.profession" class="icon"
+                                    :data-original-title="player.profession">
+                                <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                                <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
+                            </button>
+                            <div v-if="summary.topDamagePlayers.length === 0" class="wvw-summary-side-panel-empty">
+                                No squad players were active for this phase.
+                            </div>
+                        </div>
+                        <div class="wvw-summary-side-panel">
+                            <div class="wvw-summary-side-panel-title">Top 5 Squad Player Boon Strips</div>
+                            <div class="wvw-summary-side-panel-subtitle">Offensive boon strips. Click a player to see details.</div>
+                            <button v-for="(player, index) in summary.topStripPlayers" :key="'squad-strip-' + player.playerIndex"
+                                type="button" class="wvw-summary-top-player"
+                                @click="openPlayerSummary(player.playerIndex)">
+                                <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                                <img :src="player.icon" :alt="player.profession" class="icon"
+                                    :data-original-title="player.profession">
+                                <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                                <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
+                            </button>
+                            <div v-if="summary.topStripPlayers.length === 0" class="wvw-summary-side-panel-empty">
+                                No squad players were active for this phase.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="wvw-summary-side-column">
+                        <div class="wvw-summary-side-panel">
+                            <div class="wvw-summary-side-panel-title">Top 5 Enemy Player Damage</div>
+                            <div class="wvw-summary-side-panel-subtitle">Damage to squad players. Click an enemy to see details.</div>
+                            <button v-for="(player, index) in summary.topEnemyDamagePlayers" :key="'enemy-' + player.playerIndex"
+                                type="button" class="wvw-summary-top-player"
+                                @click="openTargetSummary(player.playerIndex)">
+                                <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                                <img :src="player.icon" :alt="player.profession" class="icon"
+                                    :data-original-title="player.profession">
+                                <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                                <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
+                            </button>
+                            <div v-if="summary.topEnemyDamagePlayers.length === 0" class="wvw-summary-side-panel-empty">
+                                No enemy players were active for this phase.
+                            </div>
+                        </div>
+                        <div class="wvw-summary-side-panel">
+                            <div class="wvw-summary-side-panel-title">Top 5 Enemy Player Boon Strips</div>
+                            <div class="wvw-summary-side-panel-subtitle">Offensive boon strips. Click an enemy to see details.</div>
+                            <button v-for="(player, index) in summary.topEnemyStripPlayers" :key="'enemy-strip-' + player.playerIndex"
+                                type="button" class="wvw-summary-top-player"
+                                @click="openTargetSummary(player.playerIndex)">
+                                <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                                <img :src="player.icon" :alt="player.profession" class="icon"
+                                    :data-original-title="player.profession">
+                                <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                                <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
+                            </button>
+                            <div v-if="summary.topEnemyStripPlayers.length === 0" class="wvw-summary-side-panel-empty">
+                                No enemy players were active for this phase.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="wvw-summary-bottom-panels">
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Top 5 Squad Player Cleanses</div>
+                    <div class="wvw-summary-side-panel-subtitle">Outgoing cleanses. Click a player to open Support Stats sorted by cleanses on squad mates.</div>
+                    <button v-for="(player, index) in summary.topCleansePlayers" :key="'squad-cleanse-' + player.playerIndex"
+                        type="button" class="wvw-summary-top-player"
+                        @click="openSupportSummary(player.playerIndex)">
+                        <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                        <img :src="player.icon" :alt="player.profession" class="icon"
+                            :data-original-title="player.profession">
+                        <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                        <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
+                    </button>
+                    <div v-if="summary.topCleansePlayers.length === 0" class="wvw-summary-side-panel-empty">
+                        No squad players were active for this phase.
+                    </div>
+                </div>
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Top 5 Squad Player Barrier</div>
+                    <div class="wvw-summary-side-panel-subtitle">Outgoing barrier production. Click a player to open Player Healing Summary.</div>
+                    <button v-for="(player, index) in summary.topBarrierPlayers" :key="'squad-barrier-' + player.playerIndex"
+                        type="button" class="wvw-summary-top-player"
+                        @click="openHealingSummary(player.playerIndex)">
+                        <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                        <img :src="player.icon" :alt="player.profession" class="icon"
+                            :data-original-title="player.profession">
+                        <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                        <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
+                    </button>
+                    <div v-if="summary.hasBarrierData && summary.topBarrierPlayers.length === 0" class="wvw-summary-side-panel-empty">
+                        No squad players were active for this phase.
+                    </div>
+                    <div v-if="!summary.hasBarrierData" class="wvw-summary-side-panel-empty">
+                        Barrier add-on data is unavailable for this log.
+                    </div>
+                </div>
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Top 5 Squad Healers</div>
+                    <div class="wvw-summary-side-panel-subtitle">Outgoing healing. Click a player to open Player Healing Summary.</div>
+                    <button v-for="(player, index) in summary.topHealingPlayers" :key="'squad-heal-' + player.playerIndex"
+                        type="button" class="wvw-summary-top-player"
+                        @click="openHealingSummary(player.playerIndex)">
+                        <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                        <img :src="player.icon" :alt="player.profession" class="icon"
+                            :data-original-title="player.profession">
+                        <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                        <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
+                    </button>
+                    <div v-if="summary.hasHealingData && summary.topHealingPlayers.length === 0" class="wvw-summary-side-panel-empty">
+                        No squad players were active for this phase.
+                    </div>
+                    <div v-if="!summary.hasHealingData" class="wvw-summary-side-panel-empty">
+                        Healing add-on data is unavailable for this log.
+                    </div>
+                </div>
+                <div v-for="section in topGroupBoonGenerationSections" :key="'boon-group-' + section.buffId" class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title wvw-summary-boon-panel-title">
+                        <img :src="section.icon" :alt="section.name" class="icon icon-hover">
+                        <span>Top 5 Group {{section.name}} Generation</span>
+                    </div>
+                    <div class="wvw-summary-side-panel-subtitle">Click a player to open Buffs, Uptimes, Boons, Generation Group sorted by {{section.name}}.</div>
+                    <button v-for="(player, index) in section.players" :key="'boon-group-' + section.buffId + '-' + player.playerIndex"
+                        type="button" class="wvw-summary-top-player"
+                        @click="openBoonGenerationSummary(player.playerIndex, section.buffId)">
+                        <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                        <img :src="player.icon" :alt="player.profession" class="icon"
+                            :data-original-title="player.profession">
+                        <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                        <span class="wvw-summary-top-player-damage">{{formatBoonGenerationValue(section, player.amount)}}</span>
+                    </button>
+                    <div v-if="section.players.length === 0" class="wvw-summary-side-panel-empty">
+                        No squad players generated {{section.name}} for their group in this phase.
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div v-else class="wvw-summary-empty">
+            Summary data is unavailable for this phase.
+        </div>
+    </div>
+</template>
+
+<script>
+    Vue.component("wvw-summary-component", {
+        props: ["phaseindex"],
+        template: `${template}`,
+        mixins: [numberComponent, encounterPhaseComponent],
+        methods: {
+            getBoonGenerationValue: function(buffData) {
+                if (buffData instanceof Array) {
+                    return buffData[0] || 0;
+                }
+                return 0;
+            },
+            formatBoonGenerationValue: function(section, value) {
+                if (section.stacking) {
+                    return Number.isInteger(value) ? this.integerWithSpaces(value) : this.round1(value).toString();
+                }
+                return this.round1(value) + "%";
+            },
+            formatRowValue: function(value, row) {
+                if (row.equalValues) {
+                    return value;
+                }
+                const parsed = parseFloat(value);
+                if (isNaN(parsed)) {
+                    return value;
+                }
+                let formatted = "";
+                if (row.integerWithSpaces) {
+                    formatted = this.integerWithSpaces(this.round(parsed));
+                } else if (row.decimals === 1) {
+                    formatted = this.round1(parsed).toString();
+                } else if (row.decimals === 2) {
+                    formatted = this.round2(parsed).toString();
+                } else if (row.decimals === 3) {
+                    formatted = this.round3(parsed).toString();
+                } else {
+                    formatted = this.integerWithSpaces(this.round(parsed));
+                }
+                return row.percentage ? formatted + "%" : formatted;
+            },
+            getValueClass: function(row, side) {
+                if (row.equalValues) {
+                    return {};
+                }
+                const squadValue = parseFloat(row.squadValue);
+                const enemyValue = parseFloat(row.enemyValue);
+                if (isNaN(squadValue) || isNaN(enemyValue) || squadValue === enemyValue) {
+                    return {};
+                }
+                const squadLead = row.higherIsBetter ? squadValue > enemyValue : squadValue < enemyValue;
+                return {
+                    "wvw-summary-table-value-lead": (side === "squad" && squadLead) || (side === "enemy" && !squadLead),
+                };
+            },
+            openPlayerSummary: function(playerIndex) {
+                this.$emit("select-player", playerIndex);
+            },
+            openSupportSummary: function(playerIndex) {
+                this.$emit("select-player-support", playerIndex);
+            },
+            openHealingSummary: function(playerIndex) {
+                this.$emit("select-player-healing", playerIndex);
+            },
+            openBoonGenerationSummary: function(playerIndex, buffId) {
+                this.$emit("select-player-boon-generation", {
+                    playerIndex: playerIndex,
+                    buffId: buffId,
+                });
+            },
+            openTargetSummary: function(targetIndex) {
+                this.$emit("select-target", targetIndex);
+            }
+        },
+        computed: {
+            phase: function() {
+                return logData.phases[this.phaseindex];
+            },
+            summary: function() {
+                return this.phase.wvwSummary;
+            },
+            topGroupBoonGenerationSections: function() {
+                if (!this.summary || !this.phase.buffsStatContainer) {
+                    return [];
+                }
+
+                const players = getActiveNonFakePlayersForPhase(this.encounterPhase);
+                const groupStats = this.phase.buffsStatContainer.boonGenGroupStats || [];
+                const sections = [];
+
+                for (let i = 0; i < logData.boons.length; i++) {
+                    const buffId = logData.boons[i];
+                    const buff = findSkill(true, buffId);
+                    if (!buff || buff.name === "Alacrity") {
+                        continue;
+                    }
+
+                    const topPlayers = [];
+                    for (let j = 0; j < groupStats.length && j < players.length; j++) {
+                        const player = players[j];
+                        if (!player || player.notInSquad) {
+                            continue;
+                        }
+
+                        const playerBuffData = groupStats[j] && groupStats[j].data ? groupStats[j].data[i] : null;
+                        const amount = this.getBoonGenerationValue(playerBuffData);
+                        if (amount <= 0) {
+                            continue;
+                        }
+
+                        topPlayers.push({
+                            playerIndex: typeof player.id === "number" ? player.id : j,
+                            name: player.name,
+                            profession: player.profession,
+                            icon: player.icon,
+                            amount: amount,
+                        });
+                    }
+
+                    topPlayers.sort((a, b) => (b.amount - a.amount) || a.name.localeCompare(b.name));
+                    if (topPlayers.length > 0) {
+                        sections.push({
+                            buffId: buffId,
+                            name: buff.name,
+                            icon: buff.icon,
+                            stacking: !!buff.stacking,
+                            players: topPlayers.slice(0, 5),
+                        });
+                    }
+                }
+
+                return sections;
+            }
+        }
+    });
+</script>
