@@ -134,13 +134,66 @@
                     <a class="nav-link" :class="{active: overviewMode === 1}" @click="overviewMode = 1">Burst</a>
                 </li>
             </ul>
-            <combat-replay-overview-stats-component v-if="!hasanalysis || overviewMode === 0" :time="time" :selectedactorid="selectedactorid" :targetless="targetless"></combat-replay-overview-stats-component>
+            <div v-if="!hasanalysis || overviewMode === 0" class="d-flex flex-column">
+                <div class="combat-replay-overview-help-row">
+                    <button type="button" class="combat-replay-overview-help-button" title="Compact card help" aria-label="Show compact card help" @click="showOverviewHelp = true">?</button>
+                </div>
+                <combat-replay-overview-stats-component :time="time" :selectedactorid="selectedactorid" :targetless="targetless"></combat-replay-overview-stats-component>
+            </div>
             <combat-replay-wvw-analysis-component v-else :time="time" :selectedactorid="selectedactorid"></combat-replay-wvw-analysis-component>
+            <div v-if="showOverviewHelp" class="wvw-summary-modal-backdrop" @click.self="showOverviewHelp = false">
+                <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay compact card help">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close compact card help" @click="showOverviewHelp = false">&times;</button>
+                    <div class="wvw-summary-modal-title">Compact Card Help</div>
+                    <div class="wvw-summary-modal-subtitle">
+                        The Overview view uses compact player and target cards to show quick state snapshots at the current replay time.
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Player cards</div>
+                        <div class="combat-replay-overview-help-text">The colored inner border tracks current stability stacks:</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Red</strong>: no stability</li>
+                            <li><strong>Yellow</strong>: 1 to 2 stacks</li>
+                            <li><strong>Green</strong>: 3 to 9 stacks</li>
+                            <li><strong>Purple</strong>: 10 or more stacks</li>
+                        </ul>
+                        <div class="combat-replay-overview-help-text">The number in the center of the compact player card is the player's current <strong>Might</strong> stack count.</div>
+                        <div class="combat-replay-overview-help-text">Player boon and condition icons that may appear in compact view:</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Left side boons</strong>: Protection, Aegis</li>
+                            <li><strong>Upper-right guard icon</strong>: Guard! / Guard</li>
+                            <li><strong>Right side conditions</strong>: Poison, Immobilize</li>
+                            <li><strong>Resistance interaction</strong>: Immobilize is hidden while Resistance is active</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Target cards</div>
+                        <div class="combat-replay-overview-help-text">Compact target cards do not use the stability border. They show the target's health/state in the card background and list tracked conditions along the footer.</div>
+                        <div class="combat-replay-overview-help-text">Target conditions that may appear in compact view:</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Poison</strong></li>
+                            <li><strong>Burning</strong> with stack count</li>
+                            <li><strong>Vulnerability</strong> with stack count</li>
+                            <li><strong>Immobilize</strong></li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Shared visual cues</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li>The card background reflects health and state at the current replay time</li>
+                            <li>Green means active, red means downed, black means dead, and gray means disconnected</li>
+                            <li>Barrier is shown as the orange-tinted overlay on top of the card</li>
+                            <li>Markers shown beside the actor name are the active combat replay markers at that time</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </div>
         `,
         data: function () {
             return {
                 overviewMode: 0,
+                showOverviewHelp: false,
             };
         },
     });
@@ -465,3 +518,4 @@
         },
     });
 </script>
+
