@@ -5,14 +5,24 @@
                 <div class="wvw-summary-header-title">WvW Fight Summary</div>
                 <div class="wvw-summary-header-detail">{{summary.healStatsNotice}}</div>
             </div>
-            <div class="wvw-summary-layout">
+            <div class="wvw-summary-subtabs">
+                <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'overview'}"
+                    @click="setSummarySubTab('overview')">
+                    Overview
+                </button>
+                <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'downs'}"
+                    @click="setSummarySubTab('downs')">
+                    Downs
+                </button>
+            </div>
+            <div v-if="activeSummaryTab === 'overview'" class="wvw-summary-layout">
                 <div class="wvw-summary-table-wrap">
                     <table class="table table-sm table-striped table-hover wvw-summary-table" cellspacing="0" width="100%">
                         <thead>
                             <tr>
                                 <th class="text-left wvw-summary-metric-column">Metric</th>
-                                <th class="text-right">{{summary.squad.label}}</th>
-                                <th class="text-right">{{summary.enemy.label}}</th>
+                                <th class="text-right">{{downsSquadLabel}}</th>
+                                <th class="text-right">{{downsEnemyLabel}}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -95,7 +105,7 @@
                     </div>
                 </div>
             </div>
-            <div class="wvw-summary-bottom-panels">
+            <div v-if="activeSummaryTab === 'overview'" class="wvw-summary-bottom-panels">
                 <div class="wvw-summary-side-panel">
                     <div class="wvw-summary-side-panel-title">Top 5 Squad Player Cleanses</div>
                     <div class="wvw-summary-side-panel-subtitle">Outgoing cleanses. Click a player to open Support Stats sorted by cleanses on squad mates.</div>
@@ -211,6 +221,62 @@
                     </div>
                 </div>
             </div>
+            <div v-if="activeSummaryTab === 'downs'" class="wvw-summary-downs-layout">
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Down Outcomes</div>
+                    <div class="wvw-summary-side-panel-subtitle">Tracks how often downs were converted into kills or rezzed back to alive, along with the timing of those outcomes.</div>
+                    <table class="table table-sm table-striped table-hover wvw-summary-table" cellspacing="0" width="100%">
+                        <thead>
+                            <tr>
+                                <th class="text-left wvw-summary-metric-column">Metric</th>
+                                <th class="text-right">{{downsSquadLabel}}</th>
+                                <th class="text-right">{{downsEnemyLabel}}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="row in summary.downsOutcomeRows" :key="'downs-outcome-' + row.label">
+                                <td class="text-left wvw-summary-metric-column">{{row.label}}</td>
+                                <td class="text-right" :class="getValueClass(row, 'squad')">{{formatRowValue(row.squadValue, row)}}</td>
+                                <td class="text-right" :class="getValueClass(row, 'enemy')">{{formatRowValue(row.enemyValue, row)}}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Downed State Conditions</div>
+                    <div class="wvw-summary-side-panel-subtitle">Shows which conditions were present when players entered downstate, including stack ranges for Vulnerability and Burning.</div>
+                    <table class="table table-sm table-striped table-hover wvw-summary-table" cellspacing="0" width="100%">
+                        <thead>
+                            <tr>
+                                <th class="text-left wvw-summary-metric-column">Metric</th>
+                                <th class="text-right">{{downsSquadLabel}}</th>
+                                <th class="text-right">{{downsEnemyLabel}}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="row in summary.downedStateRows" :key="'down-state-' + row.label">
+                                <td class="text-left wvw-summary-metric-column">{{row.label}}</td>
+                                <td class="text-right" :class="getValueClass(row, 'squad')">
+                                    <button v-if="hasDownDetailEntries(row.label, 'squad')" type="button"
+                                        class="wvw-summary-inline-link"
+                                        @click="openDownDetailPopup(row.label, 'squad')">
+                                        {{formatRowValue(row.squadValue, row)}}
+                                    </button>
+                                    <span v-else>{{formatRowValue(row.squadValue, row)}}</span>
+                                </td>
+                                <td class="text-right" :class="getValueClass(row, 'enemy')">
+                                    <button v-if="hasDownDetailEntries(row.label, 'enemy')" type="button"
+                                        class="wvw-summary-inline-link"
+                                        @click="openDownDetailPopup(row.label, 'enemy')">
+                                        {{formatRowValue(row.enemyValue, row)}}
+                                    </button>
+                                    <span v-else>{{formatRowValue(row.enemyValue, row)}}</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
         <div v-else class="wvw-summary-empty">
             Summary data is unavailable for this phase.
@@ -247,6 +313,39 @@
                 </div>
             </div>
         </div>
+        <div v-if="downDetailPopup" class="wvw-summary-modal-backdrop" @click.self="closeDownDetailPopup">
+            <div class="wvw-summary-modal">
+                <button type="button" class="wvw-summary-modal-close" @click="closeDownDetailPopup" aria-label="Close">
+                    &times;
+                </button>
+                <div class="wvw-summary-modal-title">{{downDetailPopup.title}}</div>
+                <div class="wvw-summary-modal-subtitle">
+                    Highest recorded stack value: {{integerWithSpaces(downDetailPopup.stackCount)}}.
+                    <span v-if="combatReplayAvailable">Click an entry to jump to Combat Replay at that down timestamp.</span>
+                    <span v-else>Combat Replay is unavailable for this log.</span>
+                </div>
+                <div v-if="downDetailPopup.entries && downDetailPopup.entries.length > 0" class="wvw-summary-modal-list">
+                    <button v-for="(entry, index) in downDetailPopup.entries"
+                        :key="'down-detail-' + downDetailPopup.key + '-' + index"
+                        type="button"
+                        class="wvw-summary-modal-entry-button"
+                        :disabled="!combatReplayAvailable"
+                        @click="jumpToCombatReplay(entry)">
+                        <div class="wvw-summary-modal-skill">
+                            <img :src="entry.icon" :alt="entry.profession" class="icon" :data-original-title="entry.profession">
+                            <span class="wvw-summary-modal-skill-name" :data-original-title="getSquadPlayerTooltip(entry)">{{entry.name}}</span>
+                        </div>
+                        <div class="wvw-summary-modal-values">
+                            <span class="wvw-summary-modal-count">{{integerWithSpaces(entry.stackCount)}} stacks</span>
+                            <span class="wvw-summary-modal-duration">{{entry.timeLabel}}</span>
+                        </div>
+                    </button>
+                </div>
+                <div v-else class="wvw-summary-side-panel-empty">
+                    No entries are available for this stack maximum.
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -257,10 +356,21 @@
         mixins: [numberComponent, encounterPhaseComponent],
         data: function() {
             return {
+                activeSummaryTab: "overview",
                 crowdControlPopup: null,
+                downDetailPopup: null,
             };
         },
         methods: {
+            setSummarySubTab: function(tab) {
+                this.activeSummaryTab = tab;
+                if (tab !== "overview") {
+                    this.closeCrowdControlDetails();
+                }
+                if (tab !== "downs") {
+                    this.closeDownDetailPopup();
+                }
+            },
             getBoonGenerationValue: function(buffData) {
                 if (buffData instanceof Array) {
                     return buffData[0] || 0;
@@ -346,6 +456,56 @@
             closeCrowdControlDetails: function() {
                 this.crowdControlPopup = null;
             },
+            getDownDetailEntries: function(rowLabel, side) {
+                if (!this.summary) {
+                    return [];
+                }
+                if (rowLabel === "Vulnerability Max Stacks") {
+                    return side === "enemy" ? (this.summary.enemyMaximumVulnerabilityEntries || []) : (this.summary.squadMaximumVulnerabilityEntries || []);
+                }
+                if (rowLabel === "Burning Max Stacks") {
+                    return side === "enemy" ? (this.summary.enemyMaximumBurningEntries || []) : (this.summary.squadMaximumBurningEntries || []);
+                }
+                return [];
+            },
+            hasDownDetailEntries: function(rowLabel, side) {
+                return this.getDownDetailEntries(rowLabel, side).length > 0;
+            },
+            openDownDetailPopup: function(rowLabel, side) {
+                const entries = this.getDownDetailEntries(rowLabel, side);
+                const sideLabel = side === "enemy" ? this.downsEnemyLabel : this.downsSquadLabel;
+                this.closeCrowdControlDetails();
+                this.downDetailPopup = {
+                    key: rowLabel + "-" + side,
+                    title: rowLabel + " - " + sideLabel,
+                    stackCount: entries.length > 0 ? entries[0].stackCount : 0,
+                    entries: entries,
+                };
+            },
+            closeDownDetailPopup: function() {
+                this.downDetailPopup = null;
+            },
+            jumpToCombatReplay: function(entry) {
+                const component = this;
+                if (!entry || !this.combatReplayAvailable) {
+                    return;
+                }
+                this.$root.mode = 1;
+                this.$root.$nextTick(function() {
+                    setTimeout(function() {
+                        if (!animator) {
+                            return;
+                        }
+                        animator.stopAnimate(true);
+                        if (entry.uniqueId != null) {
+                            animator.selectActor(entry.uniqueId);
+                        }
+                        animator.updateTime(entry.time);
+                        animator.updateTextInput();
+                        component.closeDownDetailPopup();
+                    }, 0);
+                });
+            },
             openTargetSummary: function(targetIndex) {
                 this.$emit("select-target", targetIndex);
             }
@@ -356,6 +516,15 @@
             },
             summary: function() {
                 return this.phase.wvwSummary;
+            },
+            combatReplayAvailable: function() {
+                return !!crData;
+            },
+            downsSquadLabel: function() {
+                return "My Squad's Downs";
+            },
+            downsEnemyLabel: function() {
+                return "Enemy Team's Downs";
             },
             topGroupBoonGenerationSections: function() {
                 if (!this.summary || !this.phase.buffsStatContainer) {
