@@ -491,13 +491,66 @@
         props: ["time", "selectedactorid"],
         template: `
         <div v-if="crAnalysis" class="combat-replay-wvw-analysis-panel">
+            <div class="combat-replay-overview-help-row">
+                <button type="button" class="combat-replay-overview-help-button" title="Burst tab help" aria-label="Show burst tab help" @click="showBurstHelp = true">?</button>
+            </div>
             <combat-replay-wvw-analysis-squad-card :time="time" :teamkey="teamKey" @update:teamkey="teamKey = $event"></combat-replay-wvw-analysis-squad-card>
             <combat-replay-wvw-analysis-selected-card :time="time" :selectedactorid="selectedactorid" :teamkey="teamKey"></combat-replay-wvw-analysis-selected-card>
+            <div v-if="showBurstHelp" class="wvw-summary-modal-backdrop" @click.self="showBurstHelp = false">
+                <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay burst tab help">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close burst tab help" @click="showBurstHelp = false">&times;</button>
+                    <div class="wvw-summary-modal-title">Burst Tab Help</div>
+                    <div class="wvw-summary-modal-subtitle">
+                        The Burst tab summarizes the last 3 seconds at the current replay time and lets you compare your squad with the enemy team.
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Team toggle</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>My Squad</strong> shows outgoing pressure from your squad onto hostile players</li>
+                            <li><strong>Enemy Team</strong> flips the same view to hostile players pressuring your squad</li>
+                            <li>The selected-actor card follows the currently chosen side</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Top 5 bursts</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li>Each entry is one precomputed burst window that qualified as both <strong>strong</strong> and <strong>synced</strong></li>
+                            <li>Continuous strong windows are collapsed so only the best synced snapshot from that run is kept</li>
+                            <li>Clicking a burst entry jumps the combat replay to that timestamp</li>
+                            <li>The downs and kills are shown as <strong>window count (running total)</strong></li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Main metrics</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Burst strength</strong>: total damage in the last 3 seconds, with the strong/normal/weak label based on same-fight percentiles</li>
+                            <li><strong>Burst strength badge rules</strong>: <strong>weak</strong> is at or below the 25th percentile of 3-second damage windows in the same fight, <strong>strong</strong> is at or above the 75th percentile, and everything in between is <strong>normal</strong></li>
+                            <li><strong>Strip to burst</strong>: total boon strips in the same 3-second window plus whether strip and damage peaks align closely enough to count as synced</li>
+                            <li><strong>Strip to burst badge rules</strong>: <strong>synced</strong> requires strips in the current window, strip volume at or above the 75th percentile of 3-second strip windows in the same fight, and a peak gap of 1000 ms or less; otherwise it is <strong>not synced</strong></li>
+                            <li><strong>Peak gap</strong>: the time distance between the peak strip bucket and peak damage bucket inside the current 3-second window</li>
+                            <li><strong>Focus fire</strong>: how much damage is concentrated onto the top target and top 3 targets, plus how many attackers made meaningful top-target contributions</li>
+                            <li><strong>Contributors</strong>: attackers who dealt at least 5% of the side's total window damage to the current top target</li>
+                            <li><strong>Focus fire badge rules</strong>: <strong>focused</strong> requires the top target to receive at least 50% of the side's total window damage and at least 3 contributors; otherwise it is <strong>spread</strong></li>
+                            <li><strong>Target saturation</strong>: how many targets took at least 2% of the side's total window damage, flagged as under-saturated, optimal, or over-spread</li>
+                            <li><strong>Target saturation badge rules</strong>: fewer than 3 targets is <strong>under-saturated</strong>, 3 to 5 is <strong>optimal</strong>, and more than 5 is <strong>over-spread</strong></li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Selected actor card</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li>Select a player or hostile player in the replay to see actor-specific detail for the current side</li>
+                            <li>Attackers show their outgoing damage, strips, focus contribution, targets hit, and nearby targets within 1200</li>
+                            <li>Targets show incoming damage, strips taken, attacker count, nearby attackers within 1200, and their top 3 attackers</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </div>
         `,
         data: function () {
             return {
                 teamKey: "squad",
+                showBurstHelp: false,
             };
         },
     });
