@@ -35,7 +35,7 @@
                                 <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
                                 <img :src="player.icon" :alt="player.profession" class="icon"
                                     :data-original-title="player.profession">
-                                <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                                <span class="wvw-summary-top-player-name" :data-original-title="getSquadPlayerTooltip(player)">{{player.name}}</span>
                                 <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
                             </button>
                             <div v-if="summary.topDamagePlayers.length === 0" class="wvw-summary-side-panel-empty">
@@ -51,7 +51,7 @@
                                 <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
                                 <img :src="player.icon" :alt="player.profession" class="icon"
                                     :data-original-title="player.profession">
-                                <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                                <span class="wvw-summary-top-player-name" :data-original-title="getSquadPlayerTooltip(player)">{{player.name}}</span>
                                 <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
                             </button>
                             <div v-if="summary.topStripPlayers.length === 0" class="wvw-summary-side-panel-empty">
@@ -105,7 +105,7 @@
                         <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
                         <img :src="player.icon" :alt="player.profession" class="icon"
                             :data-original-title="player.profession">
-                        <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                        <span class="wvw-summary-top-player-name" :data-original-title="getSquadPlayerTooltip(player)">{{player.name}}</span>
                         <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
                     </button>
                     <div v-if="summary.topCleansePlayers.length === 0" class="wvw-summary-side-panel-empty">
@@ -121,7 +121,7 @@
                         <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
                         <img :src="player.icon" :alt="player.profession" class="icon"
                             :data-original-title="player.profession">
-                        <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                        <span class="wvw-summary-top-player-name" :data-original-title="getSquadPlayerTooltip(player)">{{player.name}}</span>
                         <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
                     </button>
                     <div v-if="summary.hasBarrierData && summary.topBarrierPlayers.length === 0" class="wvw-summary-side-panel-empty">
@@ -140,7 +140,7 @@
                         <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
                         <img :src="player.icon" :alt="player.profession" class="icon"
                             :data-original-title="player.profession">
-                        <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                        <span class="wvw-summary-top-player-name" :data-original-title="getSquadPlayerTooltip(player)">{{player.name}}</span>
                         <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
                     </button>
                     <div v-if="summary.hasHealingData && summary.topHealingPlayers.length === 0" class="wvw-summary-side-panel-empty">
@@ -148,6 +148,47 @@
                     </div>
                     <div v-if="!summary.hasHealingData" class="wvw-summary-side-panel-empty">
                         Healing add-on data is unavailable for this log.
+                    </div>
+                </div>
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Top 5 Squad Player CC</div>
+                    <div class="wvw-summary-side-panel-subtitle">Outgoing CC effects onto enemy players. Click a player to see the CCs used.</div>
+                    <button v-for="(player, index) in summary.topCrowdControlPlayers" :key="'squad-cc-' + player.playerIndex"
+                        type="button" class="wvw-summary-top-player"
+                        @click="openCrowdControlDetails(player, 'Squad CC Details', false)">
+                        <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                        <img :src="player.icon" :alt="player.profession" class="icon"
+                            :data-original-title="player.profession">
+                        <span class="wvw-summary-top-player-name" :data-original-title="getSquadPlayerTooltip(player)">{{player.name}}</span>
+                        <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
+                    </button>
+                    <div v-if="summary.hasCrowdControlData && summary.topCrowdControlPlayers.length === 0" class="wvw-summary-side-panel-empty">
+                        No squad CC effects onto enemy players were recorded for this phase.
+                    </div>
+                    <div v-if="!summary.hasCrowdControlData" class="wvw-summary-side-panel-empty">
+                        Crowd control event data is unavailable for this log.
+                    </div>
+                </div>
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Top 5 Enemy Player CC</div>
+                    <div class="wvw-summary-side-panel-subtitle">Outgoing CC effects onto squad players. Showing total and inferred effective CC. Click an enemy to see the CCs used.</div>
+                    <button v-for="(player, index) in summary.topEnemyCrowdControlPlayers" :key="'enemy-cc-' + player.playerIndex"
+                        type="button" class="wvw-summary-top-player"
+                        @click="openCrowdControlDetails(player, 'Enemy CC Details', true)">
+                        <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                        <img :src="player.icon" :alt="player.profession" class="icon"
+                            :data-original-title="player.profession">
+                        <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                        <span class="wvw-summary-top-player-cc-values">
+                            <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}} total</span>
+                            <span class="wvw-summary-top-player-subvalue">{{integerWithSpaces(player.effectiveAmount)}} effective</span>
+                        </span>
+                    </button>
+                    <div v-if="summary.hasCrowdControlData && summary.topEnemyCrowdControlPlayers.length === 0" class="wvw-summary-side-panel-empty">
+                        No enemy CC effects onto squad players were recorded for this phase.
+                    </div>
+                    <div v-if="!summary.hasCrowdControlData" class="wvw-summary-side-panel-empty">
+                        Crowd control event data is unavailable for this log.
                     </div>
                 </div>
                 <div v-for="section in topGroupBoonGenerationSections" :key="'boon-group-' + section.buffId" class="wvw-summary-side-panel">
@@ -162,7 +203,7 @@
                         <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
                         <img :src="player.icon" :alt="player.profession" class="icon"
                             :data-original-title="player.profession">
-                        <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
+                        <span class="wvw-summary-top-player-name" :data-original-title="getSquadPlayerTooltip(player)">{{player.name}}</span>
                         <span class="wvw-summary-top-player-damage">{{formatBoonGenerationValue(section, player.amount)}}</span>
                     </button>
                     <div v-if="section.players.length === 0" class="wvw-summary-side-panel-empty">
@@ -174,6 +215,38 @@
         <div v-else class="wvw-summary-empty">
             Summary data is unavailable for this phase.
         </div>
+        <div v-if="crowdControlPopup" class="wvw-summary-modal-backdrop" @click.self="closeCrowdControlDetails">
+            <div class="wvw-summary-modal">
+                <button type="button" class="wvw-summary-modal-close" @click="closeCrowdControlDetails" aria-label="Close">
+                    &times;
+                </button>
+                <div class="wvw-summary-modal-title">{{crowdControlPopup.title}}</div>
+                <div class="wvw-summary-modal-subtitle">
+                    {{crowdControlPopup.player.name}} applied {{integerWithSpaces(crowdControlPopup.player.amount)}} CC effects
+                    <span v-if="crowdControlPopup.showEffectiveCounts">and {{integerWithSpaces(crowdControlPopup.player.effectiveAmount)}} were inferred to affect the target</span>
+                    for {{formatSeconds(crowdControlPopup.player.totalDuration)}} of total CC duration in this phase.
+                </div>
+                <div v-if="crowdControlPopup.player.skillDetails && crowdControlPopup.player.skillDetails.length > 0" class="wvw-summary-modal-list">
+                    <div v-for="detail in crowdControlPopup.player.skillDetails" :key="'cc-detail-' + detail.skillId" class="wvw-summary-modal-row">
+                        <div class="wvw-summary-modal-skill">
+                            <img :src="detail.icon" :alt="detail.name" class="icon icon-hover">
+                            <span class="wvw-summary-modal-skill-name">{{detail.name}}</span>
+                        </div>
+                        <div class="wvw-summary-modal-values">
+                            <span class="wvw-summary-modal-count">{{integerWithSpaces(detail.count)}}<span v-if="crowdControlPopup.showEffectiveCounts"> total</span></span>
+                            <span v-if="crowdControlPopup.showEffectiveCounts" class="wvw-summary-modal-effective">{{integerWithSpaces(detail.effectiveCount)}} effective</span>
+                            <span class="wvw-summary-modal-duration">{{formatSeconds(detail.totalDuration)}}</span>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="wvw-summary-side-panel-empty">
+                    Detailed CC skill information is unavailable for this player.
+                </div>
+                <div v-if="crowdControlPopup.showEffectiveCounts" class="wvw-summary-modal-note">
+                    Effective CC is inferred from the target not having Stability at the CC timestamp.
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -182,12 +255,29 @@
         props: ["phaseindex"],
         template: `${template}`,
         mixins: [numberComponent, encounterPhaseComponent],
+        data: function() {
+            return {
+                crowdControlPopup: null,
+            };
+        },
         methods: {
             getBoonGenerationValue: function(buffData) {
                 if (buffData instanceof Array) {
                     return buffData[0] || 0;
                 }
                 return 0;
+            },
+            getSquadPlayerTooltip: function(player) {
+                if (player && player.acc) {
+                    return player.name + " - " + player.acc;
+                }
+                if (player && player.account) {
+                    return player.name + " - " + player.account;
+                }
+                return player ? player.name : "";
+            },
+            formatSeconds: function(value) {
+                return this.round1(value) + "s";
             },
             formatBoonGenerationValue: function(section, value) {
                 if (section.stacking) {
@@ -246,6 +336,16 @@
                     buffId: buffId,
                 });
             },
+            openCrowdControlDetails: function(player, title, showEffectiveCounts) {
+                this.crowdControlPopup = {
+                    title: title,
+                    player: player,
+                    showEffectiveCounts: !!showEffectiveCounts,
+                };
+            },
+            closeCrowdControlDetails: function() {
+                this.crowdControlPopup = null;
+            },
             openTargetSummary: function(targetIndex) {
                 this.$emit("select-target", targetIndex);
             }
@@ -289,6 +389,7 @@
                         topPlayers.push({
                             playerIndex: typeof player.id === "number" ? player.id : j,
                             name: player.name,
+                            acc: player.acc,
                             profession: player.profession,
                             icon: player.icon,
                             amount: amount,

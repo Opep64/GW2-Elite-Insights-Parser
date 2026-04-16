@@ -19,6 +19,7 @@ internal class WvwSummaryDto
     public int TotalSquadPlayers { get; set; }
     public bool HasHealingData { get; set; }
     public bool HasBarrierData { get; set; }
+    public bool HasCrowdControlData { get; set; }
     public List<WvwSummaryMetricRowDto> MetricRows { get; set; } = [];
     public WvwSummarySideDto Squad { get; set; } = new();
     public WvwSummarySideDto Enemy { get; set; } = new();
@@ -27,8 +28,10 @@ internal class WvwSummaryDto
     public List<WvwSummaryTopPlayerDto> TopCleansePlayers { get; set; } = [];
     public List<WvwSummaryTopPlayerDto> TopBarrierPlayers { get; set; } = [];
     public List<WvwSummaryTopPlayerDto> TopHealingPlayers { get; set; } = [];
+    public List<WvwSummaryTopPlayerDto> TopCrowdControlPlayers { get; set; } = [];
     public List<WvwSummaryTopPlayerDto> TopEnemyDamagePlayers { get; set; } = [];
     public List<WvwSummaryTopPlayerDto> TopEnemyStripPlayers { get; set; } = [];
+    public List<WvwSummaryTopPlayerDto> TopEnemyCrowdControlPlayers { get; set; } = [];
 
     public static WvwSummaryDto? Build(ParsedEvtcLog log, PhaseData phase)
     {
@@ -60,6 +63,7 @@ internal class WvwSummaryDto
             HealStatsNotice = BuildHealStatsNotice(healAddonPlayerCount, squadActors.Count),
             HasHealingData = log.CombatData.HasEXTHealing,
             HasBarrierData = log.CombatData.HasEXTBarrier,
+            HasCrowdControlData = log.CombatData.HasCrowdControlData,
             Squad = squad,
             Enemy = enemy,
             MetricRows = BuildMetricRows(durationInMilliseconds, squad, enemy),
@@ -68,8 +72,10 @@ internal class WvwSummaryDto
             TopCleansePlayers = BuildTopCleansePlayers(log, squadActors, phase),
             TopBarrierPlayers = BuildTopBarrierPlayers(log, squadActors, phase),
             TopHealingPlayers = BuildTopHealingPlayers(log, squadActors, phase),
+            TopCrowdControlPlayers = BuildTopCrowdControlPlayers(log, squadActors, hostilePlayerTargets, actor => GetFriendlyPlayerIndex(log, actor), phase),
             TopEnemyDamagePlayers = BuildTopEnemyDamagePlayers(log, phase, hostilePlayerTargets, squadActors),
             TopEnemyStripPlayers = BuildTopEnemyStripPlayers(log, hostilePlayerTargets, phase),
+            TopEnemyCrowdControlPlayers = BuildTopCrowdControlPlayers(log, hostilePlayerTargets, squadActors, actor => GetTargetIndex(log, actor), phase),
         };
     }
 
@@ -258,6 +264,89 @@ internal class WvwSummaryDto
             actor => actor.GetToAllySupportStats(log, phase.Start, phase.End).BoonStripCount);
     }
 
+    private static List<WvwSummaryTopPlayerDto> BuildTopCrowdControlPlayers(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> actors,
+        IReadOnlyList<SingleActor> targets,
+        Func<SingleActor, int> indexGetter,
+        PhaseData phase)
+    {
+        var result = new List<WvwSummaryTopPlayerDto>(Math.Min(5, actors.Count));
+        foreach (SingleActor actor in actors)
+        {
+            int actorIndex = indexGetter(actor);
+            if (actorIndex < 0)
+            {
+                continue;
+            }
+
+            var crowdControlEvents = new List<WvwSummaryCrowdControlEventInfo>();
+            foreach (SingleActor target in targets)
+            {
+                foreach (CrowdControlEvent crowdControlEvent in actor.GetJustOutgoingActorCrowdControlEvents(target, log, phase.Start, phase.End))
+                {
+                    crowdControlEvents.Add(new WvwSummaryCrowdControlEventInfo
+                    {
+                        Event = crowdControlEvent,
+                        Effective = IsCrowdControlEffective(log, target, crowdControlEvent),
+                    });
+                }
+            }
+
+            result.Add(new WvwSummaryTopPlayerDto
+            {
+                PlayerIndex = actorIndex,
+                Name = actor.Character,
+                Account = actor.Account,
+                Profession = actor.Spec.ToString(),
+                Icon = actor.GetIcon(),
+                Amount = crowdControlEvents.Count,
+                EffectiveAmount = crowdControlEvents.Count(ccEvent => ccEvent.Effective),
+                TotalDuration = Math.Round(crowdControlEvents.Sum(ccEvent => ccEvent.Event.Duration) / 1000.0, TimeDigit),
+                SkillDetails = BuildCrowdControlSkillDetails(crowdControlEvents),
+            });
+        }
+
+        return result
+            .Where(player => player.Amount > 0)
+            .OrderByDescending(player => player.Amount)
+            .ThenByDescending(player => player.EffectiveAmount)
+            .ThenByDescending(player => player.TotalDuration)
+            .ThenBy(player => player.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(5)
+            .ToList();
+    }
+
+    private static bool IsCrowdControlEffective(ParsedEvtcLog log, SingleActor target, CrowdControlEvent crowdControlEvent)
+    {
+        long stabilityCheckTime = Math.Max(log.LogData.LogStart, crowdControlEvent.Time - ServerDelayConstant);
+        return !target.HasBuff(log, GW2EIEvtcParser.SkillIDs.Stability, stabilityCheckTime);
+    }
+
+    private static List<WvwSummarySkillDetailDto> BuildCrowdControlSkillDetails(IReadOnlyList<WvwSummaryCrowdControlEventInfo> crowdControlEvents)
+    {
+        return crowdControlEvents
+            .GroupBy(ccEvent => ccEvent.Event.SkillID)
+            .Select(group =>
+            {
+                WvwSummaryCrowdControlEventInfo firstEvent = group.First();
+                return new WvwSummarySkillDetailDto
+                {
+                    SkillId = firstEvent.Event.SkillID,
+                    Name = firstEvent.Event.Skill.Name,
+                    Icon = firstEvent.Event.Skill.Icon,
+                    Count = group.Count(),
+                    EffectiveCount = group.Count(ccEvent => ccEvent.Effective),
+                    TotalDuration = Math.Round(group.Sum(ccEvent => ccEvent.Event.Duration) / 1000.0, TimeDigit),
+                };
+            })
+            .OrderByDescending(detail => detail.Count)
+            .ThenByDescending(detail => detail.EffectiveCount)
+            .ThenByDescending(detail => detail.TotalDuration)
+            .ThenBy(detail => detail.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     private static List<WvwSummaryTopPlayerDto> BuildTopPlayers(IReadOnlyList<SingleActor> actors, Func<SingleActor, int> indexGetter, Func<SingleActor, long> valueGetter)
     {
         var result = new List<WvwSummaryTopPlayerDto>(Math.Min(5, actors.Count));
@@ -273,6 +362,7 @@ internal class WvwSummaryDto
             {
                 PlayerIndex = actorIndex,
                 Name = actor.Character,
+                Account = actor.Account,
                 Profession = actor.Spec.ToString(),
                 Icon = actor.GetIcon(),
                 Amount = valueGetter(actor),
@@ -362,7 +452,27 @@ internal class WvwSummaryTopPlayerDto
 {
     public int PlayerIndex { get; set; }
     public string Name { get; set; } = "";
+    public string Account { get; set; } = "";
     public string Profession { get; set; } = "";
     public string Icon { get; set; } = "";
     public long Amount { get; set; }
+    public int EffectiveAmount { get; set; }
+    public double TotalDuration { get; set; }
+    public List<WvwSummarySkillDetailDto> SkillDetails { get; set; } = [];
+}
+
+internal class WvwSummarySkillDetailDto
+{
+    public long SkillId { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public int Count { get; set; }
+    public int EffectiveCount { get; set; }
+    public double TotalDuration { get; set; }
+}
+
+internal class WvwSummaryCrowdControlEventInfo
+{
+    public CrowdControlEvent Event { get; set; } = null!;
+    public bool Effective { get; set; }
 }
