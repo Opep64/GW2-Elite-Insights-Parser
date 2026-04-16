@@ -483,6 +483,54 @@ h6.actor-shorten-cr-compact {
     text-align: center;
 }
 
+.combat-replay-threat-boon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+}
+
+.combat-replay-threat-boon-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.88rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.combat-replay-threat-boon-icon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+}
+
+.combat-replay-threat-player-boons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.combat-replay-threat-player-boon-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid rgba(124, 130, 136, 0.35);
+    border-radius: 0.3rem;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.combat-replay-threat-player-boon-values {
+    display: flex;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
 .combat-replay-wvw-analysis-bursts {
     display: flex;
     flex-direction: column;

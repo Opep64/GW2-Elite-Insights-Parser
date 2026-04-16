@@ -92,6 +92,9 @@
             formatTime: function (time) {
                 return (Number(time || 0) / 1000.0).toFixed(3) + "s";
             },
+            formatDurationSeconds: function (time) {
+                return (Number(time || 0) / 1000.0).toFixed(1) + "s";
+            },
             jumpToBurst: function (time) {
                 if (!animator) {
                     return;
@@ -108,6 +111,9 @@
                     return null;
                 }
                 return teamKey === "enemy" ? this.crAnalysis.enemy : this.crAnalysis.squad;
+            },
+            getThreatAnalysis: function () {
+                return this.crAnalysis && this.crAnalysis.threatBoons ? this.crAnalysis.threatBoons : null;
             },
         }
     };
@@ -133,6 +139,9 @@
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: overviewMode === 1}" @click="overviewMode = 1">Burst</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: overviewMode === 2}" @click="overviewMode = 2">Weighted Boons</a>
+                </li>
             </ul>
             <div v-if="!hasanalysis || overviewMode === 0" class="d-flex flex-column">
                 <div class="combat-replay-overview-help-row">
@@ -140,7 +149,8 @@
                 </div>
                 <combat-replay-overview-stats-component :time="time" :selectedactorid="selectedactorid" :targetless="targetless"></combat-replay-overview-stats-component>
             </div>
-            <combat-replay-wvw-analysis-component v-else :time="time" :selectedactorid="selectedactorid"></combat-replay-wvw-analysis-component>
+            <combat-replay-wvw-analysis-component v-else-if="overviewMode === 1" :time="time" :selectedactorid="selectedactorid"></combat-replay-wvw-analysis-component>
+            <combat-replay-threat-boons-component v-else :time="time" :selectedactorid="selectedactorid"></combat-replay-threat-boons-component>
             <div v-if="showOverviewHelp" class="wvw-summary-modal-backdrop" @click.self="showOverviewHelp = false">
                 <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay compact card help">
                     <button type="button" class="wvw-summary-modal-close" aria-label="Close compact card help" @click="showOverviewHelp = false">&times;</button>
@@ -551,6 +561,195 @@
             return {
                 teamKey: "squad",
                 showBurstHelp: false,
+            };
+        },
+    });
+
+    Vue.component("combat-replay-threat-boons-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time", "selectedactorid"],
+        template: `
+        <div v-if="threatAnalysis" class="combat-replay-wvw-analysis-panel">
+            <div class="combat-replay-overview-help-row">
+                <button type="button" class="combat-replay-overview-help-button" title="Weighted boons help" aria-label="Show weighted boons help" @click="showWeightedBoonsHelp = true">?</button>
+            </div>
+            <div class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">Weighted Boon Battle Summary</div>
+                <div class="combat-replay-wvw-analysis-detail text-center">
+                    Aggregated threat-weighted boon coverage across the full fight.
+                </div>
+                <div class="combat-replay-threat-boon-grid">
+                    <div v-for="boon in boons" :key="'weighted-boon-summary-' + boon.id" class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-threat-boon-title">
+                            <img :src="boon.icon" :alt="boon.name" class="combat-replay-threat-boon-icon">
+                            <span>{{boon.name}}</span>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatPercent(boon.summaryCoverage)}} full-fight weighted uptime</div>
+                        <div v-if="boon.stackBased" class="combat-replay-wvw-analysis-detail">{{boon.summaryAverageStacks.toFixed(1)}} full-fight avg stacks while threatened</div>
+                        <div v-if="boon.tracksOverapplication" class="combat-replay-wvw-analysis-detail">{{formatPercent(boon.summaryOverapplication)}} full-fight over-applied</div>
+                    </div>
+                </div>
+            </div>
+            <div class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">Weighted Boon Coverage Now</div>
+                <div class="combat-replay-wvw-analysis-detail text-center">
+                    {{formatCount(threatenedPlayerCount)}} squad players currently have at least one enemy within {{threatRange}} range.
+                </div>
+                <div class="combat-replay-threat-boon-grid">
+                    <div v-for="boon in boons" :key="'weighted-boon-current-' + boon.id" class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-threat-boon-title">
+                            <img :src="boon.icon" :alt="boon.name" class="combat-replay-threat-boon-icon">
+                            <span>{{boon.name}}</span>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatPercent(getBoonCurrentCoverage(boon))}} current coverage</div>
+                        <div class="combat-replay-wvw-analysis-detail">{{formatPercent(getBoonRunningCoverage(boon))}} weighted uptime so far</div>
+                        <div v-if="boon.stackBased" class="combat-replay-wvw-analysis-detail">{{getBoonAverageStacks(boon).toFixed(1)}} avg stacks on threatened players</div>
+                        <div v-if="boon.tracksOverapplication" class="combat-replay-wvw-analysis-detail">{{formatPercent(getBoonCurrentOverapplication(boon))}} over-applied now</div>
+                    </div>
+                </div>
+            </div>
+            <div class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">Selected Squad Player</div>
+                <div v-if="selectedPlayer && selectedPlayerTimeline" class="combat-replay-wvw-analysis-selected">
+                    <div class="combat-replay-wvw-analysis-selected-header">
+                        <img :src="selectedPlayer.icon" :alt="selectedPlayer.profession || selectedPlayer.name" class="combat-replay-wvw-analysis-selected-icon">
+                        <div>
+                            <div class="combat-replay-wvw-analysis-selected-name">{{selectedPlayer.name}}</div>
+                            <div class="combat-replay-wvw-analysis-selected-type">
+                                {{formatCount(nearbyEnemies)}} nearby enemies, {{isThreatened ? 'currently threatened' : 'not currently threatened'}}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-grid">
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Threat time so far</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatDurationSeconds(runningThreatTime)}}</div>
+                        </div>
+                    </div>
+                    <div class="combat-replay-threat-player-boons">
+                        <div v-for="boon in selectedPlayerBoons" :key="'player-threat-boon-' + boon.id" class="combat-replay-threat-player-boon-row">
+                            <div class="combat-replay-threat-boon-title">
+                                <img :src="boon.icon" :alt="boon.name" class="combat-replay-threat-boon-icon">
+                                <span>{{boon.name}}</span>
+                            </div>
+                            <div class="combat-replay-threat-player-boon-values">
+                                <span>{{formatPercent(boon.runningCoverage)}} threat uptime</span>
+                                <span>{{boon.stackBased ? formatCount(boon.currentStacks) + ' stacks now' : (boon.currentStacks > 0 ? 'active now' : 'inactive now')}}</span>
+                                <span v-if="boon.tracksOverapplication">{{formatPercent(boon.runningOverapplication)}} over-applied</span>
+                                <span v-if="boon.tracksOverapplication">{{boon.currentStacks >= boon.overapplicationThreshold ? 'over-applied now' : 'not over-applied now'}}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="combat-replay-wvw-analysis-helper">
+                    Select a squad player in the replay to view weighted boon coverage.
+                </div>
+            </div>
+            <div v-if="showWeightedBoonsHelp" class="wvw-summary-modal-backdrop" @click.self="showWeightedBoonsHelp = false">
+                <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay weighted boons help">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close weighted boons help" @click="showWeightedBoonsHelp = false">&times;</button>
+                    <div class="wvw-summary-modal-title">Weighted Boons Help</div>
+                    <div class="wvw-summary-modal-subtitle">
+                        The Weighted Boons tab measures boon coverage only while squad players are under threat, instead of treating all uptime as equally valuable.
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Threat definition</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li>A squad player is considered threatened when at least one hostile player is within {{threatRange}} range</li>
+                            <li>Weighted uptime is calculated only from those threatened snapshots</li>
+                            <li>The current card shows the replay moment right now, while the battle summary aggregates the full fight</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Battle summary</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Full-fight weighted uptime</strong> is the percentage of threatened player-snapshots where the boon was active</li>
+                            <li><strong>Full-fight average stacks</strong> is the average boon stack count across threatened player-snapshots</li>
+                            <li><strong>Full-fight over-applied</strong> appears for Stability and shows how often threatened player-snapshots had over-applied Stability</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Current coverage</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Current coverage</strong> is the percentage of currently threatened squad players who have the boon right now</li>
+                            <li><strong>Weighted uptime so far</strong> is the running weighted uptime from the fight start to the current replay time</li>
+                            <li><strong>Average stacks</strong> is the current average stack count across threatened players for stack-based boons</li>
+                            <li><strong>Over-applied now</strong> appears for Stability and shows the percentage of currently threatened players with over-applied Stability</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Stability over-application</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li>Stability is considered <strong>over-applied</strong> when a player has <strong>10 or more stacks</strong> of Stability</li>
+                            <li>The selected player row shows both the running percentage of threatened time spent over-applied and whether the player is over-applied right now</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `,
+        computed: {
+            threatAnalysis: function () {
+                return this.getThreatAnalysis();
+            },
+            threatenedPlayerCount: function () {
+                return this.getSeriesValue(this.threatAnalysis ? this.threatAnalysis.threatenedPlayerCount : null, this.snapshotIndex);
+            },
+            threatRange: function () {
+                return this.threatAnalysis ? this.threatAnalysis.threatRange : 1200;
+            },
+            boons: function () {
+                return this.threatAnalysis && this.threatAnalysis.boons ? this.threatAnalysis.boons : [];
+            },
+            selectedPlayerTimeline: function () {
+                return this.threatAnalysis && this.selectedactorid != null ? this.threatAnalysis.players[this.selectedactorid] : null;
+            },
+            selectedPlayer: function () {
+                return this.selectedPlayerTimeline ? this.getPlayerByUniqueId(this.selectedactorid) : null;
+            },
+            nearbyEnemies: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.nearbyEnemies, this.snapshotIndex) : 0;
+            },
+            isThreatened: function () {
+                return !!(this.selectedPlayerTimeline && this.getSeriesValue(this.selectedPlayerTimeline.threatened, this.snapshotIndex));
+            },
+            runningThreatTime: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.runningThreatTime, this.snapshotIndex) : 0;
+            },
+            selectedPlayerBoons: function () {
+                if (!this.selectedPlayerTimeline || !this.selectedPlayerTimeline.boons) {
+                    return [];
+                }
+                return this.selectedPlayerTimeline.boons.map(boon => ({
+                    id: boon.id,
+                    name: boon.name,
+                    icon: boon.icon,
+                    stackBased: boon.stackBased,
+                    tracksOverapplication: boon.tracksOverapplication,
+                    overapplicationThreshold: boon.overapplicationThreshold,
+                    currentStacks: this.getSeriesValue(boon.currentStacks, this.snapshotIndex),
+                    runningCoverage: this.getSeriesValue(boon.runningCoverage, this.snapshotIndex),
+                    runningOverapplication: this.getSeriesValue(boon.runningOverapplication, this.snapshotIndex),
+                }));
+            },
+        },
+        methods: {
+            getBoonCurrentCoverage: function (boon) {
+                return this.getSeriesValue(boon.currentCoverage, this.snapshotIndex);
+            },
+            getBoonRunningCoverage: function (boon) {
+                return this.getSeriesValue(boon.runningCoverage, this.snapshotIndex);
+            },
+            getBoonAverageStacks: function (boon) {
+                return this.getSeriesValue(boon.currentAverageStacks, this.snapshotIndex);
+            },
+            getBoonCurrentOverapplication: function (boon) {
+                return this.getSeriesValue(boon.currentOverapplication, this.snapshotIndex);
+            },
+        },
+        data: function () {
+            return {
+                showWeightedBoonsHelp: false,
             };
         },
     });

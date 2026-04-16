@@ -3,6 +3,7 @@ using GW2EIEvtcParser;
 using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.LogLogic;
 using GW2EIEvtcParser.ParsedData;
+using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
 
 namespace GW2EIBuilders.HtmlModels;
@@ -13,6 +14,7 @@ internal class CombatReplayAnalysisDto
     public long[] Times { get; set; } = [];
     public CombatReplayTeamAnalysisDto Squad { get; set; } = new();
     public CombatReplayTeamAnalysisDto Enemy { get; set; } = new();
+    public CombatReplayThreatBoonAnalysisDto ThreatBoons { get; set; } = new();
 }
 
 internal class CombatReplayTeamAnalysisDto
@@ -69,6 +71,54 @@ internal class CombatReplayAnalysisTargetTimelineDto
     public long[][] TopAttackerDamage { get; set; } = [];
 }
 
+internal class CombatReplayThreatBoonAnalysisDto
+{
+    public string Label { get; set; } = "";
+    public int ThreatRange { get; set; }
+    public int[] ThreatenedPlayerCount { get; set; } = [];
+    public List<CombatReplayThreatBoonTimelineDto> Boons { get; set; } = [];
+    public Dictionary<int, CombatReplayThreatPlayerTimelineDto> Players { get; set; } = [];
+}
+
+internal class CombatReplayThreatBoonTimelineDto
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public bool StackBased { get; set; }
+    public bool TracksOverapplication { get; set; }
+    public int OverapplicationThreshold { get; set; }
+    public double[] CurrentCoverage { get; set; } = [];
+    public double[] RunningCoverage { get; set; } = [];
+    public double[] CurrentAverageStacks { get; set; } = [];
+    public double[] CurrentOverapplication { get; set; } = [];
+    public double[] RunningOverapplication { get; set; } = [];
+    public double SummaryCoverage { get; set; }
+    public double SummaryAverageStacks { get; set; }
+    public double SummaryOverapplication { get; set; }
+}
+
+internal class CombatReplayThreatPlayerTimelineDto
+{
+    public int[] NearbyEnemies { get; set; } = [];
+    public bool[] Threatened { get; set; } = [];
+    public long[] RunningThreatTime { get; set; } = [];
+    public List<CombatReplayThreatPlayerBoonTimelineDto> Boons { get; set; } = [];
+}
+
+internal class CombatReplayThreatPlayerBoonTimelineDto
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public bool StackBased { get; set; }
+    public bool TracksOverapplication { get; set; }
+    public int OverapplicationThreshold { get; set; }
+    public int[] CurrentStacks { get; set; } = [];
+    public double[] RunningCoverage { get; set; } = [];
+    public double[] RunningOverapplication { get; set; } = [];
+}
+
 internal static class CombatReplayAnalysisBuilder
 {
     private const int LookbackWindow = 3000;
@@ -117,13 +167,15 @@ internal static class CombatReplayAnalysisBuilder
             hostileTargets,
             squadPlayers,
             "Enemy Team");
+        var squadAnalysis = BuildTeamAnalysis(log, squadContext, boonIDs, times, snapshotCount);
 
         return new CombatReplayAnalysisDto
         {
             Lookback = LookbackWindow,
             Times = times,
-            Squad = BuildTeamAnalysis(log, squadContext, boonIDs, times, snapshotCount),
+            Squad = squadAnalysis,
             Enemy = BuildTeamAnalysis(log, enemyContext, boonIDs, times, snapshotCount),
+            ThreatBoons = BuildThreatBoonAnalysis(log, squadPlayers, times, pollingRate, squadAnalysis),
         };
     }
 
@@ -406,6 +458,195 @@ internal static class CombatReplayAnalysisBuilder
         return result;
     }
 
+    private static CombatReplayThreatBoonAnalysisDto BuildThreatBoonAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        long[] times,
+        int pollingRate,
+        CombatReplayTeamAnalysisDto squadAnalysis)
+    {
+        var boonDefinitions = new[]
+        {
+            CreateThreatBoonDefinition(log, Stability, true, true, 10),
+            CreateThreatBoonDefinition(log, Protection, false),
+            CreateThreatBoonDefinition(log, Resolution, false),
+            CreateThreatBoonDefinition(log, Resistance, false),
+            CreateThreatBoonDefinition(log, Aegis, false),
+            CreateThreatBoonDefinition(log, Might, true),
+            CreateThreatBoonDefinition(log, Fury, false),
+            CreateThreatBoonDefinition(log, Quickness, false),
+        };
+
+        var snapshotCount = times.Length;
+        var result = new CombatReplayThreatBoonAnalysisDto
+        {
+            Label = "My Squad",
+            ThreatRange = (int)RangeThreshold,
+            ThreatenedPlayerCount = new int[snapshotCount],
+            Boons = [.. boonDefinitions.Select(definition => new CombatReplayThreatBoonTimelineDto
+            {
+                Id = definition.Id,
+                Name = definition.Name,
+                Icon = definition.Icon,
+                StackBased = definition.StackBased,
+                TracksOverapplication = definition.TracksOverapplication,
+                OverapplicationThreshold = definition.OverapplicationThreshold,
+                CurrentCoverage = new double[snapshotCount],
+                RunningCoverage = new double[snapshotCount],
+                CurrentAverageStacks = new double[snapshotCount],
+                CurrentOverapplication = new double[snapshotCount],
+                RunningOverapplication = new double[snapshotCount],
+            })],
+            Players = squadPlayers.ToDictionary(
+                player => player.UniqueID,
+                player => new CombatReplayThreatPlayerTimelineDto
+                {
+                    NearbyEnemies = squadAnalysis.Attackers[player.UniqueID].NearbyTargets,
+                    Threatened = new bool[snapshotCount],
+                    RunningThreatTime = new long[snapshotCount],
+                    Boons = [.. boonDefinitions.Select(definition => new CombatReplayThreatPlayerBoonTimelineDto
+                    {
+                        Id = definition.Id,
+                        Name = definition.Name,
+                        Icon = definition.Icon,
+                        StackBased = definition.StackBased,
+                        TracksOverapplication = definition.TracksOverapplication,
+                        OverapplicationThreshold = definition.OverapplicationThreshold,
+                        CurrentStacks = new int[snapshotCount],
+                        RunningCoverage = new double[snapshotCount],
+                        RunningOverapplication = new double[snapshotCount],
+                    })],
+                }),
+        };
+
+        var playerThreatSamples = squadPlayers.ToDictionary(player => player.UniqueID, _ => 0);
+        var playerThreatTime = squadPlayers.ToDictionary(player => player.UniqueID, _ => 0L);
+        var playerActiveThreatSamples = squadPlayers.ToDictionary(
+            player => player.UniqueID,
+            _ => boonDefinitions.ToDictionary(definition => definition.Id, _ => 0));
+        var playerOverappliedThreatSamples = squadPlayers.ToDictionary(
+            player => player.UniqueID,
+            _ => boonDefinitions.ToDictionary(definition => definition.Id, _ => 0));
+        var squadThreatSamples = 0;
+        var squadActiveThreatSamples = boonDefinitions.ToDictionary(definition => definition.Id, _ => 0);
+        var squadThreatStackSums = boonDefinitions.ToDictionary(definition => definition.Id, _ => 0);
+        var squadOverappliedThreatSamples = boonDefinitions.ToDictionary(definition => definition.Id, _ => 0);
+
+        for (var snapshotIndex = 0; snapshotIndex < snapshotCount; snapshotIndex++)
+        {
+            var threatenedNow = 0;
+            var activeNow = boonDefinitions.ToDictionary(definition => definition.Id, _ => 0);
+            var stackSumsNow = boonDefinitions.ToDictionary(definition => definition.Id, _ => 0);
+            var overappliedNow = boonDefinitions.ToDictionary(definition => definition.Id, _ => 0);
+
+            foreach (var player in squadPlayers)
+            {
+                var timeline = result.Players[player.UniqueID];
+                var nearbyEnemies = timeline.NearbyEnemies[snapshotIndex];
+                var isThreatened = nearbyEnemies > 0;
+                timeline.Threatened[snapshotIndex] = isThreatened;
+
+                if (isThreatened)
+                {
+                    threatenedNow++;
+                    squadThreatSamples++;
+                    playerThreatSamples[player.UniqueID]++;
+                    playerThreatTime[player.UniqueID] += pollingRate;
+                }
+
+                timeline.RunningThreatTime[snapshotIndex] = playerThreatTime[player.UniqueID];
+
+                for (var boonIndex = 0; boonIndex < boonDefinitions.Length; boonIndex++)
+                {
+                    var definition = boonDefinitions[boonIndex];
+                    var stacks = GetBuffStacksAtTime(player, log, definition.Id, times[snapshotIndex]);
+                    var playerBoon = timeline.Boons[boonIndex];
+                    playerBoon.CurrentStacks[snapshotIndex] = stacks;
+
+                    if (isThreatened && stacks > 0)
+                    {
+                        activeNow[definition.Id]++;
+                        stackSumsNow[definition.Id] += stacks;
+                        squadActiveThreatSamples[definition.Id]++;
+                        playerActiveThreatSamples[player.UniqueID][definition.Id]++;
+                    }
+                    if (isThreatened)
+                    {
+                        squadThreatStackSums[definition.Id] += stacks;
+                        if (definition.TracksOverapplication && stacks >= definition.OverapplicationThreshold)
+                        {
+                            overappliedNow[definition.Id]++;
+                            squadOverappliedThreatSamples[definition.Id]++;
+                            playerOverappliedThreatSamples[player.UniqueID][definition.Id]++;
+                        }
+                    }
+
+                    playerBoon.RunningCoverage[snapshotIndex] = playerThreatSamples[player.UniqueID] > 0
+                        ? Math.Round(playerActiveThreatSamples[player.UniqueID][definition.Id] * 100.0 / playerThreatSamples[player.UniqueID], 1)
+                        : 0;
+                    playerBoon.RunningOverapplication[snapshotIndex] =
+                        definition.TracksOverapplication && playerThreatSamples[player.UniqueID] > 0
+                            ? Math.Round(playerOverappliedThreatSamples[player.UniqueID][definition.Id] * 100.0 / playerThreatSamples[player.UniqueID], 1)
+                            : 0;
+                }
+            }
+
+            result.ThreatenedPlayerCount[snapshotIndex] = threatenedNow;
+            for (var boonIndex = 0; boonIndex < boonDefinitions.Length; boonIndex++)
+            {
+                var definition = boonDefinitions[boonIndex];
+                var boon = result.Boons[boonIndex];
+                boon.CurrentCoverage[snapshotIndex] = threatenedNow > 0
+                    ? Math.Round(activeNow[definition.Id] * 100.0 / threatenedNow, 1)
+                    : 0;
+                boon.RunningCoverage[snapshotIndex] = squadThreatSamples > 0
+                    ? Math.Round(squadActiveThreatSamples[definition.Id] * 100.0 / squadThreatSamples, 1)
+                    : 0;
+                boon.CurrentAverageStacks[snapshotIndex] = threatenedNow > 0
+                    ? Math.Round(stackSumsNow[definition.Id] * 1.0 / threatenedNow, 1)
+                    : 0;
+                boon.CurrentOverapplication[snapshotIndex] =
+                    definition.TracksOverapplication && threatenedNow > 0
+                        ? Math.Round(overappliedNow[definition.Id] * 100.0 / threatenedNow, 1)
+                        : 0;
+                boon.RunningOverapplication[snapshotIndex] =
+                    definition.TracksOverapplication && squadThreatSamples > 0
+                        ? Math.Round(squadOverappliedThreatSamples[definition.Id] * 100.0 / squadThreatSamples, 1)
+                        : 0;
+            }
+        }
+
+        foreach (var boon in result.Boons)
+        {
+            boon.SummaryCoverage = squadThreatSamples > 0
+                ? Math.Round(squadActiveThreatSamples[boon.Id] * 100.0 / squadThreatSamples, 1)
+                : 0;
+            boon.SummaryAverageStacks = squadThreatSamples > 0
+                ? Math.Round(squadThreatStackSums[boon.Id] * 1.0 / squadThreatSamples, 1)
+                : 0;
+            boon.SummaryOverapplication =
+                boon.TracksOverapplication && squadThreatSamples > 0
+                    ? Math.Round(squadOverappliedThreatSamples[boon.Id] * 100.0 / squadThreatSamples, 1)
+                    : 0;
+        }
+
+        return result;
+    }
+
+    private static ThreatBoonDefinition CreateThreatBoonDefinition(
+        ParsedEvtcLog log,
+        long boonId,
+        bool stackBased,
+        bool tracksOverapplication = false,
+        int overapplicationThreshold = 0)
+    {
+        if (log.Buffs.BuffsByIDs.TryGetValue(boonId, out Buff? buff))
+        {
+            return new ThreatBoonDefinition(boonId, buff.Name, buff.Link, stackBased, tracksOverapplication, overapplicationThreshold);
+        }
+        return new ThreatBoonDefinition(boonId, boonId.ToString(), "", stackBased, tracksOverapplication, overapplicationThreshold);
+    }
+
     private static List<CombatReplayAnalysisBurstSummaryDto> BuildTopBursts(CombatReplayTeamAnalysisDto analysis, IReadOnlyList<long> times)
     {
         var candidates = new List<CombatReplayAnalysisBurstSummaryDto>();
@@ -585,6 +826,11 @@ internal static class CombatReplayAnalysisBuilder
         return actor.TryGetCurrentInterpolatedPosition(log, time, out position) || actor.TryGetCurrentPosition(log, time, out position);
     }
 
+    private static int GetBuffStacksAtTime(SingleActor actor, ParsedEvtcLog log, long buffId, long time)
+    {
+        return (int)Math.Max(0, Math.Round(actor.GetBuffStatus(log, buffId, time).Value));
+    }
+
     private static bool IsWithinRange(Vector3 left, Vector3 right, float range)
     {
         var dx = left.X - right.X;
@@ -648,4 +894,12 @@ internal static class CombatReplayAnalysisBuilder
         var index = Math.Clamp((int)Math.Floor((ordered.Length - 1) * percentile), 0, ordered.Length - 1);
         return ordered[index];
     }
+
+    private readonly record struct ThreatBoonDefinition(
+        long Id,
+        string Name,
+        string Icon,
+        bool StackBased,
+        bool TracksOverapplication,
+        int OverapplicationThreshold);
 }
