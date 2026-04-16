@@ -15,6 +15,7 @@ internal class CombatReplayAnalysisDto
     public CombatReplayTeamAnalysisDto Squad { get; set; } = new();
     public CombatReplayTeamAnalysisDto Enemy { get; set; } = new();
     public CombatReplayThreatBoonAnalysisDto ThreatBoons { get; set; } = new();
+    public CombatReplayPositioningAnalysisDto Positioning { get; set; } = new();
 }
 
 internal class CombatReplayTeamAnalysisDto
@@ -119,11 +120,67 @@ internal class CombatReplayThreatPlayerBoonTimelineDto
     public double[] RunningOverapplication { get; set; } = [];
 }
 
+internal class CombatReplayPositioningAnalysisDto
+{
+    public bool HasCommander { get; set; }
+    public int CommanderId { get; set; }
+    public string CommanderName { get; set; } = "";
+    public int DesiredCommanderDistance { get; set; }
+    public int MingledCommanderDistance { get; set; }
+    public int IgnoreCommanderDistance { get; set; }
+    public int EngageRange { get; set; }
+    public int MingledRange { get; set; }
+    public int MingledEnemyThreshold { get; set; }
+    public int EnemyCountThreshold { get; set; }
+    public int OverextendedPlayerThreshold { get; set; }
+    public int[] EngagedEnemyCount { get; set; } = [];
+    public int[] EnemiesNearCommanderCount { get; set; } = [];
+    public bool[] Mingled { get; set; } = [];
+    public int[] EligiblePlayerCount { get; set; } = [];
+    public int[] InPositionCount { get; set; } = [];
+    public int[] OutOfPositionCount { get; set; } = [];
+    public int[] TooFarCount { get; set; } = [];
+    public int[] OverextendedCount { get; set; } = [];
+    public int[] LateralRiskCount { get; set; } = [];
+    public double[] InPositionRate { get; set; } = [];
+    public double SummaryInPositionRate { get; set; }
+    public double SummaryTooFarRate { get; set; }
+    public double SummaryOverextendedRate { get; set; }
+    public double SummaryLateralRiskRate { get; set; }
+    public long SummaryEvaluatedSamples { get; set; }
+    public Dictionary<int, CombatReplayPositioningPlayerTimelineDto> Players { get; set; } = [];
+}
+
+internal class CombatReplayPositioningPlayerTimelineDto
+{
+    public bool[] Eligible { get; set; } = [];
+    public bool[] InPosition { get; set; } = [];
+    public bool[] TooFar { get; set; } = [];
+    public bool[] Overextended { get; set; } = [];
+    public bool[] LateralRisk { get; set; } = [];
+    public int[] DistanceToCommander { get; set; } = [];
+    public int[] EnemiesCloserThanCommander { get; set; } = [];
+    public int[] EnemiesAheadOfCommander { get; set; } = [];
+    public double[] RunningInPositionRate { get; set; } = [];
+    public double[] RunningTooFarRate { get; set; } = [];
+    public double[] RunningOverextendedRate { get; set; } = [];
+    public double[] RunningLateralRiskRate { get; set; } = [];
+}
+
 internal static class CombatReplayAnalysisBuilder
 {
     private const int LookbackWindow = 3000;
     private const int BucketSize = 1000;
     private const float RangeThreshold = 1200.0f;
+    private static readonly PositioningCriteria PositioningSettings = new(
+        DesiredCommanderDistance: 240.0f,
+        MingledCommanderDistance: 180.0f,
+        IgnoreCommanderDistance: 3000.0f,
+        EngageRange: 1200.0f,
+        MingledRange: 100.0f,
+        MingledEnemyThreshold: 5,
+        EnemyCountThreshold: 5,
+        OverextendedPlayerThreshold: 5);
 
     private readonly record struct DamageRecord(long Time, int TargetUniqueId, int AttackerUniqueId, int Damage, bool HasDowned, bool HasKilled);
     private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId);
@@ -168,6 +225,7 @@ internal static class CombatReplayAnalysisBuilder
             squadPlayers,
             "Enemy Team");
         var squadAnalysis = BuildTeamAnalysis(log, squadContext, boonIDs, times, snapshotCount);
+        Player? commander = log.PlayerList.FirstOrDefault(player => !player.IsFakeActor && player.IsCommander(log));
 
         return new CombatReplayAnalysisDto
         {
@@ -176,6 +234,7 @@ internal static class CombatReplayAnalysisBuilder
             Squad = squadAnalysis,
             Enemy = BuildTeamAnalysis(log, enemyContext, boonIDs, times, snapshotCount),
             ThreatBoons = BuildThreatBoonAnalysis(log, squadPlayers, times, pollingRate, squadAnalysis),
+            Positioning = BuildPositioningAnalysis(log, squadPlayers, hostileTargets, commander, times),
         };
     }
 
@@ -633,6 +692,218 @@ internal static class CombatReplayAnalysisBuilder
         return result;
     }
 
+    private static CombatReplayPositioningAnalysisDto BuildPositioningAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostileTargets,
+        Player? commander,
+        long[] times)
+    {
+        var snapshotCount = times.Length;
+        var result = new CombatReplayPositioningAnalysisDto
+        {
+            HasCommander = commander != null,
+            CommanderId = commander?.UniqueID ?? 0,
+            CommanderName = commander?.Character ?? "",
+            DesiredCommanderDistance = (int)PositioningSettings.DesiredCommanderDistance,
+            MingledCommanderDistance = (int)PositioningSettings.MingledCommanderDistance,
+            IgnoreCommanderDistance = (int)PositioningSettings.IgnoreCommanderDistance,
+            EngageRange = (int)PositioningSettings.EngageRange,
+            MingledRange = (int)PositioningSettings.MingledRange,
+            MingledEnemyThreshold = PositioningSettings.MingledEnemyThreshold,
+            EnemyCountThreshold = PositioningSettings.EnemyCountThreshold,
+            OverextendedPlayerThreshold = PositioningSettings.OverextendedPlayerThreshold,
+            EngagedEnemyCount = new int[snapshotCount],
+            EnemiesNearCommanderCount = new int[snapshotCount],
+            Mingled = new bool[snapshotCount],
+            EligiblePlayerCount = new int[snapshotCount],
+            InPositionCount = new int[snapshotCount],
+            OutOfPositionCount = new int[snapshotCount],
+            TooFarCount = new int[snapshotCount],
+            OverextendedCount = new int[snapshotCount],
+            LateralRiskCount = new int[snapshotCount],
+            InPositionRate = new double[snapshotCount],
+            Players = squadPlayers.ToDictionary(
+                player => player.UniqueID,
+                _ => new CombatReplayPositioningPlayerTimelineDto
+                {
+                    Eligible = new bool[snapshotCount],
+                    InPosition = new bool[snapshotCount],
+                    TooFar = new bool[snapshotCount],
+                    Overextended = new bool[snapshotCount],
+                    LateralRisk = new bool[snapshotCount],
+                    DistanceToCommander = new int[snapshotCount],
+                    EnemiesCloserThanCommander = new int[snapshotCount],
+                    EnemiesAheadOfCommander = new int[snapshotCount],
+                    RunningInPositionRate = new double[snapshotCount],
+                    RunningTooFarRate = new double[snapshotCount],
+                    RunningOverextendedRate = new double[snapshotCount],
+                    RunningLateralRiskRate = new double[snapshotCount],
+                }),
+        };
+
+        if (commander == null)
+        {
+            return result;
+        }
+
+        var nonCommanderSquadPlayers = squadPlayers.Where(player => player.UniqueID != commander.UniqueID).ToList();
+        var playerEvaluatedSamples = nonCommanderSquadPlayers.ToDictionary(player => player.UniqueID, _ => 0);
+        var playerInPositionSamples = nonCommanderSquadPlayers.ToDictionary(player => player.UniqueID, _ => 0);
+        var playerTooFarSamples = nonCommanderSquadPlayers.ToDictionary(player => player.UniqueID, _ => 0);
+        var playerOverextendedSamples = nonCommanderSquadPlayers.ToDictionary(player => player.UniqueID, _ => 0);
+        var playerLateralRiskSamples = nonCommanderSquadPlayers.ToDictionary(player => player.UniqueID, _ => 0);
+        var totalEvaluatedSamples = 0L;
+        var totalInPositionSamples = 0L;
+        var totalTooFarSamples = 0L;
+        var totalOverextendedSamples = 0L;
+        var totalLateralRiskSamples = 0L;
+
+        for (var snapshotIndex = 0; snapshotIndex < snapshotCount; snapshotIndex++)
+        {
+            var time = times[snapshotIndex];
+            if (!TryGetEligiblePosition(commander, log, time, out var commanderPosition))
+            {
+                continue;
+            }
+
+            var engagedEnemies = new List<Vector3>();
+            foreach (var enemy in hostileTargets)
+            {
+                if (!TryGetEligiblePosition(enemy, log, time, out var enemyPosition))
+                {
+                    continue;
+                }
+                if (IsWithinRange(commanderPosition, enemyPosition, PositioningSettings.EngageRange))
+                {
+                    engagedEnemies.Add(enemyPosition);
+                }
+            }
+            var enemiesNearCommander = engagedEnemies.Count(enemyPosition => IsWithinRange(commanderPosition, enemyPosition, PositioningSettings.MingledRange));
+            var mingled = enemiesNearCommander > PositioningSettings.MingledEnemyThreshold;
+            var desiredCommanderDistance = mingled ? PositioningSettings.MingledCommanderDistance : PositioningSettings.DesiredCommanderDistance;
+
+            result.EngagedEnemyCount[snapshotIndex] = engagedEnemies.Count;
+            result.EnemiesNearCommanderCount[snapshotIndex] = enemiesNearCommander;
+            result.Mingled[snapshotIndex] = mingled;
+
+            if (engagedEnemies.Count == 0)
+            {
+                continue;
+            }
+
+            var playerStates = new List<PositioningPlayerSnapshotState>(nonCommanderSquadPlayers.Count);
+            foreach (var player in nonCommanderSquadPlayers)
+            {
+                var timeline = result.Players[player.UniqueID];
+                if (!TryGetEligiblePosition(player, log, time, out var playerPosition))
+                {
+                    UpdateRunningPositioningRates(player.UniqueID, snapshotIndex, result, playerEvaluatedSamples, playerInPositionSamples, playerTooFarSamples, playerOverextendedSamples, playerLateralRiskSamples);
+                    continue;
+                }
+
+                var distanceToCommander = (int)Math.Round(GetDistance2D(playerPosition, commanderPosition));
+                timeline.DistanceToCommander[snapshotIndex] = distanceToCommander;
+                if (distanceToCommander > PositioningSettings.IgnoreCommanderDistance)
+                {
+                    UpdateRunningPositioningRates(player.UniqueID, snapshotIndex, result, playerEvaluatedSamples, playerInPositionSamples, playerTooFarSamples, playerOverextendedSamples, playerLateralRiskSamples);
+                    continue;
+                }
+
+                var enemiesCloserThanCommander = engagedEnemies.Count(enemyPosition => GetDistance2D(playerPosition, enemyPosition) < GetDistance2D(commanderPosition, enemyPosition));
+                var enemiesAheadOfCommander = mingled ? 0 : engagedEnemies.Count(enemyPosition => IsPlayerAheadOfCommander(commanderPosition, playerPosition, enemyPosition));
+
+                timeline.Eligible[snapshotIndex] = true;
+                timeline.EnemiesCloserThanCommander[snapshotIndex] = enemiesCloserThanCommander;
+                timeline.EnemiesAheadOfCommander[snapshotIndex] = enemiesAheadOfCommander;
+
+                playerStates.Add(new PositioningPlayerSnapshotState(
+                    PlayerId: player.UniqueID,
+                    TooFar: distanceToCommander > desiredCommanderDistance,
+                    Overextended: !mingled && enemiesAheadOfCommander > 0,
+                    LateralRisk: !mingled && enemiesCloserThanCommander > PositioningSettings.EnemyCountThreshold));
+            }
+
+            var overextendedPlayers = playerStates.Count(state => state.Overextended);
+            var effectiveOverextendedPlayers = mingled || overextendedPlayers >= PositioningSettings.OverextendedPlayerThreshold
+                ? new HashSet<int>()
+                : playerStates.Where(state => state.Overextended).Select(state => state.PlayerId).ToHashSet();
+
+            foreach (var state in playerStates)
+            {
+                var timeline = result.Players[state.PlayerId];
+                var effectiveOverextended = effectiveOverextendedPlayers.Contains(state.PlayerId);
+                var outOfPosition = state.TooFar || state.LateralRisk || effectiveOverextended;
+
+                timeline.TooFar[snapshotIndex] = state.TooFar;
+                timeline.Overextended[snapshotIndex] = effectiveOverextended;
+                timeline.LateralRisk[snapshotIndex] = state.LateralRisk;
+                timeline.InPosition[snapshotIndex] = !outOfPosition;
+
+                result.EligiblePlayerCount[snapshotIndex]++;
+                if (timeline.InPosition[snapshotIndex])
+                {
+                    result.InPositionCount[snapshotIndex]++;
+                }
+                else
+                {
+                    result.OutOfPositionCount[snapshotIndex]++;
+                }
+                if (state.TooFar)
+                {
+                    result.TooFarCount[snapshotIndex]++;
+                }
+                if (effectiveOverextended)
+                {
+                    result.OverextendedCount[snapshotIndex]++;
+                }
+                if (state.LateralRisk)
+                {
+                    result.LateralRiskCount[snapshotIndex]++;
+                }
+
+                playerEvaluatedSamples[state.PlayerId]++;
+                totalEvaluatedSamples++;
+                if (timeline.InPosition[snapshotIndex])
+                {
+                    playerInPositionSamples[state.PlayerId]++;
+                    totalInPositionSamples++;
+                }
+                if (state.TooFar)
+                {
+                    playerTooFarSamples[state.PlayerId]++;
+                    totalTooFarSamples++;
+                }
+                if (effectiveOverextended)
+                {
+                    playerOverextendedSamples[state.PlayerId]++;
+                    totalOverextendedSamples++;
+                }
+                if (state.LateralRisk)
+                {
+                    playerLateralRiskSamples[state.PlayerId]++;
+                    totalLateralRiskSamples++;
+                }
+            }
+
+            result.InPositionRate[snapshotIndex] = result.EligiblePlayerCount[snapshotIndex] > 0
+                ? Math.Round(result.InPositionCount[snapshotIndex] * 100.0 / result.EligiblePlayerCount[snapshotIndex], 1)
+                : 0;
+
+            foreach (var player in nonCommanderSquadPlayers)
+            {
+                UpdateRunningPositioningRates(player.UniqueID, snapshotIndex, result, playerEvaluatedSamples, playerInPositionSamples, playerTooFarSamples, playerOverextendedSamples, playerLateralRiskSamples);
+            }
+        }
+
+        result.SummaryEvaluatedSamples = totalEvaluatedSamples;
+        result.SummaryInPositionRate = totalEvaluatedSamples > 0 ? Math.Round(totalInPositionSamples * 100.0 / totalEvaluatedSamples, 1) : 0;
+        result.SummaryTooFarRate = totalEvaluatedSamples > 0 ? Math.Round(totalTooFarSamples * 100.0 / totalEvaluatedSamples, 1) : 0;
+        result.SummaryOverextendedRate = totalEvaluatedSamples > 0 ? Math.Round(totalOverextendedSamples * 100.0 / totalEvaluatedSamples, 1) : 0;
+        result.SummaryLateralRiskRate = totalEvaluatedSamples > 0 ? Math.Round(totalLateralRiskSamples * 100.0 / totalEvaluatedSamples, 1) : 0;
+        return result;
+    }
+
     private static ThreatBoonDefinition CreateThreatBoonDefinition(
         ParsedEvtcLog log,
         long boonId,
@@ -831,11 +1102,55 @@ internal static class CombatReplayAnalysisBuilder
         return (int)Math.Max(0, Math.Round(actor.GetBuffStatus(log, buffId, time).Value));
     }
 
+    private static bool TryGetEligiblePosition(SingleActor actor, ParsedEvtcLog log, long time, out Vector3 position)
+    {
+        position = default;
+        if (time < actor.FirstAware || time > actor.LastAware || actor.IsDowned(log, time) || actor.IsDead(log, time) || actor.IsDC(log, time))
+        {
+            return false;
+        }
+        return TryGetPosition(actor, log, time, out position);
+    }
+
     private static bool IsWithinRange(Vector3 left, Vector3 right, float range)
     {
         var dx = left.X - right.X;
         var dy = left.Y - right.Y;
         return dx * dx + dy * dy <= range * range;
+    }
+
+    private static float GetDistance2D(Vector3 left, Vector3 right)
+    {
+        var dx = left.X - right.X;
+        var dy = left.Y - right.Y;
+        return MathF.Sqrt(dx * dx + dy * dy);
+    }
+
+    private static bool IsPlayerAheadOfCommander(Vector3 commanderPosition, Vector3 playerPosition, Vector3 enemyPosition)
+    {
+        var commanderToPlayerX = playerPosition.X - commanderPosition.X;
+        var commanderToPlayerY = playerPosition.Y - commanderPosition.Y;
+        var commanderToEnemyX = enemyPosition.X - commanderPosition.X;
+        var commanderToEnemyY = enemyPosition.Y - commanderPosition.Y;
+        return commanderToPlayerX * commanderToEnemyX + commanderToPlayerY * commanderToEnemyY > 0;
+    }
+
+    private static void UpdateRunningPositioningRates(
+        int playerId,
+        int snapshotIndex,
+        CombatReplayPositioningAnalysisDto result,
+        IReadOnlyDictionary<int, int> evaluatedSamples,
+        IReadOnlyDictionary<int, int> inPositionSamples,
+        IReadOnlyDictionary<int, int> tooFarSamples,
+        IReadOnlyDictionary<int, int> overextendedSamples,
+        IReadOnlyDictionary<int, int> lateralRiskSamples)
+    {
+        var timeline = result.Players[playerId];
+        var denominator = evaluatedSamples[playerId];
+        timeline.RunningInPositionRate[snapshotIndex] = denominator > 0 ? Math.Round(inPositionSamples[playerId] * 100.0 / denominator, 1) : 0;
+        timeline.RunningTooFarRate[snapshotIndex] = denominator > 0 ? Math.Round(tooFarSamples[playerId] * 100.0 / denominator, 1) : 0;
+        timeline.RunningOverextendedRate[snapshotIndex] = denominator > 0 ? Math.Round(overextendedSamples[playerId] * 100.0 / denominator, 1) : 0;
+        timeline.RunningLateralRiskRate[snapshotIndex] = denominator > 0 ? Math.Round(lateralRiskSamples[playerId] * 100.0 / denominator, 1) : 0;
     }
 
     private static int ComputeBucketIndex(long time, long windowStart)
@@ -902,4 +1217,20 @@ internal static class CombatReplayAnalysisBuilder
         bool StackBased,
         bool TracksOverapplication,
         int OverapplicationThreshold);
+
+    private readonly record struct PositioningCriteria(
+        float DesiredCommanderDistance,
+        float MingledCommanderDistance,
+        float IgnoreCommanderDistance,
+        float EngageRange,
+        float MingledRange,
+        int MingledEnemyThreshold,
+        int EnemyCountThreshold,
+        int OverextendedPlayerThreshold);
+
+    private readonly record struct PositioningPlayerSnapshotState(
+        int PlayerId,
+        bool TooFar,
+        bool Overextended,
+        bool LateralRisk);
 }

@@ -115,6 +115,9 @@
             getThreatAnalysis: function () {
                 return this.crAnalysis && this.crAnalysis.threatBoons ? this.crAnalysis.threatBoons : null;
             },
+            getPositioningAnalysis: function () {
+                return this.crAnalysis && this.crAnalysis.positioning ? this.crAnalysis.positioning : null;
+            },
         }
     };
 
@@ -142,6 +145,9 @@
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: overviewMode === 2}" @click="overviewMode = 2">Weighted Boons</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: overviewMode === 3}" @click="overviewMode = 3">Positioning</a>
+                </li>
             </ul>
             <div v-if="!hasanalysis || overviewMode === 0" class="d-flex flex-column">
                 <div class="combat-replay-overview-help-row">
@@ -150,7 +156,8 @@
                 <combat-replay-overview-stats-component :time="time" :selectedactorid="selectedactorid" :targetless="targetless"></combat-replay-overview-stats-component>
             </div>
             <combat-replay-wvw-analysis-component v-else-if="overviewMode === 1" :time="time" :selectedactorid="selectedactorid"></combat-replay-wvw-analysis-component>
-            <combat-replay-threat-boons-component v-else :time="time" :selectedactorid="selectedactorid"></combat-replay-threat-boons-component>
+            <combat-replay-threat-boons-component v-else-if="overviewMode === 2" :time="time" :selectedactorid="selectedactorid"></combat-replay-threat-boons-component>
+            <combat-replay-positioning-component v-else :time="time" :selectedactorid="selectedactorid"></combat-replay-positioning-component>
             <div v-if="showOverviewHelp" class="wvw-summary-modal-backdrop" @click.self="showOverviewHelp = false">
                 <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay compact card help">
                     <button type="button" class="wvw-summary-modal-close" aria-label="Close compact card help" @click="showOverviewHelp = false">&times;</button>
@@ -751,6 +758,415 @@
             return {
                 showWeightedBoonsHelp: false,
             };
+        },
+    });
+
+    Vue.component("combat-replay-positioning-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time", "selectedactorid"],
+        template: `
+        <div v-if="positioningAnalysis" class="combat-replay-wvw-analysis-panel">
+            <div class="combat-replay-overview-help-row">
+                <button type="button" class="combat-replay-overview-help-button" title="Positioning help" aria-label="Show positioning help" @click="showPositioningHelp = true">?</button>
+            </div>
+            <div v-if="!positioningAnalysis.hasCommander" class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">Positioning</div>
+                <div class="combat-replay-wvw-analysis-helper">
+                    No commander was found in this log, so positioning analysis is unavailable.
+                </div>
+            </div>
+            <template v-else>
+                <ul class="nav nav-pills d-flex flex-row justify-content-center mb-2 scale85 combat-replay-wvw-analysis-subtabs">
+                    <li class="nav-item">
+                        <a class="nav-link" :class="{active: positioningMode === 0}" @click="positioningMode = 0">Group Summary</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" :class="{active: positioningMode === 1}" @click="positioningMode = 1">Players</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" :class="{active: positioningMode === 2}" @click="positioningMode = 2">Player Summary</a>
+                    </li>
+                </ul>
+                <template v-if="positioningMode === 0">
+                    <div class="combat-replay-wvw-analysis-card">
+                        <div class="combat-replay-wvw-analysis-card-title">Positioning Battle Summary</div>
+                        <div class="combat-replay-wvw-analysis-detail text-center">
+                            Anchored to {{positioningAnalysis.commanderName}}. Commander is excluded from the scored squad.
+                        </div>
+                        <div class="combat-replay-wvw-analysis-grid">
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">In position</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatPercent(positioningAnalysis.summaryInPositionRate)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatCount(positioningAnalysis.summaryEvaluatedSamples)}} evaluated player snapshots</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Too far from commander</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatPercent(positioningAnalysis.summaryTooFarRate)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">Target distance is {{positioningAnalysis.desiredCommanderDistance}} or less, or {{positioningAnalysis.mingledCommanderDistance}} when mingled</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Overextended</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatPercent(positioningAnalysis.summaryOverextendedRate)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">Only counted when fewer than {{positioningAnalysis.overextendedPlayerThreshold}} players are overextended</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Left/right exposed</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatPercent(positioningAnalysis.summaryLateralRiskRate)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">Triggered by more than {{positioningAnalysis.enemyCountThreshold}} enemies being closer to the player than the commander</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-card">
+                        <div class="combat-replay-wvw-analysis-card-title">Positioning Now</div>
+                        <div class="combat-replay-wvw-analysis-grid">
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Engaged enemies</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatCount(currentEngagedEnemies)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">Enemies within {{positioningAnalysis.engageRange}} of the commander</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Mingled state</div>
+                                <div class="combat-replay-wvw-analysis-value">{{isMingled ? 'mingled' : 'separated'}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatCount(enemiesNearCommander)}} enemies within {{positioningAnalysis.mingledRange}} of the commander</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Eligible squad players</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatCount(eligiblePlayers)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">Excludes commander, downed, dead, and players farther than {{positioningAnalysis.ignoreCommanderDistance}}</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">In position</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatCount(inPositionCount)}} players</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatPercent(inPositionRate)}} of eligible players</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Too far</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatCount(tooFarCount)}} players</div>
+                                <div class="combat-replay-wvw-analysis-detail">More than {{currentDesiredCommanderDistance}} from commander right now</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Out of position</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatCount(outOfPositionCount)}} players</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatCount(overextendedCount)}} overextended, {{formatCount(lateralRiskCount)}} left/right exposed</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-card">
+                        <div class="combat-replay-wvw-analysis-card-title">Selected Squad Player</div>
+                        <div v-if="selectedPlayer && selectedPlayerTimeline" class="combat-replay-wvw-analysis-selected">
+                            <div class="combat-replay-wvw-analysis-selected-header">
+                                <img :src="selectedPlayer.icon" :alt="selectedPlayer.profession || selectedPlayer.name" class="combat-replay-wvw-analysis-selected-icon">
+                                <div>
+                                    <div class="combat-replay-wvw-analysis-selected-name">{{selectedPlayer.name}}</div>
+                                    <div class="combat-replay-wvw-analysis-selected-type">
+                                        {{playerStatusLabel}}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-grid">
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Distance to commander</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatCount(distanceToCommander)}}</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Enemies closer than commander</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatCount(enemiesCloserThanCommander)}}</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Enemies ahead of commander</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatCount(enemiesAheadOfCommander)}}</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Running in position</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatPercent(runningInPositionRate)}}</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Running too far</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatPercent(runningTooFarRate)}}</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Running exposure</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatPercent(runningOverextendedRate)}} overextended</div>
+                                    <div class="combat-replay-wvw-analysis-detail">{{formatPercent(runningLateralRiskRate)}} left/right exposed</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="combat-replay-wvw-analysis-helper">
+                            Select a non-commander squad player in the replay to view positioning details.
+                        </div>
+                    </div>
+                </template>
+                <div v-else-if="positioningMode === 1" class="combat-replay-wvw-analysis-card">
+                    <div class="combat-replay-wvw-analysis-card-title">Squad Players Now</div>
+                    <div class="combat-replay-positioning-player-grid">
+                        <div v-for="playerState in positioningPlayers" :key="'positioning-player-' + playerState.player.uniqueID" class="combat-replay-positioning-player-card" :class="{active: selectedactorid === playerState.player.uniqueID}" @click="selectPositioningPlayer(playerState.player.uniqueID)">
+                            <div class="combat-replay-positioning-player-compact">
+                                <img :src="playerState.player.icon" :alt="playerState.player.profession || playerState.player.name" class="combat-replay-threat-boon-icon">
+                                <span class="combat-replay-positioning-player-name">{{playerState.player.name}}</span>
+                                <span class="combat-replay-wvw-analysis-pill" :class="'combat-replay-wvw-analysis-pill-' + playerState.statusClass">{{playerState.compactStatusLabel}}</span>
+                            </div>
+                            <div class="combat-replay-positioning-player-tooltip">
+                                <div class="combat-replay-positioning-player-tooltip-title">{{playerState.player.name}}</div>
+                                <div class="combat-replay-positioning-player-values">
+                                    <span>{{formatCount(playerState.distanceToCommander)}} from commander</span>
+                                    <span>{{formatCount(playerState.enemiesCloserThanCommander)}} closer-than-tag enemies</span>
+                                    <span>{{formatCount(playerState.enemiesAheadOfCommander)}} ahead-of-tag enemies</span>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-detail">{{playerState.detail}}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="combat-replay-wvw-analysis-card">
+                    <div class="combat-replay-wvw-analysis-card-title">Player In-Position Summary</div>
+                    <div class="combat-replay-positioning-summary-grid">
+                        <div v-for="playerSummary in positioningPlayerSummaries" :key="'positioning-summary-' + playerSummary.player.uniqueID" class="combat-replay-positioning-summary-card" :class="{active: selectedactorid === playerSummary.player.uniqueID}" @click="selectPositioningPlayer(playerSummary.player.uniqueID)">
+                            <div class="combat-replay-positioning-player-compact">
+                                <img :src="playerSummary.player.icon" :alt="playerSummary.player.profession || playerSummary.player.name" class="combat-replay-threat-boon-icon">
+                                <span class="combat-replay-positioning-player-name">{{playerSummary.player.name}}</span>
+                            </div>
+                            <div class="combat-replay-positioning-summary-value">{{formatPercent(playerSummary.inPositionRate)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">{{formatCount(playerSummary.evaluatedSamples)}} evaluated snapshots</div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+            <div v-if="showPositioningHelp" class="wvw-summary-modal-backdrop" @click.self="showPositioningHelp = false">
+                <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay positioning help">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close positioning help" @click="showPositioningHelp = false">&times;</button>
+                    <div class="wvw-summary-modal-title">Positioning Help</div>
+                    <div class="wvw-summary-modal-subtitle">
+                        The Positioning tab scores squad spacing around the commander during engaged moments, with the commander acting as the anchor instead of a scored player.
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Sub-tabs</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Group Summary</strong> shows the full-fight positioning rates, the current replay snapshot, and a selected-player drilldown</li>
+                            <li><strong>Players</strong> shows each squad player's current positioning state at the replay time</li>
+                            <li><strong>Player Summary</strong> ranks squad players by their full-fight in-position percentage</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Who gets evaluated</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li>Only squad players are considered, and the commander is excluded from scoring</li>
+                            <li>A snapshot is only scored when at least one hostile player is within {{positioningAnalysis.engageRange}} of the commander</li>
+                            <li>Players are excluded if they are downed, dead, disconnected, or more than {{positioningAnalysis.ignoreCommanderDistance}} from the commander</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">In-position rules</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>In position</strong> means the player is evaluated and not flagged as too far, overextended, or left/right exposed</li>
+                            <li><strong>Too far</strong> means farther than {{positioningAnalysis.desiredCommanderDistance}} from the commander, or farther than {{positioningAnalysis.mingledCommanderDistance}} when the groups are mingled</li>
+                            <li><strong>Mingled</strong> means more than {{positioningAnalysis.mingledEnemyThreshold}} hostile players are within {{positioningAnalysis.mingledRange}} of the commander</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Out-of-position rules</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Out of position</strong> means any evaluated player flagged as too far, overextended, or left/right exposed</li>
+                            <li><strong>Overextended</strong> means the player is on the enemy side of the commander while the groups are not mingled, and it is only counted when fewer than {{positioningAnalysis.overextendedPlayerThreshold}} players are overextended in that snapshot</li>
+                            <li><strong>Left/right exposed</strong> means more than {{positioningAnalysis.enemyCountThreshold}} hostile players are closer to the player than to the commander, unless the groups are mingled</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Not evaluated</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Not evaluated</strong> means the current snapshot is not scored for that player because the fight is not engaged yet or the player is excluded for that moment</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `,
+        computed: {
+            positioningAnalysis: function () {
+                return this.getPositioningAnalysis();
+            },
+            currentEngagedEnemies: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.engagedEnemyCount : null, this.snapshotIndex);
+            },
+            enemiesNearCommander: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.enemiesNearCommanderCount : null, this.snapshotIndex);
+            },
+            isMingled: function () {
+                return !!this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.mingled : null, this.snapshotIndex);
+            },
+            eligiblePlayers: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.eligiblePlayerCount : null, this.snapshotIndex);
+            },
+            inPositionCount: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.inPositionCount : null, this.snapshotIndex);
+            },
+            outOfPositionCount: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.outOfPositionCount : null, this.snapshotIndex);
+            },
+            tooFarCount: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.tooFarCount : null, this.snapshotIndex);
+            },
+            overextendedCount: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.overextendedCount : null, this.snapshotIndex);
+            },
+            lateralRiskCount: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.lateralRiskCount : null, this.snapshotIndex);
+            },
+            inPositionRate: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.inPositionRate : null, this.snapshotIndex);
+            },
+            currentDesiredCommanderDistance: function () {
+                if (!this.positioningAnalysis) {
+                    return 0;
+                }
+                return this.isMingled ? this.positioningAnalysis.mingledCommanderDistance : this.positioningAnalysis.desiredCommanderDistance;
+            },
+            selectedPlayerTimeline: function () {
+                if (!this.positioningAnalysis || this.selectedactorid == null) {
+                    return null;
+                }
+                if (this.selectedactorid === this.positioningAnalysis.commanderId) {
+                    return null;
+                }
+                return this.positioningAnalysis.players[this.selectedactorid] || null;
+            },
+            selectedPlayer: function () {
+                return this.selectedPlayerTimeline ? this.getPlayerByUniqueId(this.selectedactorid) : null;
+            },
+            distanceToCommander: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.distanceToCommander, this.snapshotIndex) : 0;
+            },
+            enemiesCloserThanCommander: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.enemiesCloserThanCommander, this.snapshotIndex) : 0;
+            },
+            enemiesAheadOfCommander: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.enemiesAheadOfCommander, this.snapshotIndex) : 0;
+            },
+            runningInPositionRate: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.runningInPositionRate, this.snapshotIndex) : 0;
+            },
+            runningTooFarRate: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.runningTooFarRate, this.snapshotIndex) : 0;
+            },
+            runningOverextendedRate: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.runningOverextendedRate, this.snapshotIndex) : 0;
+            },
+            runningLateralRiskRate: function () {
+                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.runningLateralRiskRate, this.snapshotIndex) : 0;
+            },
+            playerStatusLabel: function () {
+                if (!this.selectedPlayerTimeline) {
+                    return "";
+                }
+                if (!this.getSeriesValue(this.selectedPlayerTimeline.eligible, this.snapshotIndex)) {
+                    return "not currently evaluated";
+                }
+                const reasons = [];
+                if (this.getSeriesValue(this.selectedPlayerTimeline.tooFar, this.snapshotIndex)) {
+                    reasons.push("too far");
+                }
+                if (this.getSeriesValue(this.selectedPlayerTimeline.overextended, this.snapshotIndex)) {
+                    reasons.push("overextended");
+                }
+                if (this.getSeriesValue(this.selectedPlayerTimeline.lateralRisk, this.snapshotIndex)) {
+                    reasons.push("left/right exposed");
+                }
+                return reasons.length > 0 ? reasons.join(", ") : "in position";
+            },
+            positioningPlayers: function () {
+                if (!this.positioningAnalysis) {
+                    return [];
+                }
+                return logData.players
+                    .filter(player => !player.isFake && !player.notInSquad && player.uniqueID !== this.positioningAnalysis.commanderId)
+                    .map(player => {
+                        const timeline = this.positioningAnalysis.players[player.uniqueID];
+                        if (!timeline) {
+                            return null;
+                        }
+                        const eligible = !!this.getSeriesValue(timeline.eligible, this.snapshotIndex);
+                        const tooFar = !!this.getSeriesValue(timeline.tooFar, this.snapshotIndex);
+                        const overextended = !!this.getSeriesValue(timeline.overextended, this.snapshotIndex);
+                        const lateralRisk = !!this.getSeriesValue(timeline.lateralRisk, this.snapshotIndex);
+                        const inPosition = !!this.getSeriesValue(timeline.inPosition, this.snapshotIndex);
+                        let statusLabel = "not evaluated";
+                        let statusClass = "normal";
+                        let detail = "Excluded right now because the player is downed, dead, disconnected, or too far from the commander.";
+                        if (eligible) {
+                            if (inPosition) {
+                                statusLabel = "in position";
+                                statusClass = "success";
+                                detail = "Close enough to the commander and not currently flagged as exposed.";
+                            } else {
+                                statusLabel = "out of position";
+                                statusClass = "weak";
+                                const reasons = [];
+                                if (tooFar) {
+                                    reasons.push("too far from commander");
+                                }
+                                if (overextended) {
+                                    reasons.push("overextended ahead of the commander");
+                                }
+                                if (lateralRisk) {
+                                    reasons.push("too far left/right of the commander");
+                                }
+                                detail = reasons.join(", ");
+                            }
+                        }
+                        return {
+                            player: player,
+                            statusLabel: statusLabel,
+                            compactStatusLabel: eligible ? (inPosition ? "IP" : "OOP") : "NE",
+                            statusClass: statusClass,
+                            detail: detail,
+                            distanceToCommander: this.getSeriesValue(timeline.distanceToCommander, this.snapshotIndex),
+                            enemiesCloserThanCommander: this.getSeriesValue(timeline.enemiesCloserThanCommander, this.snapshotIndex),
+                            enemiesAheadOfCommander: this.getSeriesValue(timeline.enemiesAheadOfCommander, this.snapshotIndex),
+                        };
+                    })
+                    .filter(playerState => playerState != null)
+                    .sort((left, right) => left.player.name.localeCompare(right.player.name));
+            },
+            positioningPlayerSummaries: function () {
+                if (!this.positioningAnalysis) {
+                    return [];
+                }
+                return logData.players
+                    .filter(player => !player.isFake && !player.notInSquad && player.uniqueID !== this.positioningAnalysis.commanderId)
+                    .map(player => {
+                        const timeline = this.positioningAnalysis.players[player.uniqueID];
+                        if (!timeline) {
+                            return null;
+                        }
+                        const evaluatedSamples = timeline.eligible.reduce((total, sample) => total + (sample ? 1 : 0), 0);
+                        const inPositionSamples = timeline.inPosition.reduce((total, sample, index) => total + (timeline.eligible[index] && sample ? 1 : 0), 0);
+                        return {
+                            player: player,
+                            evaluatedSamples: evaluatedSamples,
+                            inPositionRate: evaluatedSamples > 0 ? Math.round((inPositionSamples * 1000.0) / evaluatedSamples) / 10.0 : 0,
+                        };
+                    })
+                    .filter(playerSummary => playerSummary != null)
+                    .sort((left, right) => {
+                        if (right.inPositionRate !== left.inPositionRate) {
+                            return right.inPositionRate - left.inPositionRate;
+                        }
+                        return left.player.name.localeCompare(right.player.name);
+                    });
+            },
+        },
+        data: function () {
+            return {
+                positioningMode: 0,
+                showPositioningHelp: false,
+            };
+        },
+        methods: {
+            selectPositioningPlayer: function (uniqueId) {
+                if (!animator) {
+                    return;
+                }
+                animator.selectActor(uniqueId);
+            },
         },
     });
 

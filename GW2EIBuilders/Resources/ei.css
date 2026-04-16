@@ -531,6 +531,120 @@ h6.actor-shorten-cr-compact {
     font-weight: 600;
 }
 
+.combat-replay-positioning-player-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+}
+
+.combat-replay-positioning-player-card {
+    position: relative;
+    border: 1px solid rgba(124, 130, 136, 0.35);
+    border-radius: 0.3rem;
+    padding: 0.35rem 0.45rem;
+    background: rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+    overflow: visible;
+}
+
+.combat-replay-positioning-player-card:hover {
+    border-color: rgba(127, 216, 170, 0.45);
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.combat-replay-positioning-player-card.active {
+    border-color: rgba(127, 216, 170, 0.8);
+    box-shadow: 0 0 0 1px rgba(127, 216, 170, 0.4);
+}
+
+.combat-replay-positioning-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+}
+
+.combat-replay-positioning-summary-card {
+    border: 1px solid rgba(124, 130, 136, 0.35);
+    border-radius: 0.3rem;
+    padding: 0.4rem 0.5rem;
+    background: rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.combat-replay-positioning-summary-card:hover {
+    border-color: rgba(127, 216, 170, 0.45);
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.combat-replay-positioning-summary-card.active {
+    border-color: rgba(127, 216, 170, 0.8);
+    box-shadow: 0 0 0 1px rgba(127, 216, 170, 0.4);
+}
+
+.combat-replay-positioning-summary-value {
+    margin-top: 0.3rem;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.combat-replay-positioning-player-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.combat-replay-positioning-player-compact {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.combat-replay-positioning-player-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.combat-replay-positioning-player-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.combat-replay-positioning-player-tooltip {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 0.2rem);
+    z-index: 10;
+    border: 1px solid rgba(124, 130, 136, 0.5);
+    border-radius: 0.35rem;
+    padding: 0.45rem 0.55rem;
+    background: rgba(18, 18, 18, 0.96);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.combat-replay-positioning-player-card:hover .combat-replay-positioning-player-tooltip {
+    display: block;
+}
+
+.combat-replay-positioning-player-tooltip-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
 .combat-replay-wvw-analysis-bursts {
     display: flex;
     flex-direction: column;
