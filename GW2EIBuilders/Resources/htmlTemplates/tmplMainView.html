@@ -175,12 +175,6 @@
                 });
             },
             showTargetSummary: function(targetIndex) {
-                var phaseTargets = this.reactiveLogdata.targets;
-                for (var i = 0; i < phaseTargets.length; i++) {
-                    if (phaseTargets[i] && phaseTargets[i][this.activePhase]) {
-                        phaseTargets[i][this.activePhase].active = i === targetIndex;
-                    }
-                }
                 this.reactiveLogdata.phases[this.activePhase].focus = targetIndex;
                 this.tab = 5;
                 this.scrollStatisticsTabsIntoView();
