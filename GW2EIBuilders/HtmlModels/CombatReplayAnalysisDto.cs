@@ -11,30 +11,31 @@ internal class CombatReplayAnalysisDto
 {
     public int Lookback { get; set; }
     public long[] Times { get; set; } = [];
+    public CombatReplayTeamAnalysisDto Squad { get; set; } = new();
+    public CombatReplayTeamAnalysisDto Enemy { get; set; } = new();
+}
+
+internal class CombatReplayTeamAnalysisDto
+{
+    public string Label { get; set; } = "";
     public List<CombatReplayAnalysisBurstSummaryDto> TopBursts { get; set; } = [];
-
-    public long[] SquadDamage { get; set; } = [];
-    public int[] SquadDowns { get; set; } = [];
-    public int[] SquadDownsTotal { get; set; } = [];
-    public int[] SquadKills { get; set; } = [];
-    public int[] SquadKillsTotal { get; set; } = [];
+    public long[] Damage { get; set; } = [];
+    public int[] Downs { get; set; } = [];
+    public int[] DownsTotal { get; set; } = [];
+    public int[] Kills { get; set; } = [];
+    public int[] KillsTotal { get; set; } = [];
     public string[] BurstStrength { get; set; } = [];
-
-    public int[] SquadStrips { get; set; } = [];
+    public int[] Strips { get; set; } = [];
     public int[] StripPeakGap { get; set; } = [];
     public bool[] StripSynced { get; set; } = [];
-
-    public int[] SquadTopTargetIds { get; set; } = [];
-    public double[] SquadTopTargetShare { get; set; } = [];
-    public double[] SquadTopThreeTargetShare { get; set; } = [];
-    public int[] SquadTopTargetContributors { get; set; } = [];
-    public bool[] SquadFocused { get; set; } = [];
-
-    public int[] SquadTargetSaturationCount { get; set; } = [];
-    public int[] SquadTargetSaturationDisplayCount { get; set; } = [];
-    public string[] SquadTargetSaturation { get; set; } = [];
-
-    public Dictionary<int, CombatReplayAnalysisPlayerTimelineDto> Players { get; set; } = [];
+    public int[] TopTargetIds { get; set; } = [];
+    public double[] TopTargetShare { get; set; } = [];
+    public double[] TopThreeTargetShare { get; set; } = [];
+    public int[] TopTargetContributors { get; set; } = [];
+    public bool[] Focused { get; set; } = [];
+    public int[] TargetSaturationCount { get; set; } = [];
+    public string[] TargetSaturation { get; set; } = [];
+    public Dictionary<int, CombatReplayAnalysisAttackerTimelineDto> Attackers { get; set; } = [];
     public Dictionary<int, CombatReplayAnalysisTargetTimelineDto> Targets { get; set; } = [];
 }
 
@@ -49,20 +50,20 @@ internal class CombatReplayAnalysisBurstSummaryDto
     public int KillsTotal { get; set; }
 }
 
-internal class CombatReplayAnalysisPlayerTimelineDto
+internal class CombatReplayAnalysisAttackerTimelineDto
 {
     public long[] Damage { get; set; } = [];
     public int[] Strips { get; set; } = [];
     public double[] TopTargetContribution { get; set; } = [];
-    public int[] HostilesHit { get; set; } = [];
-    public int[] NearbyHostiles { get; set; } = [];
+    public int[] TargetsHit { get; set; } = [];
+    public int[] NearbyTargets { get; set; } = [];
 }
 
 internal class CombatReplayAnalysisTargetTimelineDto
 {
     public long[] DamageTaken { get; set; } = [];
     public int[] StripsTaken { get; set; } = [];
-    public int[] SquadAttackers { get; set; } = [];
+    public int[] Attackers { get; set; } = [];
     public int[] NearbyAllies { get; set; } = [];
     public int[][] TopAttackerIds { get; set; } = [];
     public long[][] TopAttackerDamage { get; set; } = [];
@@ -74,8 +75,13 @@ internal static class CombatReplayAnalysisBuilder
     private const int BucketSize = 1000;
     private const float RangeThreshold = 1200.0f;
 
-    private readonly record struct DamageRecord(long Time, int TargetUniqueId, int PlayerUniqueId, int Damage, bool HasDowned, bool HasKilled);
-    private readonly record struct StripRecord(long Time, int TargetUniqueId, int PlayerUniqueId);
+    private readonly record struct DamageRecord(long Time, int TargetUniqueId, int AttackerUniqueId, int Damage, bool HasDowned, bool HasKilled);
+    private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId);
+    private readonly record struct TeamActorContext(
+        IReadOnlyList<SingleActor> Attackers,
+        IReadOnlyList<SingleActor> Targets,
+        IReadOnlyDictionary<AgentItem, int> AttackerIdsByAgent,
+        string Label);
 
     public static CombatReplayAnalysisDto? Build(ParsedEvtcLog log)
     {
@@ -86,7 +92,7 @@ internal static class CombatReplayAnalysisBuilder
             return null;
         }
 
-        var squadPlayers = log.PlayerList.Where(player => !player.IsFakeActor).ToList();
+        var squadPlayers = log.PlayerList.Where(player => !player.IsFakeActor).Cast<SingleActor>().ToList();
         var hostileTargets = log.LogData.Logic.Targets
             .Where(target =>
                 !target.IsFakeActor &&
@@ -98,63 +104,90 @@ internal static class CombatReplayAnalysisBuilder
             return null;
         }
 
-        var squadPlayersByAgent = squadPlayers.ToDictionary(player => player.AgentItem.GetFinalMaster(), player => player.UniqueID);
-        var hostileTargetsById = hostileTargets.ToDictionary(target => target.UniqueID);
-        var squadPlayersById = squadPlayers.ToDictionary(player => player.UniqueID);
-        var boonIDs = new HashSet<long>(log.Buffs.BuffsByClassification[Buff.BuffClassification.Boon].Select(buff => buff.ID));
-
         var pollingRate = ParserHelper.CombatReplayPollingRate;
         var times = BuildTimes(log.LogData.LogEnd, pollingRate);
         var snapshotCount = times.Length;
+        var boonIDs = new HashSet<long>(log.Buffs.BuffsByClassification[Buff.BuffClassification.Boon].Select(buff => buff.ID));
 
-        var result = new CombatReplayAnalysisDto
+        var squadContext = BuildContext(
+            squadPlayers,
+            hostileTargets,
+            "My Squad");
+        var enemyContext = BuildContext(
+            hostileTargets,
+            squadPlayers,
+            "Enemy Team");
+
+        return new CombatReplayAnalysisDto
         {
             Lookback = LookbackWindow,
             Times = times,
-            SquadDamage = new long[snapshotCount],
-            SquadDowns = new int[snapshotCount],
-            SquadDownsTotal = new int[snapshotCount],
-            SquadKills = new int[snapshotCount],
-            SquadKillsTotal = new int[snapshotCount],
+            Squad = BuildTeamAnalysis(log, squadContext, boonIDs, times, snapshotCount),
+            Enemy = BuildTeamAnalysis(log, enemyContext, boonIDs, times, snapshotCount),
+        };
+    }
+
+    private static TeamActorContext BuildContext(IReadOnlyList<SingleActor> attackers, IReadOnlyList<SingleActor> targets, string label)
+    {
+        return new TeamActorContext(
+            attackers,
+            targets,
+            attackers.ToDictionary(actor => actor.AgentItem.GetFinalMaster(), actor => actor.UniqueID),
+            label);
+    }
+
+    private static CombatReplayTeamAnalysisDto BuildTeamAnalysis(
+        ParsedEvtcLog log,
+        TeamActorContext context,
+        IReadOnlySet<long> boonIDs,
+        long[] times,
+        int snapshotCount)
+    {
+        var result = new CombatReplayTeamAnalysisDto
+        {
+            Label = context.Label,
+            Damage = new long[snapshotCount],
+            Downs = new int[snapshotCount],
+            DownsTotal = new int[snapshotCount],
+            Kills = new int[snapshotCount],
+            KillsTotal = new int[snapshotCount],
             BurstStrength = new string[snapshotCount],
-            SquadStrips = new int[snapshotCount],
+            Strips = new int[snapshotCount],
             StripPeakGap = new int[snapshotCount],
             StripSynced = new bool[snapshotCount],
-            SquadTopTargetIds = new int[snapshotCount],
-            SquadTopTargetShare = new double[snapshotCount],
-            SquadTopThreeTargetShare = new double[snapshotCount],
-            SquadTopTargetContributors = new int[snapshotCount],
-            SquadFocused = new bool[snapshotCount],
-            SquadTargetSaturationCount = new int[snapshotCount],
-            SquadTargetSaturationDisplayCount = new int[snapshotCount],
-            SquadTargetSaturation = new string[snapshotCount],
-            Players = squadPlayers.ToDictionary(
-                player => player.UniqueID,
-                _ => new CombatReplayAnalysisPlayerTimelineDto
+            TopTargetIds = new int[snapshotCount],
+            TopTargetShare = new double[snapshotCount],
+            TopThreeTargetShare = new double[snapshotCount],
+            TopTargetContributors = new int[snapshotCount],
+            Focused = new bool[snapshotCount],
+            TargetSaturationCount = new int[snapshotCount],
+            TargetSaturation = new string[snapshotCount],
+            Attackers = context.Attackers.ToDictionary(
+                attacker => attacker.UniqueID,
+                _ => new CombatReplayAnalysisAttackerTimelineDto
                 {
                     Damage = new long[snapshotCount],
                     Strips = new int[snapshotCount],
                     TopTargetContribution = new double[snapshotCount],
-                    HostilesHit = new int[snapshotCount],
-                    NearbyHostiles = new int[snapshotCount],
+                    TargetsHit = new int[snapshotCount],
+                    NearbyTargets = new int[snapshotCount],
                 }),
-            Targets = hostileTargets.ToDictionary(
+            Targets = context.Targets.ToDictionary(
                 target => target.UniqueID,
                 _ => new CombatReplayAnalysisTargetTimelineDto
                 {
                     DamageTaken = new long[snapshotCount],
                     StripsTaken = new int[snapshotCount],
-                    SquadAttackers = new int[snapshotCount],
+                    Attackers = new int[snapshotCount],
                     NearbyAllies = new int[snapshotCount],
                     TopAttackerIds = new int[snapshotCount][],
                     TopAttackerDamage = new long[snapshotCount][],
                 }),
         };
 
-        var damageRecords = BuildDamageRecords(log, hostileTargets, squadPlayersByAgent);
-        var stripRecords = BuildStripRecords(log, hostileTargets, squadPlayersByAgent, boonIDs);
+        var damageRecords = BuildDamageRecords(log, context);
+        var stripRecords = BuildStripRecords(log, context, boonIDs);
 
-        var damagePeakGaps = new int[snapshotCount];
         var damageIndexStart = 0;
         var damageIndexEnd = 0;
         var cumulativeDamageIndex = 0;
@@ -198,10 +231,10 @@ internal static class CombatReplayAnalysisBuilder
                 stripIndexEnd++;
             }
 
-            var damageByPlayer = new Dictionary<int, long>();
+            var damageByAttacker = new Dictionary<int, long>();
             var damageByTarget = new Dictionary<int, long>();
-            var damageByTargetByPlayer = new Dictionary<int, Dictionary<int, long>>();
-            var playerTargetsHit = new Dictionary<int, HashSet<int>>();
+            var damageByTargetByAttacker = new Dictionary<int, Dictionary<int, long>>();
+            var attackerTargetsHit = new Dictionary<int, HashSet<int>>();
             var targetAttackers = new Dictionary<int, HashSet<int>>();
             var damageBuckets = new long[3];
             long totalDamage = 0;
@@ -221,20 +254,20 @@ internal static class CombatReplayAnalysisBuilder
                     kills++;
                 }
 
-                damageByPlayer[damage.PlayerUniqueId] = damageByPlayer.GetValueOrDefault(damage.PlayerUniqueId) + damage.Damage;
+                damageByAttacker[damage.AttackerUniqueId] = damageByAttacker.GetValueOrDefault(damage.AttackerUniqueId) + damage.Damage;
                 damageByTarget[damage.TargetUniqueId] = damageByTarget.GetValueOrDefault(damage.TargetUniqueId) + damage.Damage;
 
-                if (!damageByTargetByPlayer.TryGetValue(damage.TargetUniqueId, out var playerDamageOnTarget))
+                if (!damageByTargetByAttacker.TryGetValue(damage.TargetUniqueId, out var attackerDamageOnTarget))
                 {
-                    playerDamageOnTarget = [];
-                    damageByTargetByPlayer[damage.TargetUniqueId] = playerDamageOnTarget;
+                    attackerDamageOnTarget = [];
+                    damageByTargetByAttacker[damage.TargetUniqueId] = attackerDamageOnTarget;
                 }
-                playerDamageOnTarget[damage.PlayerUniqueId] = playerDamageOnTarget.GetValueOrDefault(damage.PlayerUniqueId) + damage.Damage;
+                attackerDamageOnTarget[damage.AttackerUniqueId] = attackerDamageOnTarget.GetValueOrDefault(damage.AttackerUniqueId) + damage.Damage;
 
-                if (!playerTargetsHit.TryGetValue(damage.PlayerUniqueId, out var hitTargets))
+                if (!attackerTargetsHit.TryGetValue(damage.AttackerUniqueId, out var hitTargets))
                 {
                     hitTargets = [];
-                    playerTargetsHit[damage.PlayerUniqueId] = hitTargets;
+                    attackerTargetsHit[damage.AttackerUniqueId] = hitTargets;
                 }
                 hitTargets.Add(damage.TargetUniqueId);
 
@@ -243,13 +276,13 @@ internal static class CombatReplayAnalysisBuilder
                     attackers = [];
                     targetAttackers[damage.TargetUniqueId] = attackers;
                 }
-                attackers.Add(damage.PlayerUniqueId);
+                attackers.Add(damage.AttackerUniqueId);
 
                 var bucketIndex = ComputeBucketIndex(damage.Time, windowStart);
                 damageBuckets[bucketIndex] += damage.Damage;
             }
 
-            var stripByPlayer = new Dictionary<int, int>();
+            var stripByAttacker = new Dictionary<int, int>();
             var stripByTarget = new Dictionary<int, int>();
             var stripBuckets = new int[3];
             var stripCount = 0;
@@ -258,7 +291,7 @@ internal static class CombatReplayAnalysisBuilder
             {
                 var strip = stripRecords[index];
                 stripCount++;
-                stripByPlayer[strip.PlayerUniqueId] = stripByPlayer.GetValueOrDefault(strip.PlayerUniqueId) + 1;
+                stripByAttacker[strip.AttackerUniqueId] = stripByAttacker.GetValueOrDefault(strip.AttackerUniqueId) + 1;
                 stripByTarget[strip.TargetUniqueId] = stripByTarget.GetValueOrDefault(strip.TargetUniqueId) + 1;
                 var bucketIndex = ComputeBucketIndex(strip.Time, windowStart);
                 stripBuckets[bucketIndex]++;
@@ -276,7 +309,7 @@ internal static class CombatReplayAnalysisBuilder
             }
 
             var contributorCount = 0;
-            if (topTargetId != 0 && totalDamage > 0 && damageByTargetByPlayer.TryGetValue(topTargetId, out var contributors))
+            if (topTargetId != 0 && totalDamage > 0 && damageByTargetByAttacker.TryGetValue(topTargetId, out var contributors))
             {
                 contributorCount = contributors.Count(pair => pair.Value >= totalDamage * 0.05);
             }
@@ -285,20 +318,19 @@ internal static class CombatReplayAnalysisBuilder
                 ? damageByTarget.Values.Count(value => value >= totalDamage * 0.02)
                 : 0;
 
-            result.SquadDamage[snapshotIndex] = totalDamage;
-            result.SquadDowns[snapshotIndex] = downs;
-            result.SquadDownsTotal[snapshotIndex] = totalDowns;
-            result.SquadKills[snapshotIndex] = kills;
-            result.SquadKillsTotal[snapshotIndex] = totalKills;
-            result.SquadStrips[snapshotIndex] = stripCount;
-            result.SquadTopTargetIds[snapshotIndex] = topTargetId;
-            result.SquadTopTargetShare[snapshotIndex] = totalDamage > 0 ? Math.Round(topTargetDamage * 100.0 / totalDamage, 1) : 0;
-            result.SquadTopThreeTargetShare[snapshotIndex] = totalDamage > 0 ? Math.Round(topThreeDamage * 100.0 / totalDamage, 1) : 0;
-            result.SquadTopTargetContributors[snapshotIndex] = contributorCount;
-            result.SquadFocused[snapshotIndex] = totalDamage > 0 && result.SquadTopTargetShare[snapshotIndex] >= 50.0 && contributorCount >= 3;
-            result.SquadTargetSaturationCount[snapshotIndex] = effectiveTargetCount;
-            result.SquadTargetSaturationDisplayCount[snapshotIndex] = Math.Min(effectiveTargetCount, 5);
-            result.SquadTargetSaturation[snapshotIndex] = effectiveTargetCount switch
+            result.Damage[snapshotIndex] = totalDamage;
+            result.Downs[snapshotIndex] = downs;
+            result.DownsTotal[snapshotIndex] = totalDowns;
+            result.Kills[snapshotIndex] = kills;
+            result.KillsTotal[snapshotIndex] = totalKills;
+            result.Strips[snapshotIndex] = stripCount;
+            result.TopTargetIds[snapshotIndex] = topTargetId;
+            result.TopTargetShare[snapshotIndex] = totalDamage > 0 ? Math.Round(topTargetDamage * 100.0 / totalDamage, 1) : 0;
+            result.TopThreeTargetShare[snapshotIndex] = totalDamage > 0 ? Math.Round(topThreeDamage * 100.0 / totalDamage, 1) : 0;
+            result.TopTargetContributors[snapshotIndex] = contributorCount;
+            result.Focused[snapshotIndex] = totalDamage > 0 && result.TopTargetShare[snapshotIndex] >= 50.0 && contributorCount >= 3;
+            result.TargetSaturationCount[snapshotIndex] = effectiveTargetCount;
+            result.TargetSaturation[snapshotIndex] = effectiveTargetCount switch
             {
                 < 3 => "under-saturated",
                 <= 5 => "optimal",
@@ -307,33 +339,32 @@ internal static class CombatReplayAnalysisBuilder
 
             var damagePeakBucket = GetPeakBucketIndex(damageBuckets);
             var stripPeakBucket = GetPeakBucketIndex(stripBuckets);
-            damagePeakGaps[snapshotIndex] = Math.Abs(damagePeakBucket - stripPeakBucket) * BucketSize;
-            result.StripPeakGap[snapshotIndex] = damagePeakGaps[snapshotIndex];
+            result.StripPeakGap[snapshotIndex] = Math.Abs(damagePeakBucket - stripPeakBucket) * BucketSize;
 
-            foreach (var player in squadPlayers)
+            foreach (var attacker in context.Attackers)
             {
-                var timeline = result.Players[player.UniqueID];
-                timeline.Damage[snapshotIndex] = damageByPlayer.GetValueOrDefault(player.UniqueID);
-                timeline.Strips[snapshotIndex] = stripByPlayer.GetValueOrDefault(player.UniqueID);
-                timeline.HostilesHit[snapshotIndex] = playerTargetsHit.TryGetValue(player.UniqueID, out var hitTargets) ? hitTargets.Count : 0;
+                var timeline = result.Attackers[attacker.UniqueID];
+                timeline.Damage[snapshotIndex] = damageByAttacker.GetValueOrDefault(attacker.UniqueID);
+                timeline.Strips[snapshotIndex] = stripByAttacker.GetValueOrDefault(attacker.UniqueID);
+                timeline.TargetsHit[snapshotIndex] = attackerTargetsHit.TryGetValue(attacker.UniqueID, out var hitTargets) ? hitTargets.Count : 0;
 
                 if (topTargetId != 0 &&
                     topTargetDamage > 0 &&
-                    damageByTargetByPlayer.TryGetValue(topTargetId, out var playerContribution) &&
-                    playerContribution.TryGetValue(player.UniqueID, out var contributedDamage))
+                    damageByTargetByAttacker.TryGetValue(topTargetId, out var attackerContribution) &&
+                    attackerContribution.TryGetValue(attacker.UniqueID, out var contributedDamage))
                 {
                     timeline.TopTargetContribution[snapshotIndex] = Math.Round(contributedDamage * 100.0 / topTargetDamage, 1);
                 }
             }
 
-            foreach (var target in hostileTargets)
+            foreach (var target in context.Targets)
             {
                 var timeline = result.Targets[target.UniqueID];
                 timeline.DamageTaken[snapshotIndex] = damageByTarget.GetValueOrDefault(target.UniqueID);
                 timeline.StripsTaken[snapshotIndex] = stripByTarget.GetValueOrDefault(target.UniqueID);
-                timeline.SquadAttackers[snapshotIndex] = targetAttackers.TryGetValue(target.UniqueID, out var attackers) ? attackers.Count : 0;
+                timeline.Attackers[snapshotIndex] = targetAttackers.TryGetValue(target.UniqueID, out var attackers) ? attackers.Count : 0;
 
-                if (damageByTargetByPlayer.TryGetValue(target.UniqueID, out var attackerDamage))
+                if (damageByTargetByAttacker.TryGetValue(target.UniqueID, out var attackerDamage))
                 {
                     var topAttackers = attackerDamage
                         .OrderByDescending(pair => pair.Value)
@@ -349,16 +380,16 @@ internal static class CombatReplayAnalysisBuilder
                 }
             }
 
-            PopulateRangeCounts(log, time, squadPlayersById, hostileTargetsById, result, snapshotIndex);
+            PopulateRangeCounts(log, time, context, result, snapshotIndex);
         }
 
-        var burstLowThreshold = GetPercentile(result.SquadDamage, 0.25);
-        var burstHighThreshold = GetPercentile(result.SquadDamage, 0.75);
-        var stripSyncThreshold = GetPercentile(result.SquadStrips, 0.75);
+        var burstLowThreshold = GetPercentile(result.Damage, 0.25);
+        var burstHighThreshold = GetPercentile(result.Damage, 0.75);
+        var stripSyncThreshold = GetPercentile(result.Strips, 0.75);
 
         for (var snapshotIndex = 0; snapshotIndex < snapshotCount; snapshotIndex++)
         {
-            var damage = result.SquadDamage[snapshotIndex];
+            var damage = result.Damage[snapshotIndex];
             result.BurstStrength[snapshotIndex] = damage <= burstLowThreshold
                 ? "weak"
                 : damage >= burstHighThreshold
@@ -366,21 +397,20 @@ internal static class CombatReplayAnalysisBuilder
                     : "normal";
 
             result.StripSynced[snapshotIndex] =
-                result.SquadStrips[snapshotIndex] > 0 &&
-                result.SquadStrips[snapshotIndex] >= stripSyncThreshold &&
+                result.Strips[snapshotIndex] > 0 &&
+                result.Strips[snapshotIndex] >= stripSyncThreshold &&
                 result.StripPeakGap[snapshotIndex] <= BucketSize;
         }
 
-        result.TopBursts = BuildTopBursts(result);
-
+        result.TopBursts = BuildTopBursts(result, times);
         return result;
     }
 
-    private static List<CombatReplayAnalysisBurstSummaryDto> BuildTopBursts(CombatReplayAnalysisDto analysis)
+    private static List<CombatReplayAnalysisBurstSummaryDto> BuildTopBursts(CombatReplayTeamAnalysisDto analysis, IReadOnlyList<long> times)
     {
         var candidates = new List<CombatReplayAnalysisBurstSummaryDto>();
         var index = 0;
-        while (index < analysis.Times.Length)
+        while (index < times.Count)
         {
             if (analysis.BurstStrength[index] != "strong" || !analysis.StripSynced[index])
             {
@@ -390,10 +420,10 @@ internal static class CombatReplayAnalysisBuilder
 
             var bestIndex = index;
             var nextIndex = index + 1;
-            while (nextIndex < analysis.Times.Length &&
+            while (nextIndex < times.Count &&
                 analysis.BurstStrength[nextIndex] == "strong")
             {
-                if (analysis.StripSynced[nextIndex] && IsBetterBurstSnapshot(analysis, nextIndex, bestIndex))
+                if (analysis.StripSynced[nextIndex] && IsBetterBurstSnapshot(analysis, nextIndex, bestIndex, times))
                 {
                     bestIndex = nextIndex;
                 }
@@ -402,13 +432,13 @@ internal static class CombatReplayAnalysisBuilder
 
             candidates.Add(new CombatReplayAnalysisBurstSummaryDto
             {
-                Time = analysis.Times[bestIndex],
-                Damage = analysis.SquadDamage[bestIndex],
-                Strips = analysis.SquadStrips[bestIndex],
-                Downs = analysis.SquadDowns[bestIndex],
-                DownsTotal = analysis.SquadDownsTotal[bestIndex],
-                Kills = analysis.SquadKills[bestIndex],
-                KillsTotal = analysis.SquadKillsTotal[bestIndex],
+                Time = times[bestIndex],
+                Damage = analysis.Damage[bestIndex],
+                Strips = analysis.Strips[bestIndex],
+                Downs = analysis.Downs[bestIndex],
+                DownsTotal = analysis.DownsTotal[bestIndex],
+                Kills = analysis.Kills[bestIndex],
+                KillsTotal = analysis.KillsTotal[bestIndex],
             });
             index = nextIndex;
         }
@@ -422,25 +452,25 @@ internal static class CombatReplayAnalysisBuilder
             .Take(5)];
     }
 
-    private static bool IsBetterBurstSnapshot(CombatReplayAnalysisDto analysis, int candidateIndex, int currentBestIndex)
+    private static bool IsBetterBurstSnapshot(CombatReplayTeamAnalysisDto analysis, int candidateIndex, int currentBestIndex, IReadOnlyList<long> times)
     {
-        if (analysis.SquadDamage[candidateIndex] != analysis.SquadDamage[currentBestIndex])
+        if (analysis.Damage[candidateIndex] != analysis.Damage[currentBestIndex])
         {
-            return analysis.SquadDamage[candidateIndex] > analysis.SquadDamage[currentBestIndex];
+            return analysis.Damage[candidateIndex] > analysis.Damage[currentBestIndex];
         }
-        if (analysis.SquadStrips[candidateIndex] != analysis.SquadStrips[currentBestIndex])
+        if (analysis.Strips[candidateIndex] != analysis.Strips[currentBestIndex])
         {
-            return analysis.SquadStrips[candidateIndex] > analysis.SquadStrips[currentBestIndex];
+            return analysis.Strips[candidateIndex] > analysis.Strips[currentBestIndex];
         }
-        if (analysis.SquadDowns[candidateIndex] != analysis.SquadDowns[currentBestIndex])
+        if (analysis.Downs[candidateIndex] != analysis.Downs[currentBestIndex])
         {
-            return analysis.SquadDowns[candidateIndex] > analysis.SquadDowns[currentBestIndex];
+            return analysis.Downs[candidateIndex] > analysis.Downs[currentBestIndex];
         }
-        if (analysis.SquadKills[candidateIndex] != analysis.SquadKills[currentBestIndex])
+        if (analysis.Kills[candidateIndex] != analysis.Kills[currentBestIndex])
         {
-            return analysis.SquadKills[candidateIndex] > analysis.SquadKills[currentBestIndex];
+            return analysis.Kills[candidateIndex] > analysis.Kills[currentBestIndex];
         }
-        return analysis.Times[candidateIndex] < analysis.Times[currentBestIndex];
+        return times[candidateIndex] < times[currentBestIndex];
     }
 
     private static long[] BuildTimes(long fightEnd, int pollingRate)
@@ -457,10 +487,10 @@ internal static class CombatReplayAnalysisBuilder
         return [.. times];
     }
 
-    private static List<DamageRecord> BuildDamageRecords(ParsedEvtcLog log, IReadOnlyList<SingleActor> hostileTargets, IReadOnlyDictionary<AgentItem, int> squadPlayersByAgent)
+    private static List<DamageRecord> BuildDamageRecords(ParsedEvtcLog log, TeamActorContext context)
     {
         var result = new List<DamageRecord>();
-        foreach (var target in hostileTargets)
+        foreach (var target in context.Targets)
         {
             foreach (var damageEvent in target.GetDamageTakenEvents(null, log))
             {
@@ -469,21 +499,21 @@ internal static class CombatReplayAnalysisBuilder
                 {
                     continue;
                 }
-                if (!squadPlayersByAgent.TryGetValue(damageEvent.CreditedFrom, out var playerUniqueId))
+                if (!context.AttackerIdsByAgent.TryGetValue(damageEvent.CreditedFrom, out var attackerUniqueId))
                 {
                     continue;
                 }
-                result.Add(new DamageRecord(damageEvent.Time, target.UniqueID, playerUniqueId, damageEvent.HealthDamage, damageEvent.HasDowned, damageEvent.HasKilled));
+                result.Add(new DamageRecord(damageEvent.Time, target.UniqueID, attackerUniqueId, damageEvent.HealthDamage, damageEvent.HasDowned, damageEvent.HasKilled));
             }
         }
         result.Sort((left, right) => left.Time.CompareTo(right.Time));
         return result;
     }
 
-    private static List<StripRecord> BuildStripRecords(ParsedEvtcLog log, IReadOnlyList<SingleActor> hostileTargets, IReadOnlyDictionary<AgentItem, int> squadPlayersByAgent, IReadOnlySet<long> boonIDs)
+    private static List<StripRecord> BuildStripRecords(ParsedEvtcLog log, TeamActorContext context, IReadOnlySet<long> boonIDs)
     {
         var result = new List<StripRecord>();
-        foreach (var target in hostileTargets)
+        foreach (var target in context.Targets)
         {
             foreach (var stripEvent in log.CombatData.GetBuffRemoveAllDataByDst(target.EnglobingAgentItem))
             {
@@ -495,11 +525,11 @@ internal static class CombatReplayAnalysisBuilder
                 {
                     continue;
                 }
-                if (!squadPlayersByAgent.TryGetValue(stripEvent.CreditedBy, out var playerUniqueId))
+                if (!context.AttackerIdsByAgent.TryGetValue(stripEvent.CreditedBy, out var attackerUniqueId))
                 {
                     continue;
                 }
-                result.Add(new StripRecord(stripEvent.Time, target.UniqueID, playerUniqueId));
+                result.Add(new StripRecord(stripEvent.Time, target.UniqueID, attackerUniqueId));
             }
         }
         result.Sort((left, right) => left.Time.CompareTo(right.Time));
@@ -509,26 +539,25 @@ internal static class CombatReplayAnalysisBuilder
     private static void PopulateRangeCounts(
         ParsedEvtcLog log,
         long time,
-        IReadOnlyDictionary<int, Player> squadPlayersById,
-        IReadOnlyDictionary<int, SingleActor> hostileTargetsById,
-        CombatReplayAnalysisDto result,
+        TeamActorContext context,
+        CombatReplayTeamAnalysisDto result,
         int snapshotIndex)
     {
-        var squadPositions = new Dictionary<int, Vector3>();
-        foreach (var player in squadPlayersById.Values)
+        var attackerPositions = new Dictionary<int, Vector3>();
+        foreach (var attacker in context.Attackers)
         {
-            if (time < player.FirstAware || time > player.LastAware)
+            if (time < attacker.FirstAware || time > attacker.LastAware)
             {
                 continue;
             }
-            if (TryGetPosition(player, log, time, out var position))
+            if (TryGetPosition(attacker, log, time, out var position))
             {
-                squadPositions[player.UniqueID] = position;
+                attackerPositions[attacker.UniqueID] = position;
             }
         }
 
-        var hostilePositions = new Dictionary<int, Vector3>();
-        foreach (var target in hostileTargetsById.Values)
+        var targetPositions = new Dictionary<int, Vector3>();
+        foreach (var target in context.Targets)
         {
             if (time < target.FirstAware || time > target.LastAware)
             {
@@ -536,18 +565,18 @@ internal static class CombatReplayAnalysisBuilder
             }
             if (TryGetPosition(target, log, time, out var position))
             {
-                hostilePositions[target.UniqueID] = position;
+                targetPositions[target.UniqueID] = position;
             }
         }
 
-        foreach (var (playerUniqueId, playerPosition) in squadPositions)
+        foreach (var (attackerUniqueId, attackerPosition) in attackerPositions)
         {
-            result.Players[playerUniqueId].NearbyHostiles[snapshotIndex] = hostilePositions.Values.Count(targetPosition => IsWithinRange(playerPosition, targetPosition, RangeThreshold));
+            result.Attackers[attackerUniqueId].NearbyTargets[snapshotIndex] = targetPositions.Values.Count(targetPosition => IsWithinRange(attackerPosition, targetPosition, RangeThreshold));
         }
 
-        foreach (var (targetUniqueId, targetPosition) in hostilePositions)
+        foreach (var (targetUniqueId, targetPosition) in targetPositions)
         {
-            result.Targets[targetUniqueId].NearbyAllies[snapshotIndex] = squadPositions.Values.Count(playerPosition => IsWithinRange(playerPosition, targetPosition, RangeThreshold));
+            result.Targets[targetUniqueId].NearbyAllies[snapshotIndex] = attackerPositions.Values.Count(attackerPosition => IsWithinRange(attackerPosition, targetPosition, RangeThreshold));
         }
     }
 

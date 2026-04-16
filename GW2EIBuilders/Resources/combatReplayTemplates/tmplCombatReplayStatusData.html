@@ -68,6 +68,9 @@
             getTargetByUniqueId: function (uniqueId) {
                 return logData.targets.find(target => target.uniqueID === uniqueId) || null;
             },
+            getActorByUniqueId: function (uniqueId) {
+                return this.getPlayerByUniqueId(uniqueId) || this.getTargetByUniqueId(uniqueId);
+            },
             getSeriesValue: function (series, index) {
                 if (!series || index < 0 || index >= series.length) {
                     return 0;
@@ -97,6 +100,15 @@
                 animator.updateTime(time);
                 animator.updateTextInput();
             },
+            isPlayerActor: function (actor) {
+                return !!(actor && logData.players.some(player => player.uniqueID === actor.uniqueID));
+            },
+            getTeamAnalysis: function (teamKey) {
+                if (!this.crAnalysis) {
+                    return null;
+                }
+                return teamKey === "enemy" ? this.crAnalysis.enemy : this.crAnalysis.squad;
+            },
         }
     };
 
@@ -119,7 +131,7 @@
                     <a class="nav-link" :class="{active: overviewMode === 0}" @click="overviewMode = 0">Overview</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" :class="{active: overviewMode === 1}" @click="overviewMode = 1">Analysis</a>
+                    <a class="nav-link" :class="{active: overviewMode === 1}" @click="overviewMode = 1">Burst</a>
                 </li>
             </ul>
             <combat-replay-overview-stats-component v-if="!hasanalysis || overviewMode === 0" :time="time" :selectedactorid="selectedactorid" :targetless="targetless"></combat-replay-overview-stats-component>
@@ -135,12 +147,20 @@
 
     Vue.component("combat-replay-wvw-analysis-squad-card", {
         mixins: [combatReplayWvWAnalysisMixin],
-        props: ["time"],
+        props: ["time", "teamkey"],
         template: `
         <div class="combat-replay-wvw-analysis-card">
+            <ul class="nav nav-pills d-flex flex-row justify-content-center mb-2 scale85 combat-replay-wvw-team-subtabs">
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: teamkey === 'squad'}" @click="$emit('update:teamkey', 'squad')">My Squad</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: teamkey === 'enemy'}" @click="$emit('update:teamkey', 'enemy')">Enemy Team</a>
+                </li>
+            </ul>
             <div v-if="topBursts.length > 0" class="combat-replay-wvw-analysis-bursts">
-                <div class="combat-replay-wvw-analysis-card-title">Top 5 Bursts</div>
-                <button v-for="(burst, index) in topBursts" type="button" class="combat-replay-wvw-analysis-burst-entry" @click="jumpToBurst(burst.time)">
+                <div class="combat-replay-wvw-analysis-card-title">Top 5 {{teamLabel}} Bursts</div>
+                <button v-for="(burst, index) in topBursts" :key="teamkey + '-burst-' + burst.time + '-' + index" type="button" class="combat-replay-wvw-analysis-burst-entry" @click="jumpToBurst(burst.time)">
                     <span class="combat-replay-wvw-analysis-burst-rank">{{index + 1}}.</span>
                     <span class="combat-replay-wvw-analysis-burst-time">{{formatTime(burst.time)}}</span>
                     <span class="combat-replay-wvw-analysis-burst-detail">{{formatCount(burst.damage)}} damage</span>
@@ -149,7 +169,7 @@
                     <span class="combat-replay-wvw-analysis-burst-detail">{{burst.strips}} strips</span>
                 </button>
             </div>
-            <div class="combat-replay-wvw-analysis-card-title">Squad Now (last 3s)</div>
+            <div class="combat-replay-wvw-analysis-card-title">{{teamLabel}} Now (last 3s)</div>
             <div class="combat-replay-wvw-analysis-grid">
                 <div class="combat-replay-wvw-analysis-metric">
                     <div class="combat-replay-wvw-analysis-label">Burst strength</div>
@@ -187,104 +207,110 @@
                         {{formatCount(targetCount)}} targets
                         <span class="combat-replay-wvw-analysis-pill" :class="'combat-replay-wvw-analysis-pill-' + targetSaturation">{{targetSaturation}}</span>
                     </div>
-                    <div class="combat-replay-wvw-analysis-detail">Counts hostile players hit in the current 3s window</div>
+                    <div class="combat-replay-wvw-analysis-detail">Counts players hit in the current 3s window</div>
                 </div>
             </div>
         </div>
         `,
         computed: {
+            currentTeam: function () {
+                return this.getTeamAnalysis(this.teamkey);
+            },
+            teamLabel: function () {
+                return this.currentTeam && this.currentTeam.label ? this.currentTeam.label : (this.teamkey === "enemy" ? "Enemy Team" : "My Squad");
+            },
             topBursts: function () {
-                return this.crAnalysis && this.crAnalysis.topBursts ? this.crAnalysis.topBursts : [];
+                return this.currentTeam && this.currentTeam.topBursts ? this.currentTeam.topBursts : [];
             },
             damage: function () {
-                return this.getSeriesValue(this.crAnalysis.squadDamage, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.damage : null, this.snapshotIndex);
             },
             downs: function () {
-                return this.getSeriesValue(this.crAnalysis.squadDowns, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.downs : null, this.snapshotIndex);
             },
             downsTotal: function () {
-                return this.getSeriesValue(this.crAnalysis.squadDownsTotal, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.downsTotal : null, this.snapshotIndex);
             },
             kills: function () {
-                return this.getSeriesValue(this.crAnalysis.squadKills, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.kills : null, this.snapshotIndex);
             },
             killsTotal: function () {
-                return this.getSeriesValue(this.crAnalysis.squadKillsTotal, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.killsTotal : null, this.snapshotIndex);
             },
             burstStrength: function () {
-                return this.getSeriesValue(this.crAnalysis.burstStrength, this.snapshotIndex) || "normal";
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.burstStrength : null, this.snapshotIndex) || "normal";
             },
             strips: function () {
-                return this.getSeriesValue(this.crAnalysis.squadStrips, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.strips : null, this.snapshotIndex);
             },
             stripPeakGap: function () {
-                return this.getSeriesValue(this.crAnalysis.stripPeakGap, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.stripPeakGap : null, this.snapshotIndex);
             },
             stripSynced: function () {
-                return !!this.getSeriesValue(this.crAnalysis.stripSynced, this.snapshotIndex);
+                return !!this.getSeriesValue(this.currentTeam ? this.currentTeam.stripSynced : null, this.snapshotIndex);
             },
             topTargetId: function () {
-                return this.getSeriesValue(this.crAnalysis.squadTopTargetIds, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.topTargetIds : null, this.snapshotIndex);
             },
             topTargetName: function () {
-                const target = this.getTargetByUniqueId(this.topTargetId);
-                return target ? target.name : "No focus target";
+                const actor = this.getActorByUniqueId(this.topTargetId);
+                return actor ? actor.name : "No focus target";
             },
             topTargetShare: function () {
-                return this.getSeriesValue(this.crAnalysis.squadTopTargetShare, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.topTargetShare : null, this.snapshotIndex);
             },
             topThreeShare: function () {
-                return this.getSeriesValue(this.crAnalysis.squadTopThreeTargetShare, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.topThreeTargetShare : null, this.snapshotIndex);
             },
             contributors: function () {
-                return this.getSeriesValue(this.crAnalysis.squadTopTargetContributors, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.topTargetContributors : null, this.snapshotIndex);
             },
             focused: function () {
-                return !!this.getSeriesValue(this.crAnalysis.squadFocused, this.snapshotIndex);
+                return !!this.getSeriesValue(this.currentTeam ? this.currentTeam.focused : null, this.snapshotIndex);
             },
             targetCount: function () {
-                return this.getSeriesValue(this.crAnalysis.squadTargetSaturationCount, this.snapshotIndex);
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.targetSaturationCount : null, this.snapshotIndex);
             },
             targetSaturation: function () {
-                return this.getSeriesValue(this.crAnalysis.squadTargetSaturation, this.snapshotIndex) || "optimal";
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.targetSaturation : null, this.snapshotIndex) || "optimal";
             },
         },
     });
 
     Vue.component("combat-replay-wvw-analysis-selected-card", {
         mixins: [combatReplayWvWAnalysisMixin],
-        props: ["time", "selectedactorid"],
+        props: ["time", "selectedactorid", "teamkey"],
         template: `
         <div class="combat-replay-wvw-analysis-card">
             <div class="combat-replay-wvw-analysis-card-title">Selected Actor (last 3s)</div>
-            <div v-if="selectedPlayer && selectedPlayerTimeline" class="combat-replay-wvw-analysis-selected">
+            <div v-if="selectedAttacker && selectedAttackerTimeline" class="combat-replay-wvw-analysis-selected">
                 <div class="combat-replay-wvw-analysis-selected-header">
-                    <img :src="selectedPlayer.icon" :alt="selectedPlayer.profession" class="combat-replay-wvw-analysis-selected-icon">
+                    <img :src="selectedAttacker.icon" :alt="selectedAttacker.profession || selectedAttacker.name" class="combat-replay-wvw-analysis-selected-icon">
                     <div>
-                        <div class="combat-replay-wvw-analysis-selected-name">{{selectedPlayer.name}}</div>
-                        <div class="combat-replay-wvw-analysis-selected-type">Squad player</div>
+                        <div class="combat-replay-wvw-analysis-selected-name">{{selectedAttacker.name}}</div>
+                        <div class="combat-replay-wvw-analysis-selected-type">{{attackerTypeLabel}}</div>
                     </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-grid">
                     <div class="combat-replay-wvw-analysis-metric">
                         <div class="combat-replay-wvw-analysis-label">Outgoing damage</div>
-                        <div class="combat-replay-wvw-analysis-value">{{formatCount(playerDamage)}}</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(attackerDamage)}}</div>
                     </div>
                     <div class="combat-replay-wvw-analysis-metric">
                         <div class="combat-replay-wvw-analysis-label">Outgoing boon strips</div>
-                        <div class="combat-replay-wvw-analysis-value">{{formatCount(playerStrips)}}</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(attackerStrips)}}</div>
                     </div>
                     <div class="combat-replay-wvw-analysis-metric">
                         <div class="combat-replay-wvw-analysis-label">Current focus contribution</div>
-                        <div class="combat-replay-wvw-analysis-value">{{formatPercent(playerTopTargetContribution)}}</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatPercent(attackerTopTargetContribution)}}</div>
                     </div>
                     <div class="combat-replay-wvw-analysis-metric">
-                        <div class="combat-replay-wvw-analysis-label">Hostile players hit</div>
-                        <div class="combat-replay-wvw-analysis-value">{{formatCount(playerHostilesHit)}}</div>
+                        <div class="combat-replay-wvw-analysis-label">Targets hit</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(attackerTargetsHit)}}</div>
                     </div>
                     <div class="combat-replay-wvw-analysis-metric">
-                        <div class="combat-replay-wvw-analysis-label">Hostiles within 1200</div>
-                        <div class="combat-replay-wvw-analysis-value">{{formatCount(playerNearbyHostiles)}}</div>
+                        <div class="combat-replay-wvw-analysis-label">Targets within 1200</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(attackerNearbyTargets)}}</div>
                     </div>
                 </div>
             </div>
@@ -293,7 +319,7 @@
                     <img :src="selectedTarget.icon" :alt="selectedTarget.name" class="combat-replay-wvw-analysis-selected-icon">
                     <div>
                         <div class="combat-replay-wvw-analysis-selected-name">{{selectedTarget.name}}</div>
-                        <div class="combat-replay-wvw-analysis-selected-type">Hostile target</div>
+                        <div class="combat-replay-wvw-analysis-selected-type">{{targetTypeLabel}}</div>
                     </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-grid">
@@ -306,57 +332,72 @@
                         <div class="combat-replay-wvw-analysis-value">{{formatCount(targetStripsTaken)}}</div>
                     </div>
                     <div class="combat-replay-wvw-analysis-metric">
-                        <div class="combat-replay-wvw-analysis-label">Squad attackers</div>
+                        <div class="combat-replay-wvw-analysis-label">Attackers</div>
                         <div class="combat-replay-wvw-analysis-value">{{formatCount(targetAttackers)}}</div>
                     </div>
                     <div class="combat-replay-wvw-analysis-metric">
-                        <div class="combat-replay-wvw-analysis-label">Allies within 1200</div>
-                        <div class="combat-replay-wvw-analysis-value">{{formatCount(targetNearbyAllies)}}</div>
+                        <div class="combat-replay-wvw-analysis-label">Attackers within 1200</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(targetNearbyAttackers)}}</div>
                     </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-attackers" v-if="topAttackers.length > 0">
                     <div class="combat-replay-wvw-analysis-label">Top attackers</div>
-                    <div v-for="attacker in topAttackers" class="combat-replay-wvw-analysis-attacker-row">
+                    <div v-for="attacker in topAttackers" :key="'top-attacker-' + attacker.actor.uniqueID" class="combat-replay-wvw-analysis-attacker-row">
                         <div class="combat-replay-wvw-analysis-attacker-name">
-                            <img :src="attacker.player.icon" :alt="attacker.player.profession" class="combat-replay-wvw-analysis-attacker-icon">
-                            {{attacker.player.name}}
+                            <img :src="attacker.actor.icon" :alt="attacker.actor.profession || attacker.actor.name" class="combat-replay-wvw-analysis-attacker-icon">
+                            {{attacker.actor.name}}
                         </div>
                         <div class="combat-replay-wvw-analysis-attacker-damage">{{formatCount(attacker.damage)}}</div>
                     </div>
                 </div>
             </div>
             <div v-else class="combat-replay-wvw-analysis-helper">
-                Select a squad player or a real hostile player on the replay to view actor-specific analysis.
+                Select a player on either team in the replay to view burst details for the current side.
             </div>
         </div>
         `,
         computed: {
-            selectedPlayerTimeline: function () {
-                return this.crAnalysis && this.selectedactorid != null ? this.crAnalysis.players[this.selectedactorid] : null;
+            currentTeam: function () {
+                return this.getTeamAnalysis(this.teamkey);
+            },
+            selectedAttackerTimeline: function () {
+                return this.currentTeam && this.selectedactorid != null ? this.currentTeam.attackers[this.selectedactorid] : null;
             },
             selectedTargetTimeline: function () {
-                return this.crAnalysis && this.selectedactorid != null ? this.crAnalysis.targets[this.selectedactorid] : null;
+                return this.currentTeam && this.selectedactorid != null ? this.currentTeam.targets[this.selectedactorid] : null;
             },
-            selectedPlayer: function () {
-                return this.selectedPlayerTimeline ? this.getPlayerByUniqueId(this.selectedactorid) : null;
+            selectedAttacker: function () {
+                return this.selectedAttackerTimeline ? this.getActorByUniqueId(this.selectedactorid) : null;
             },
             selectedTarget: function () {
-                return this.selectedTargetTimeline ? this.getTargetByUniqueId(this.selectedactorid) : null;
+                return this.selectedTargetTimeline ? this.getActorByUniqueId(this.selectedactorid) : null;
             },
-            playerDamage: function () {
-                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.damage, this.snapshotIndex) : 0;
+            attackerTypeLabel: function () {
+                if (!this.selectedAttacker) {
+                    return "";
+                }
+                return this.teamkey === "enemy" ? "Enemy player" : "Squad player";
             },
-            playerStrips: function () {
-                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.strips, this.snapshotIndex) : 0;
+            targetTypeLabel: function () {
+                if (!this.selectedTarget) {
+                    return "";
+                }
+                return this.teamkey === "enemy" ? "Squad player" : "Hostile player";
             },
-            playerTopTargetContribution: function () {
-                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.topTargetContribution, this.snapshotIndex) : 0;
+            attackerDamage: function () {
+                return this.selectedAttackerTimeline ? this.getSeriesValue(this.selectedAttackerTimeline.damage, this.snapshotIndex) : 0;
             },
-            playerHostilesHit: function () {
-                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.hostilesHit, this.snapshotIndex) : 0;
+            attackerStrips: function () {
+                return this.selectedAttackerTimeline ? this.getSeriesValue(this.selectedAttackerTimeline.strips, this.snapshotIndex) : 0;
             },
-            playerNearbyHostiles: function () {
-                return this.selectedPlayerTimeline ? this.getSeriesValue(this.selectedPlayerTimeline.nearbyHostiles, this.snapshotIndex) : 0;
+            attackerTopTargetContribution: function () {
+                return this.selectedAttackerTimeline ? this.getSeriesValue(this.selectedAttackerTimeline.topTargetContribution, this.snapshotIndex) : 0;
+            },
+            attackerTargetsHit: function () {
+                return this.selectedAttackerTimeline ? this.getSeriesValue(this.selectedAttackerTimeline.targetsHit, this.snapshotIndex) : 0;
+            },
+            attackerNearbyTargets: function () {
+                return this.selectedAttackerTimeline ? this.getSeriesValue(this.selectedAttackerTimeline.nearbyTargets, this.snapshotIndex) : 0;
             },
             targetDamageTaken: function () {
                 return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.damageTaken, this.snapshotIndex) : 0;
@@ -365,9 +406,9 @@
                 return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.stripsTaken, this.snapshotIndex) : 0;
             },
             targetAttackers: function () {
-                return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.squadAttackers, this.snapshotIndex) : 0;
+                return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.attackers, this.snapshotIndex) : 0;
             },
-            targetNearbyAllies: function () {
+            targetNearbyAttackers: function () {
                 return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.nearbyAllies, this.snapshotIndex) : 0;
             },
             topAttackers: function () {
@@ -378,12 +419,12 @@
                 const attackerDamage = this.getSeriesArrayValue(this.selectedTargetTimeline.topAttackerDamage, this.snapshotIndex);
                 const result = [];
                 for (let index = 0; index < attackerIds.length; index++) {
-                    const player = this.getPlayerByUniqueId(attackerIds[index]);
-                    if (!player) {
+                    const actor = this.getActorByUniqueId(attackerIds[index]);
+                    if (!actor) {
                         continue;
                     }
                     result.push({
-                        player: player,
+                        actor: actor,
                         damage: attackerDamage[index] || 0,
                     });
                 }
@@ -397,10 +438,15 @@
         props: ["time", "selectedactorid"],
         template: `
         <div v-if="crAnalysis" class="combat-replay-wvw-analysis-panel">
-            <combat-replay-wvw-analysis-squad-card :time="time"></combat-replay-wvw-analysis-squad-card>
-            <combat-replay-wvw-analysis-selected-card :time="time" :selectedactorid="selectedactorid"></combat-replay-wvw-analysis-selected-card>
+            <combat-replay-wvw-analysis-squad-card :time="time" :teamkey="teamKey" @update:teamkey="teamKey = $event"></combat-replay-wvw-analysis-squad-card>
+            <combat-replay-wvw-analysis-selected-card :time="time" :selectedactorid="selectedactorid" :teamkey="teamKey"></combat-replay-wvw-analysis-selected-card>
         </div>
         `,
+        data: function () {
+            return {
+                teamKey: "squad",
+            };
+        },
     });
 
     Vue.component("combat-replay-status-data-component", {
