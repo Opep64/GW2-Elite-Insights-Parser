@@ -1299,6 +1299,9 @@ h6.actor-shorten-cr-compact {
 }
 
 .wvw-summary-inline-link {
+    position: relative;
+    z-index: 3;
+    pointer-events: auto;
     border: 0;
     background: transparent;
     color: inherit;
@@ -1343,9 +1346,16 @@ h6.actor-shorten-cr-compact {
 }
 
 .wvw-summary-downs-layout {
+    position: relative;
+    z-index: 2;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
     gap: 0.9rem;
+}
+
+.wvw-summary-downs-layout .wvw-summary-side-panel {
+    position: relative;
+    z-index: 2;
 }
 
 .wvw-summary-side-panel {
