@@ -11,6 +11,7 @@ namespace GW2EIBuilders.HtmlModels;
 internal class CombatReplayAnalysisDto
 {
     public int Lookback { get; set; }
+    public bool HasHealingData { get; set; }
     public long[] Times { get; set; } = [];
     public CombatReplayTeamAnalysisDto Squad { get; set; } = new();
     public CombatReplayTeamAnalysisDto Enemy { get; set; } = new();
@@ -60,6 +61,8 @@ internal class CombatReplayAnalysisBurstSummaryDto
 internal class CombatReplayAnalysisAttackerTimelineDto
 {
     public long[] Damage { get; set; } = [];
+    public long[] Healing { get; set; } = [];
+    public int[] Cleanses { get; set; } = [];
     public int[] Strips { get; set; } = [];
     public double[] TopTargetContribution { get; set; } = [];
     public int[] TargetsHit { get; set; } = [];
@@ -187,6 +190,8 @@ internal static class CombatReplayAnalysisBuilder
         OverextendedPlayerThreshold: 5);
 
     private readonly record struct DamageRecord(long Time, int TargetUniqueId, int AttackerUniqueId, int Damage, bool HasDowned, bool HasKilled);
+    private readonly record struct HealingRecord(long Time, int AttackerUniqueId, int Healing);
+    private readonly record struct CleanseRecord(long Time, int AttackerUniqueId);
     private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId);
     private readonly record struct TeamActorContext(
         IReadOnlyList<SingleActor> Attackers,
@@ -234,6 +239,7 @@ internal static class CombatReplayAnalysisBuilder
         return new CombatReplayAnalysisDto
         {
             Lookback = LookbackWindow,
+            HasHealingData = log.CombatData.HasEXTHealing,
             Times = times,
             Squad = squadAnalysis,
             Enemy = BuildTeamAnalysis(log, enemyContext, boonIDs, times, snapshotCount),
@@ -286,6 +292,8 @@ internal static class CombatReplayAnalysisBuilder
                 _ => new CombatReplayAnalysisAttackerTimelineDto
                 {
                     Damage = new long[snapshotCount],
+                    Healing = new long[snapshotCount],
+                    Cleanses = new int[snapshotCount],
                     Strips = new int[snapshotCount],
                     TopTargetContribution = new double[snapshotCount],
                     TargetsHit = new int[snapshotCount],
@@ -305,11 +313,17 @@ internal static class CombatReplayAnalysisBuilder
         };
 
         var damageRecords = BuildDamageRecords(log, context);
+        var healingRecords = BuildHealingRecords(log, context);
+        var cleanseRecords = BuildCleanseRecords(log, context);
         var stripRecords = BuildStripRecords(log, context, boonIDs);
 
         var damageIndexStart = 0;
         var damageIndexEnd = 0;
         var cumulativeDamageIndex = 0;
+        var healingIndexStart = 0;
+        var healingIndexEnd = 0;
+        var cleanseIndexStart = 0;
+        var cleanseIndexEnd = 0;
         var stripIndexStart = 0;
         var stripIndexEnd = 0;
         var totalDowns = 0;
@@ -340,6 +354,22 @@ internal static class CombatReplayAnalysisBuilder
                     totalKills++;
                 }
                 cumulativeDamageIndex++;
+            }
+            while (healingIndexStart < healingRecords.Count && healingRecords[healingIndexStart].Time < windowStart)
+            {
+                healingIndexStart++;
+            }
+            while (healingIndexEnd < healingRecords.Count && healingRecords[healingIndexEnd].Time <= time)
+            {
+                healingIndexEnd++;
+            }
+            while (cleanseIndexStart < cleanseRecords.Count && cleanseRecords[cleanseIndexStart].Time < windowStart)
+            {
+                cleanseIndexStart++;
+            }
+            while (cleanseIndexEnd < cleanseRecords.Count && cleanseRecords[cleanseIndexEnd].Time <= time)
+            {
+                cleanseIndexEnd++;
             }
             while (stripIndexStart < stripRecords.Count && stripRecords[stripIndexStart].Time < windowStart)
             {
@@ -405,6 +435,19 @@ internal static class CombatReplayAnalysisBuilder
             var stripByTarget = new Dictionary<int, int>();
             var stripBuckets = new int[3];
             var stripCount = 0;
+            var healingByAttacker = new Dictionary<int, long>();
+            var cleanseByAttacker = new Dictionary<int, int>();
+
+            for (var index = healingIndexStart; index < healingIndexEnd; index++)
+            {
+                var healing = healingRecords[index];
+                healingByAttacker[healing.AttackerUniqueId] = healingByAttacker.GetValueOrDefault(healing.AttackerUniqueId) + healing.Healing;
+            }
+            for (var index = cleanseIndexStart; index < cleanseIndexEnd; index++)
+            {
+                var cleanse = cleanseRecords[index];
+                cleanseByAttacker[cleanse.AttackerUniqueId] = cleanseByAttacker.GetValueOrDefault(cleanse.AttackerUniqueId) + 1;
+            }
 
             for (var index = stripIndexStart; index < stripIndexEnd; index++)
             {
@@ -476,6 +519,8 @@ internal static class CombatReplayAnalysisBuilder
             {
                 var timeline = result.Attackers[attacker.UniqueID];
                 timeline.Damage[snapshotIndex] = damageByAttacker.GetValueOrDefault(attacker.UniqueID);
+                timeline.Healing[snapshotIndex] = healingByAttacker.GetValueOrDefault(attacker.UniqueID);
+                timeline.Cleanses[snapshotIndex] = cleanseByAttacker.GetValueOrDefault(attacker.UniqueID);
                 timeline.Strips[snapshotIndex] = stripByAttacker.GetValueOrDefault(attacker.UniqueID);
                 timeline.TargetsHit[snapshotIndex] = attackerTargetsHit.TryGetValue(attacker.UniqueID, out var hitTargets) ? hitTargets.Count : 0;
 
@@ -1036,6 +1081,55 @@ internal static class CombatReplayAnalysisBuilder
                     continue;
                 }
                 result.Add(new DamageRecord(damageEvent.Time, target.UniqueID, attackerUniqueId, damageEvent.HealthDamage, damageEvent.HasDowned, damageEvent.HasKilled));
+            }
+        }
+        result.Sort((left, right) => left.Time.CompareTo(right.Time));
+        return result;
+    }
+
+    private static List<HealingRecord> BuildHealingRecords(ParsedEvtcLog log, TeamActorContext context)
+    {
+        var result = new List<HealingRecord>();
+        if (!log.CombatData.HasEXTHealing)
+        {
+            return result;
+        }
+        foreach (var attacker in context.Attackers)
+        {
+            foreach (var healingEvent in attacker.EXTHealing.GetOutgoingHealEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd))
+            {
+                if (!context.AttackerIdsByAgent.ContainsKey(healingEvent.To.GetFinalMaster()))
+                {
+                    continue;
+                }
+                result.Add(new HealingRecord(healingEvent.Time, attacker.UniqueID, healingEvent.HealingDone));
+            }
+        }
+        result.Sort((left, right) => left.Time.CompareTo(right.Time));
+        return result;
+    }
+
+    private static List<CleanseRecord> BuildCleanseRecords(ParsedEvtcLog log, TeamActorContext context)
+    {
+        var result = new List<CleanseRecord>();
+        var conditionIds = new HashSet<long>(log.Buffs.BuffsByClassification[Buff.BuffClassification.Condition].Select(buff => buff.ID));
+        foreach (var cleanedActor in context.Attackers)
+        {
+            foreach (var removeEvent in log.CombatData.GetBuffRemoveAllDataByDst(cleanedActor.EnglobingAgentItem))
+            {
+                if (removeEvent.Time < cleanedActor.FirstAware || removeEvent.Time > cleanedActor.LastAware)
+                {
+                    continue;
+                }
+                if (!conditionIds.Contains(removeEvent.BuffID) || removeEvent.CreditedBy.IsUnknown || !removeEvent.ToFriendly)
+                {
+                    continue;
+                }
+                if (!context.AttackerIdsByAgent.TryGetValue(removeEvent.CreditedBy, out var attackerUniqueId))
+                {
+                    continue;
+                }
+                result.Add(new CleanseRecord(removeEvent.Time, attackerUniqueId));
             }
         }
         result.Sort((left, right) => left.Time.CompareTo(right.Time));

@@ -11,7 +11,7 @@
                 <a class="nav-link" :class="{active: mode === 2}" @click="mode = 2">Mechanics</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" :class="{active: mode === 3}" @click="mode = 3">Overview</a>
+                <a class="nav-link" :class="{active: mode === 3}" @click="mode = 3">Analysis</a>
             </li>
         </ul>
         <div class="squad-details">
@@ -154,6 +154,9 @@
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: overviewMode === 3}" @click="overviewMode = 3">Positioning</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: overviewMode === 4}" @click="overviewMode = 4">Player</a>
+                </li>
             </ul>
             <div v-if="!hasanalysis || overviewMode === 0" class="d-flex flex-column">
                 <div class="combat-replay-overview-help-row">
@@ -163,7 +166,8 @@
             </div>
             <combat-replay-wvw-analysis-component v-else-if="overviewMode === 1" :time="time" :selectedactorid="selectedactorid"></combat-replay-wvw-analysis-component>
             <combat-replay-threat-boons-component v-else-if="overviewMode === 2" :time="time" :selectedactorid="selectedactorid"></combat-replay-threat-boons-component>
-            <combat-replay-positioning-component v-else :time="time" :selectedactorid="selectedactorid"></combat-replay-positioning-component>
+            <combat-replay-positioning-component v-else-if="overviewMode === 3" :time="time" :selectedactorid="selectedactorid"></combat-replay-positioning-component>
+            <combat-replay-player-analysis-component v-else :time="time" :selectedactorid="selectedactorid"></combat-replay-player-analysis-component>
             <div v-if="showOverviewHelp" class="wvw-summary-modal-backdrop" @click.self="showOverviewHelp = false">
                 <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay compact card help">
                     <button type="button" class="wvw-summary-modal-close" aria-label="Close compact card help" @click="showOverviewHelp = false">&times;</button>
@@ -814,6 +818,310 @@
             return {
                 showWeightedBoonsHelp: false,
             };
+        },
+    });
+
+    Vue.component("combat-replay-player-analysis-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time", "selectedactorid"],
+        data: function () {
+            return {
+                playerSearchOpen: false,
+                playerSearchQuery: "",
+            };
+        },
+        template: `
+        <div class="combat-replay-wvw-analysis-panel">
+            <div class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">Selected Player</div>
+                <div class="combat-replay-player-search">
+                    <input
+                        v-model.trim="playerSearchQuery"
+                        class="combat-replay-player-search-input"
+                        type="text"
+                        :placeholder="selectedPlayer ? 'Type to switch players' : 'Type to find a player'"
+                        @focus="openPlayerSearch"
+                        @blur="handlePlayerSearchBlur">
+                    <div v-if="playerSearchOpen" class="combat-replay-player-search-results">
+                        <button
+                            v-for="player in filteredPlayers"
+                            :key="'player-search-' + player.uniqueID"
+                            class="combat-replay-player-search-result"
+                            type="button"
+                            @mousedown.prevent="choosePlayer(player)">
+                            <img :src="player.icon" :alt="player.profession || player.name" class="combat-replay-player-search-result-icon">
+                            <span class="combat-replay-player-search-result-name">{{player.name}}</span>
+                        </button>
+                        <div v-if="filteredPlayers.length === 0" class="combat-replay-player-search-empty">No matching players.</div>
+                    </div>
+                </div>
+                <div v-if="!selectedPlayer" class="combat-replay-wvw-analysis-helper">Please select a player.</div>
+                <div v-else class="combat-replay-wvw-analysis-selected">
+                    <div class="combat-replay-wvw-analysis-selected-header">
+                        <img :src="selectedPlayer.icon" :alt="selectedPlayer.profession || selectedPlayer.name" class="combat-replay-wvw-analysis-selected-icon">
+                        <div>
+                            <div class="combat-replay-wvw-analysis-selected-name">{{selectedPlayer.name}}</div>
+                            <div class="combat-replay-wvw-analysis-selected-type">
+                                {{currentThreatStatus}}, {{currentPositionStatus}}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <template v-if="selectedPlayer">
+                <div class="combat-replay-wvw-analysis-card">
+                    <div class="combat-replay-wvw-analysis-card-title">Burst Window (last 3s)</div>
+                    <div class="combat-replay-wvw-analysis-grid">
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Damage</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(playerDamage)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Boon strips</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(playerStrips)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Healing</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(playerHealing)}}</div>
+                            <div v-if="!hasHealingData" class="combat-replay-wvw-analysis-detail">Unavailable in this log</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Cleanses</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(playerCleanses)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Targets hit</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(playerTargetsHit)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Nearby enemies</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(playerNearbyTargets)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">Within 1200 at the current replay time</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Top-target contribution</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatPercent(playerTopTargetContribution)}}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="combat-replay-wvw-analysis-card">
+                    <div class="combat-replay-wvw-analysis-card-title">Positioning</div>
+                    <div v-if="!positioningAnalysis" class="combat-replay-wvw-analysis-helper">
+                        Positioning analysis is unavailable for this log.
+                    </div>
+                    <div v-else-if="commanderSelected" class="combat-replay-wvw-analysis-helper">
+                        The commander is the anchor for positioning analysis and is not scored.
+                    </div>
+                    <div v-else-if="!selectedPositioningTimeline" class="combat-replay-wvw-analysis-helper">
+                        No positioning data is available for this player.
+                    </div>
+                    <div v-else class="combat-replay-wvw-analysis-grid">
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Current status</div>
+                            <div class="combat-replay-wvw-analysis-value">{{currentPositionStatus}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Distance to commander</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(distanceToCommander)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Closer-than-tag enemies</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(enemiesCloserThanCommander)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Ahead-of-tag enemies</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(enemiesAheadOfCommander)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Running in position</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatPercent(runningInPositionRate)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Running exposure</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatPercent(runningOverextendedRate)}} overextended</div>
+                            <div class="combat-replay-wvw-analysis-detail">{{formatPercent(runningLateralRiskRate)}} left/right exposed</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="combat-replay-wvw-analysis-card">
+                    <div class="combat-replay-wvw-analysis-card-title">Weighted Boons</div>
+                    <div v-if="!selectedThreatTimeline" class="combat-replay-wvw-analysis-helper">
+                        No weighted boon data is available for this player.
+                    </div>
+                    <div v-else>
+                        <div class="combat-replay-wvw-analysis-detail text-center">
+                            {{formatCount(nearbyEnemies)}} nearby enemies, {{currentThreatStatus}}, {{formatDurationSeconds(runningThreatTime)}} threat time so far
+                        </div>
+                        <div class="combat-replay-threat-player-boons">
+                            <div v-for="boon in selectedPlayerBoons" :key="'player-analysis-boon-' + boon.id" class="combat-replay-threat-player-boon-row">
+                                <div class="combat-replay-threat-boon-title">
+                                    <img :src="boon.icon" :alt="boon.name" class="combat-replay-threat-boon-icon">
+                                    <span>{{boon.name}}</span>
+                                </div>
+                                <div class="combat-replay-threat-player-boon-values">
+                                    <span>{{boon.stackBased ? formatCount(boon.currentStacks) + ' stacks now' : (boon.currentStacks > 0 ? 'active now' : 'inactive now')}}</span>
+                                    <span>{{formatPercent(boon.runningCoverage)}} threat uptime</span>
+                                    <span v-if="boon.tracksOverapplication">{{formatPercent(boon.runningOverapplication)}} over-applied</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+        `,
+        computed: {
+            hasHealingData: function () {
+                return !!(this.crAnalysis && this.crAnalysis.hasHealingData);
+            },
+            squadAnalysis: function () {
+                return this.getTeamAnalysis("squad");
+            },
+            threatAnalysis: function () {
+                return this.getThreatAnalysis();
+            },
+            positioningAnalysis: function () {
+                return this.getPositioningAnalysis();
+            },
+            availablePlayers: function () {
+                return [...logData.players].sort((left, right) => left.name.localeCompare(right.name));
+            },
+            filteredPlayers: function () {
+                const query = this.normalizeSearchValue(this.playerSearchQuery);
+                const players = query
+                    ? this.availablePlayers.filter(player =>
+                        this.normalizeSearchValue(player.name).includes(query) ||
+                        this.normalizeSearchValue(player.acc || "").includes(query))
+                    : this.availablePlayers;
+                return players.slice(0, 12);
+            },
+            selectedPlayer: function () {
+                return this.selectedactorid != null ? this.getPlayerByUniqueId(this.selectedactorid) : null;
+            },
+            commanderSelected: function () {
+                return !!(this.selectedPlayer && this.positioningAnalysis && this.selectedPlayer.uniqueID === this.positioningAnalysis.commanderId);
+            },
+            selectedBurstTimeline: function () {
+                return this.selectedPlayer && this.squadAnalysis ? this.squadAnalysis.attackers[this.selectedPlayer.uniqueID] || null : null;
+            },
+            selectedThreatTimeline: function () {
+                return this.selectedPlayer && this.threatAnalysis ? this.threatAnalysis.players[this.selectedPlayer.uniqueID] || null : null;
+            },
+            selectedPositioningTimeline: function () {
+                if (!this.selectedPlayer || !this.positioningAnalysis || this.commanderSelected) {
+                    return null;
+                }
+                return this.positioningAnalysis.players[this.selectedPlayer.uniqueID] || null;
+            },
+            playerDamage: function () {
+                return this.selectedBurstTimeline ? this.getSeriesValue(this.selectedBurstTimeline.damage, this.snapshotIndex) : 0;
+            },
+            playerStrips: function () {
+                return this.selectedBurstTimeline ? this.getSeriesValue(this.selectedBurstTimeline.strips, this.snapshotIndex) : 0;
+            },
+            playerHealing: function () {
+                return this.selectedBurstTimeline ? this.getSeriesValue(this.selectedBurstTimeline.healing, this.snapshotIndex) : 0;
+            },
+            playerCleanses: function () {
+                return this.selectedBurstTimeline ? this.getSeriesValue(this.selectedBurstTimeline.cleanses, this.snapshotIndex) : 0;
+            },
+            playerTargetsHit: function () {
+                return this.selectedBurstTimeline ? this.getSeriesValue(this.selectedBurstTimeline.targetsHit, this.snapshotIndex) : 0;
+            },
+            playerNearbyTargets: function () {
+                return this.selectedBurstTimeline ? this.getSeriesValue(this.selectedBurstTimeline.nearbyTargets, this.snapshotIndex) : 0;
+            },
+            playerTopTargetContribution: function () {
+                return this.selectedBurstTimeline ? this.getSeriesValue(this.selectedBurstTimeline.topTargetContribution, this.snapshotIndex) : 0;
+            },
+            nearbyEnemies: function () {
+                return this.selectedThreatTimeline ? this.getSeriesValue(this.selectedThreatTimeline.nearbyEnemies, this.snapshotIndex) : 0;
+            },
+            runningThreatTime: function () {
+                return this.selectedThreatTimeline ? this.getSeriesValue(this.selectedThreatTimeline.runningThreatTime, this.snapshotIndex) : 0;
+            },
+            currentThreatened: function () {
+                return !!(this.selectedThreatTimeline && this.getSeriesValue(this.selectedThreatTimeline.threatened, this.snapshotIndex));
+            },
+            currentThreatStatus: function () {
+                if (!this.selectedThreatTimeline) {
+                    return "threat status unavailable";
+                }
+                return this.currentThreatened ? "currently threatened" : "not currently threatened";
+            },
+            selectedPlayerBoons: function () {
+                if (!this.selectedThreatTimeline || !this.selectedThreatTimeline.boons) {
+                    return [];
+                }
+                return this.selectedThreatTimeline.boons.map(boon => ({
+                    id: boon.id,
+                    name: boon.name,
+                    icon: boon.icon,
+                    stackBased: boon.stackBased,
+                    tracksOverapplication: boon.tracksOverapplication,
+                    currentStacks: this.getSeriesValue(boon.currentStacks, this.snapshotIndex),
+                    runningCoverage: this.getSeriesValue(boon.runningCoverage, this.snapshotIndex),
+                    runningOverapplication: this.getSeriesValue(boon.runningOverapplication, this.snapshotIndex),
+                }));
+            },
+            distanceToCommander: function () {
+                return this.selectedPositioningTimeline ? this.getSeriesValue(this.selectedPositioningTimeline.distanceToCommander, this.snapshotIndex) : 0;
+            },
+            enemiesCloserThanCommander: function () {
+                return this.selectedPositioningTimeline ? this.getSeriesValue(this.selectedPositioningTimeline.enemiesCloserThanCommander, this.snapshotIndex) : 0;
+            },
+            enemiesAheadOfCommander: function () {
+                return this.selectedPositioningTimeline ? this.getSeriesValue(this.selectedPositioningTimeline.enemiesAheadOfCommander, this.snapshotIndex) : 0;
+            },
+            runningInPositionRate: function () {
+                return this.selectedPositioningTimeline ? this.getSeriesValue(this.selectedPositioningTimeline.runningInPositionRate, this.snapshotIndex) : 0;
+            },
+            runningOverextendedRate: function () {
+                return this.selectedPositioningTimeline ? this.getSeriesValue(this.selectedPositioningTimeline.runningOverextendedRate, this.snapshotIndex) : 0;
+            },
+            runningLateralRiskRate: function () {
+                return this.selectedPositioningTimeline ? this.getSeriesValue(this.selectedPositioningTimeline.runningLateralRiskRate, this.snapshotIndex) : 0;
+            },
+            currentPositionStatus: function () {
+                if (this.commanderSelected) {
+                    return "commander anchor";
+                }
+                if (!this.selectedPositioningTimeline) {
+                    return "position unavailable";
+                }
+                if (!this.getSeriesValue(this.selectedPositioningTimeline.eligible, this.snapshotIndex)) {
+                    return "not currently evaluated";
+                }
+                const reasons = [];
+                if (this.getSeriesValue(this.selectedPositioningTimeline.tooFar, this.snapshotIndex)) {
+                    reasons.push("too far");
+                }
+                if (this.getSeriesValue(this.selectedPositioningTimeline.overextended, this.snapshotIndex)) {
+                    reasons.push("overextended");
+                }
+                if (this.getSeriesValue(this.selectedPositioningTimeline.lateralRisk, this.snapshotIndex)) {
+                    reasons.push("left/right exposed");
+                }
+                return reasons.length > 0 ? reasons.join(", ") : "in position";
+            },
+        },
+        methods: {
+            normalizeSearchValue: function (value) {
+                return String(value || "").toLowerCase();
+            },
+            openPlayerSearch: function () {
+                this.playerSearchOpen = true;
+            },
+            handlePlayerSearchBlur: function () {
+                window.setTimeout(() => {
+                    this.playerSearchOpen = false;
+                }, 120);
+            },
+            choosePlayer: function (player) {
+                this.playerSearchQuery = "";
+                this.playerSearchOpen = false;
+                this.selectReplayActor(player.uniqueID);
+            },
         },
     });
 
