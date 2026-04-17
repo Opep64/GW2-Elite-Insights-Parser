@@ -190,7 +190,7 @@
                 </div>
             </div>
             <div v-if="activeSummaryTab === 'metrics'" class="wvw-summary-bottom-panels">
-                <div class="wvw-summary-side-panel wvw-summary-moments-panel">
+                <div class="wvw-summary-side-panel">
                     <div class="wvw-summary-side-panel-title">Top 5 Squad Player Cleanses</div>
                     <div class="wvw-summary-side-panel-subtitle">Outgoing cleanses. Click a player to open Support Stats sorted by cleanses on squad mates.</div>
                     <button v-for="(player, index) in summary.topCleansePlayers" :key="'squad-cleanse-' + player.playerIndex"
@@ -206,7 +206,7 @@
                         No squad players were active for this phase.
                     </div>
                 </div>
-                <div class="wvw-summary-side-panel wvw-summary-moments-panel">
+                <div class="wvw-summary-side-panel">
                     <div class="wvw-summary-side-panel-title">Top 5 Squad Player Barrier</div>
                     <div class="wvw-summary-side-panel-subtitle">Outgoing barrier production. Click a player to open Player Healing Summary.</div>
                     <button v-for="(player, index) in summary.topBarrierPlayers" :key="'squad-barrier-' + player.playerIndex"
@@ -305,6 +305,76 @@
                     </div>
                 </div>
             </div>
+            <div v-if="activeSummaryTab === 'downs'" class="wvw-summary-downs-layout">
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Down Outcomes</div>
+                    <div class="wvw-summary-side-panel-subtitle">Tracks how often downs were converted into kills or rezzed back to alive, along with the timing of those outcomes.</div>
+                    <table class="table table-sm table-striped table-hover wvw-summary-table" cellspacing="0" width="100%">
+                        <thead>
+                            <tr>
+                                <th class="text-left wvw-summary-metric-column">Metric</th>
+                                <th class="text-right">{{downsSquadLabel}}</th>
+                                <th class="text-right">{{downsEnemyLabel}}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="row in summary.downsOutcomeRows" :key="'downs-outcome-' + row.label">
+                                <td class="text-left wvw-summary-metric-column">{{row.label}}</td>
+                                <td class="text-right" :class="getValueClass(row, 'squad')">
+                                    <button v-if="hasDownsOutcomeEntries(row.label, 'squad')" type="button"
+                                        class="wvw-summary-inline-link"
+                                        @click="openDownsOutcomePopup(row.label, 'squad')">
+                                        {{formatRowValue(row.squadValue, row)}}
+                                    </button>
+                                    <span v-else>{{formatRowValue(row.squadValue, row)}}</span>
+                                </td>
+                                <td class="text-right" :class="getValueClass(row, 'enemy')">
+                                    <button v-if="hasDownsOutcomeEntries(row.label, 'enemy')" type="button"
+                                        class="wvw-summary-inline-link"
+                                        @click="openDownsOutcomePopup(row.label, 'enemy')">
+                                        {{formatRowValue(row.enemyValue, row)}}
+                                    </button>
+                                    <span v-else>{{formatRowValue(row.enemyValue, row)}}</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Downed State Conditions</div>
+                    <div class="wvw-summary-side-panel-subtitle">Shows which conditions were present when players entered downstate, including stack ranges for Vulnerability and Burning.</div>
+                    <table class="table table-sm table-striped table-hover wvw-summary-table" cellspacing="0" width="100%">
+                        <thead>
+                            <tr>
+                                <th class="text-left wvw-summary-metric-column">Metric</th>
+                                <th class="text-right">{{downsSquadLabel}}</th>
+                                <th class="text-right">{{downsEnemyLabel}}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="row in summary.downedStateRows" :key="'down-state-' + row.label">
+                                <td class="text-left wvw-summary-metric-column">{{row.label}}</td>
+                                <td class="text-right" :class="getValueClass(row, 'squad')">
+                                    <button v-if="hasDownDetailEntries(row.label, 'squad')" type="button"
+                                        class="wvw-summary-inline-link"
+                                        @click="openDownDetailPopup(row.label, 'squad')">
+                                        {{formatRowValue(row.squadValue, row)}}
+                                    </button>
+                                    <span v-else>{{formatRowValue(row.squadValue, row)}}</span>
+                                </td>
+                                <td class="text-right" :class="getValueClass(row, 'enemy')">
+                                    <button v-if="hasDownDetailEntries(row.label, 'enemy')" type="button"
+                                        class="wvw-summary-inline-link"
+                                        @click="openDownDetailPopup(row.label, 'enemy')">
+                                        {{formatRowValue(row.enemyValue, row)}}
+                                    </button>
+                                    <span v-else>{{formatRowValue(row.enemyValue, row)}}</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
             <div v-if="activeSummaryTab === 'moments'" class="wvw-summary-moments-layout">
                 <div class="wvw-summary-side-panel wvw-summary-moments-panel">
                     <div class="wvw-summary-side-panel-title">Fight Turning Points</div>
@@ -387,76 +457,6 @@
                     <div v-if="!hasMoments()" class="wvw-summary-side-panel-empty">
                         No major turning points were identified for this phase.
                     </div>
-                </div>
-            </div>
-            <div v-if="activeSummaryTab === 'downs'" class="wvw-summary-downs-layout">
-                <div class="wvw-summary-side-panel">
-                    <div class="wvw-summary-side-panel-title">Down Outcomes</div>
-                    <div class="wvw-summary-side-panel-subtitle">Tracks how often downs were converted into kills or rezzed back to alive, along with the timing of those outcomes.</div>
-                    <table class="table table-sm table-striped table-hover wvw-summary-table" cellspacing="0" width="100%">
-                        <thead>
-                            <tr>
-                                <th class="text-left wvw-summary-metric-column">Metric</th>
-                                <th class="text-right">{{downsSquadLabel}}</th>
-                                <th class="text-right">{{downsEnemyLabel}}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="row in summary.downsOutcomeRows" :key="'downs-outcome-' + row.label">
-                                <td class="text-left wvw-summary-metric-column">{{row.label}}</td>
-                                <td class="text-right" :class="getValueClass(row, 'squad')">
-                                    <button v-if="hasDownsOutcomeEntries(row.label, 'squad')" type="button"
-                                        class="wvw-summary-inline-link"
-                                        @click="openDownsOutcomePopup(row.label, 'squad')">
-                                        {{formatRowValue(row.squadValue, row)}}
-                                    </button>
-                                    <span v-else>{{formatRowValue(row.squadValue, row)}}</span>
-                                </td>
-                                <td class="text-right" :class="getValueClass(row, 'enemy')">
-                                    <button v-if="hasDownsOutcomeEntries(row.label, 'enemy')" type="button"
-                                        class="wvw-summary-inline-link"
-                                        @click="openDownsOutcomePopup(row.label, 'enemy')">
-                                        {{formatRowValue(row.enemyValue, row)}}
-                                    </button>
-                                    <span v-else>{{formatRowValue(row.enemyValue, row)}}</span>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="wvw-summary-side-panel">
-                    <div class="wvw-summary-side-panel-title">Downed State Conditions</div>
-                    <div class="wvw-summary-side-panel-subtitle">Shows which conditions were present when players entered downstate, including stack ranges for Vulnerability and Burning.</div>
-                    <table class="table table-sm table-striped table-hover wvw-summary-table" cellspacing="0" width="100%">
-                        <thead>
-                            <tr>
-                                <th class="text-left wvw-summary-metric-column">Metric</th>
-                                <th class="text-right">{{downsSquadLabel}}</th>
-                                <th class="text-right">{{downsEnemyLabel}}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="row in summary.downedStateRows" :key="'down-state-' + row.label">
-                                <td class="text-left wvw-summary-metric-column">{{row.label}}</td>
-                                <td class="text-right" :class="getValueClass(row, 'squad')">
-                                    <button v-if="hasDownDetailEntries(row.label, 'squad')" type="button"
-                                        class="wvw-summary-inline-link"
-                                        @click="openDownDetailPopup(row.label, 'squad')">
-                                        {{formatRowValue(row.squadValue, row)}}
-                                    </button>
-                                    <span v-else>{{formatRowValue(row.squadValue, row)}}</span>
-                                </td>
-                                <td class="text-right" :class="getValueClass(row, 'enemy')">
-                                    <button v-if="hasDownDetailEntries(row.label, 'enemy')" type="button"
-                                        class="wvw-summary-inline-link"
-                                        @click="openDownDetailPopup(row.label, 'enemy')">
-                                        {{formatRowValue(row.enemyValue, row)}}
-                                    </button>
-                                    <span v-else>{{formatRowValue(row.enemyValue, row)}}</span>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
                 </div>
             </div>
         </div>
