@@ -232,7 +232,7 @@
         <div class="combat-replay-wvw-analysis-card">
             <ul class="nav nav-pills d-flex flex-row justify-content-center mb-2 scale85 combat-replay-wvw-team-subtabs">
                 <li class="nav-item">
-                    <a class="nav-link" :class="{active: teamkey === 'squad'}" @click="$emit('update:teamkey', 'squad')">My Squad</a>
+                    <a class="nav-link" :class="{active: teamkey === 'squad'}" @click="$emit('update:teamkey', 'squad')">Our Squad</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: teamkey === 'enemy'}" @click="$emit('update:teamkey', 'enemy')">Enemy Team</a>
@@ -311,7 +311,7 @@
                 return this.getTeamAnalysis(this.teamkey);
             },
             teamLabel: function () {
-                return this.currentTeam && this.currentTeam.label ? this.currentTeam.label : (this.teamkey === "enemy" ? "Enemy Team" : "My Squad");
+                    return this.currentTeam && this.currentTeam.label ? this.currentTeam.label : (this.teamkey === "enemy" ? "Enemy Team" : "Our Squad");
             },
             topBursts: function () {
                 return this.currentTeam && this.currentTeam.topBursts ? this.currentTeam.topBursts : [];
@@ -583,7 +583,7 @@
                     <div class="combat-replay-overview-help-section">
                         <div class="combat-replay-overview-help-heading">Team toggle</div>
                         <ul class="combat-replay-overview-help-list">
-                            <li><strong>My Squad</strong> shows outgoing pressure from your squad onto hostile players</li>
+                                <li><strong>Our Squad</strong> shows outgoing pressure from your squad onto hostile players</li>
                             <li><strong>Enemy Team</strong> flips the same view to hostile players pressuring your squad</li>
                             <li>The selected-actor card follows the currently chosen side</li>
                         </ul>

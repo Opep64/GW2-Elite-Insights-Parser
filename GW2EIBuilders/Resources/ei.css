@@ -997,8 +997,132 @@ h6.actor-shorten-cr-compact {
     font-weight: 700;
 }
 
+.wvw-summary-header-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 1.35fr) minmax(240px, 1fr);
+    gap: 1rem;
+    margin-top: 0.65rem;
+    align-items: stretch;
+}
+
+.wvw-summary-header-spotlight {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+
+.wvw-summary-header-kicker {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    opacity: 0.72;
+    text-transform: uppercase;
+}
+
+.wvw-summary-header-spotlight-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    margin-top: 0.28rem;
+    flex-wrap: wrap;
+}
+
+.wvw-summary-header-spotlight-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.wvw-summary-header-status {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(124, 130, 136, 0.35);
+    border-radius: 999px;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.05);
+    white-space: nowrap;
+}
+
+.wvw-summary-header-status-strong {
+    border-color: rgba(127, 216, 170, 0.55);
+    background: rgba(49, 115, 77, 0.22);
+    color: #8ee5b6;
+}
+
+.wvw-summary-header-status-even {
+    border-color: rgba(196, 188, 129, 0.5);
+    background: rgba(104, 95, 37, 0.2);
+    color: #e1d58b;
+}
+
+.wvw-summary-header-status-weak {
+    border-color: rgba(214, 156, 105, 0.5);
+    background: rgba(120, 73, 27, 0.22);
+    color: #efba84;
+}
+
+.wvw-summary-header-spotlight-value {
+    margin-top: 0.45rem;
+    font-size: 0.98rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.wvw-summary-header-spotlight-note {
+    margin-top: 0.28rem;
+    font-size: 0.78rem;
+    opacity: 0.76;
+}
+
+.wvw-summary-header-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem 0.9rem;
+    align-content: center;
+    min-width: 0;
+    padding-left: 1rem;
+    border-left: 1px solid rgba(124, 130, 136, 0.22);
+}
+
+.wvw-summary-header-fact {
+    display: flex;
+    flex-direction: column;
+    gap: 0.16rem;
+    min-width: 0;
+}
+
+.wvw-summary-header-fact-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    opacity: 0.72;
+    text-transform: uppercase;
+}
+
+.wvw-summary-header-fact-value {
+    font-size: 0.92rem;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+@media (max-width: 900px) {
+    .wvw-summary-header-layout {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+
+    .wvw-summary-header-facts {
+        padding-left: 0;
+        border-left: 0;
+    }
+}
+
 .wvw-summary-header-detail {
-    margin-top: 0.2rem;
+    margin-top: 0.45rem;
     font-size: 0.8rem;
     opacity: 0.85;
 }
@@ -1030,6 +1154,123 @@ h6.actor-shorten-cr-compact {
 .wvw-summary-subtab.active {
     background: rgba(96, 124, 152, 0.3);
     border-color: rgba(140, 176, 210, 0.65);
+}
+
+.wvw-summary-grade-panel {
+    border: 1px solid #6b7177;
+    border-radius: 0.45rem;
+    background: rgba(32, 36, 40, 0.32);
+    padding: 0.8rem 0.9rem;
+}
+
+.wvw-summary-grade-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.wvw-summary-grade-copy {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.wvw-summary-grade-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 5.75rem;
+    border: 1px solid rgba(124, 130, 136, 0.45);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.7rem;
+    background: rgba(255, 255, 255, 0.05);
+    line-height: 1.05;
+}
+
+.wvw-summary-grade-letter {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.wvw-summary-grade-score {
+    margin-top: 0.15rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    opacity: 0.88;
+}
+
+.wvw-summary-grade-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.6rem;
+}
+
+.wvw-summary-grade-card {
+    border: 1px solid rgba(124, 130, 136, 0.35);
+    border-radius: 0.4rem;
+    background: rgba(0, 0, 0, 0.12);
+    padding: 0.6rem 0.7rem;
+}
+
+.wvw-summary-grade-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+}
+
+.wvw-summary-grade-card-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.wvw-summary-grade-card-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border-radius: 999px;
+    padding: 0.18rem 0.5rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.wvw-summary-grade-card-detail {
+    margin-top: 0.4rem;
+    font-size: 0.78rem;
+    opacity: 0.84;
+}
+
+.wvw-summary-grade-tone-strong {
+    border-color: rgba(127, 216, 170, 0.55);
+    background: rgba(49, 115, 77, 0.22);
+    color: #8ee5b6;
+}
+
+.wvw-summary-grade-tone-good {
+    border-color: rgba(125, 176, 230, 0.5);
+    background: rgba(54, 90, 128, 0.22);
+    color: #9bc8f3;
+}
+
+.wvw-summary-grade-tone-even {
+    border-color: rgba(196, 188, 129, 0.5);
+    background: rgba(104, 95, 37, 0.2);
+    color: #e1d58b;
+}
+
+.wvw-summary-grade-tone-weak {
+    border-color: rgba(214, 156, 105, 0.5);
+    background: rgba(120, 73, 27, 0.22);
+    color: #efba84;
+}
+
+.wvw-summary-grade-tone-danger {
+    border-color: rgba(218, 120, 120, 0.55);
+    background: rgba(123, 44, 44, 0.24);
+    color: #f2a2a2;
 }
 
 .wvw-summary-layout {
@@ -1341,9 +1582,23 @@ h6.actor-shorten-cr-compact {
     border-color: rgba(92, 108, 126, 0.22);
 }
 
+.theme-yeti .wvw-summary-header-facts {
+    border-color: rgba(92, 108, 126, 0.18);
+}
+
 .theme-yeti .wvw-summary-side-panel {
     background: rgba(255, 255, 255, 0.88);
     border-color: rgba(92, 108, 126, 0.22);
+}
+
+.theme-yeti .wvw-summary-grade-panel {
+    background: rgba(255, 255, 255, 0.88);
+    border-color: rgba(92, 108, 126, 0.22);
+}
+
+.theme-yeti .wvw-summary-grade-card {
+    background: rgba(86, 144, 212, 0.05);
+    border-color: rgba(92, 108, 126, 0.18);
 }
 
 .theme-yeti .wvw-summary-subtab {
@@ -1363,6 +1618,38 @@ h6.actor-shorten-cr-compact {
 .theme-yeti .wvw-summary-modal {
     background: rgba(255, 255, 255, 0.98);
     border-color: rgba(92, 108, 126, 0.22);
+}
+
+.theme-yeti .wvw-summary-grade-tone-strong {
+    color: #2f965f;
+}
+
+.theme-yeti .wvw-summary-grade-tone-good {
+    color: #2d77c5;
+}
+
+.theme-yeti .wvw-summary-grade-tone-even {
+    color: #8b7a1f;
+}
+
+.theme-yeti .wvw-summary-grade-tone-weak {
+    color: #b16a1c;
+}
+
+.theme-yeti .wvw-summary-grade-tone-danger {
+    color: #c04a4a;
+}
+
+.theme-yeti .wvw-summary-header-status-strong {
+    color: #2f965f;
+}
+
+.theme-yeti .wvw-summary-header-status-even {
+    color: #8b7a1f;
+}
+
+.theme-yeti .wvw-summary-header-status-weak {
+    color: #b16a1c;
 }
 
 .theme-yeti .combat-replay-overview-help-button {

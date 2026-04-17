@@ -155,7 +155,8 @@ internal class PhaseDto
 
     public PhaseDto(PhaseData phase, IReadOnlyList<PhaseData> phases, ParsedEvtcLog log, IReadOnlyDictionary<Spec, IReadOnlyList<Buff>> persBuffDict,
         IReadOnlyList<OutgoingDamageModifier> commonOutDamageModifiers, IReadOnlyList<OutgoingDamageModifier> itemOutDamageModifiers, IReadOnlyDictionary<Spec, IReadOnlyList<OutgoingDamageModifier>> persOutDamageModDict,
-        IReadOnlyList<IncomingDamageModifier> commonIncDamageModifiers, IReadOnlyList<IncomingDamageModifier> itemIncDamageModifiers, IReadOnlyDictionary<Spec, IReadOnlyList<IncomingDamageModifier>> persIncDamageModDict)
+        IReadOnlyList<IncomingDamageModifier> commonIncDamageModifiers, IReadOnlyList<IncomingDamageModifier> itemIncDamageModifiers, IReadOnlyDictionary<Spec, IReadOnlyList<IncomingDamageModifier>> persIncDamageModDict,
+        CombatReplayAnalysisDto? combatReplayAnalysis = null)
     {
         Name          = phase.Name;
         Duration      = phase.DurationInMS;
@@ -303,7 +304,7 @@ internal class PhaseDto
         GameplayStats         = BuildGameplayStatsData(log, phase);
         DefStats              = BuildDefenseData(log, phase);
         SupportStats          = BuildSupportData(log, phase);
-        WvwSummary            = WvwSummaryDto.Build(log, phase);
+        WvwSummary            = WvwSummaryDto.Build(log, phase, combatReplayAnalysis);
         
         DmgModifiersCommon    = DamageModData.BuildOutgoingDmgModifiersData(log, phase, commonOutDamageModifiers);
         DmgModifiersItem      = DamageModData.BuildOutgoingDmgModifiersData(log, phase, itemOutDamageModifiers);

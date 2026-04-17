@@ -228,7 +228,7 @@ internal static class CombatReplayAnalysisBuilder
         var squadContext = BuildContext(
             squadPlayers,
             hostileTargets,
-            "My Squad");
+            "Our Squad");
         var enemyContext = BuildContext(
             hostileTargets,
             squadPlayers,
@@ -604,7 +604,7 @@ internal static class CombatReplayAnalysisBuilder
         var snapshotCount = times.Length;
         var result = new CombatReplayThreatBoonAnalysisDto
         {
-            Label = "My Squad",
+            Label = "Our Squad",
             ThreatRange = (int)RangeThreshold,
             ThreatenedPlayerCount = new int[snapshotCount],
             Boons = [.. boonDefinitions.Select(definition => new CombatReplayThreatBoonTimelineDto

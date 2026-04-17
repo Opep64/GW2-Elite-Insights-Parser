@@ -540,7 +540,8 @@ internal class LogDataDto
             PhaseData phase = phases[i];
             var phaseDto = new PhaseDto(phase, phases, log, persBuffDict,
                 commonOutDamageModifiers, itemOutDamageModifiers, persOutDamageModDict,
-                commonIncDamageModifiers, itemIncDamageModifiers, persIncDamageModDict
+                commonIncDamageModifiers, itemIncDamageModifiers, persIncDamageModDict,
+                logData.CrData?.Analysis
                 );
             logData.Phases.Add(phaseDto);
         }

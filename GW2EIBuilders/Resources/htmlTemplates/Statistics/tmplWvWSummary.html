@@ -3,6 +3,34 @@
         <div v-if="summary" class="wvw-summary-panel">
             <div class="wvw-summary-header">
                 <div class="wvw-summary-header-title">WvW Fight Summary</div>
+                <div class="wvw-summary-header-layout">
+                    <div class="wvw-summary-header-spotlight">
+                        <div class="wvw-summary-header-kicker">Player Count</div>
+                        <div class="wvw-summary-header-spotlight-row">
+                            <span class="wvw-summary-header-status" :class="numbersStatusToneClass">{{playerCountStatusLabel}}</span>
+                        </div>
+                        <div class="wvw-summary-header-spotlight-value">{{playerCountSupporting}}</div>
+                        <div class="wvw-summary-header-spotlight-note">Numbers context treats 3 friendlies as 1 squad player.</div>
+                    </div>
+                    <div class="wvw-summary-header-facts">
+                        <div class="wvw-summary-header-fact">
+                            <span class="wvw-summary-header-fact-label">Fight Time</span>
+                            <span class="wvw-summary-header-fact-value">{{summary.fightTime}}</span>
+                        </div>
+                        <div class="wvw-summary-header-fact">
+                            <span class="wvw-summary-header-fact-label">Enemy Group Formation</span>
+                            <span class="wvw-summary-header-fact-value">{{enemyGroupFormation}}</span>
+                        </div>
+                        <div class="wvw-summary-header-fact">
+                            <span class="wvw-summary-header-fact-label">Winner</span>
+                            <span class="wvw-summary-header-fact-value">{{winnerLabel}}</span>
+                        </div>
+                        <div class="wvw-summary-header-fact">
+                            <span class="wvw-summary-header-fact-label">Estimate Context</span>
+                            <span class="wvw-summary-header-fact-value">{{numbersAdjustmentLabel}}</span>
+                        </div>
+                    </div>
+                </div>
                 <div class="wvw-summary-header-detail">{{summary.healStatsNotice}}</div>
             </div>
             <div class="wvw-summary-subtabs">
@@ -10,12 +38,64 @@
                     @click="setSummarySubTab('overview')">
                     Overview
                 </button>
+                <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'metrics'}"
+                    @click="setSummarySubTab('metrics')">
+                    Metrics
+                </button>
                 <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'downs'}"
                     @click="setSummarySubTab('downs')">
                     Downs
                 </button>
             </div>
-            <div v-if="activeSummaryTab === 'overview'" class="wvw-summary-layout">
+            <div v-if="activeSummaryTab === 'overview' && summary.squadGrade" class="wvw-summary-grade-panel">
+                <div class="wvw-summary-grade-header">
+                    <div class="wvw-summary-grade-copy">
+                        <div class="wvw-summary-side-panel-title">Squad Skill Estimate</div>
+                    </div>
+                    <div class="wvw-summary-grade-badge" :class="getGradeToneClass(summary.squadGrade.score)">
+                        <span class="wvw-summary-grade-letter">{{summary.squadGrade.grade}}</span>
+                        <span class="wvw-summary-grade-score">{{integerWithSpaces(summary.squadGrade.score)}}</span>
+                    </div>
+                </div>
+                <div class="wvw-summary-grade-grid">
+                    <div v-for="subGrade in summary.squadGrade.subGrades" :key="'squad-grade-' + subGrade.label"
+                        class="wvw-summary-grade-card">
+                        <div class="wvw-summary-grade-card-header">
+                            <div class="wvw-summary-grade-card-title">{{subGrade.label}}</div>
+                            <div class="wvw-summary-grade-card-badge" :class="getGradeToneClass(subGrade.score)">
+                                <span>{{subGrade.grade}}</span>
+                                <span>{{integerWithSpaces(subGrade.score)}}</span>
+                            </div>
+                        </div>
+                        <div class="wvw-summary-grade-card-detail">{{subGrade.detail}}</div>
+                    </div>
+                </div>
+            </div>
+            <div v-if="activeSummaryTab === 'overview' && summary.oppositionEstimate" class="wvw-summary-grade-panel">
+                <div class="wvw-summary-grade-header">
+                    <div class="wvw-summary-grade-copy">
+                        <div class="wvw-summary-side-panel-title">Opposition Skill Estimate</div>
+                    </div>
+                    <div class="wvw-summary-grade-badge" :class="getGradeToneClass(summary.oppositionEstimate.score)">
+                        <span class="wvw-summary-grade-letter">{{summary.oppositionEstimate.grade}}</span>
+                        <span class="wvw-summary-grade-score">{{integerWithSpaces(summary.oppositionEstimate.score)}}</span>
+                    </div>
+                </div>
+                <div class="wvw-summary-grade-grid">
+                    <div v-for="subGrade in summary.oppositionEstimate.subGrades" :key="'opposition-grade-' + subGrade.label"
+                        class="wvw-summary-grade-card">
+                        <div class="wvw-summary-grade-card-header">
+                            <div class="wvw-summary-grade-card-title">{{subGrade.label}}</div>
+                            <div class="wvw-summary-grade-card-badge" :class="getGradeToneClass(subGrade.score)">
+                                <span>{{subGrade.grade}}</span>
+                                <span>{{integerWithSpaces(subGrade.score)}}</span>
+                            </div>
+                        </div>
+                        <div class="wvw-summary-grade-card-detail">{{subGrade.detail}}</div>
+                    </div>
+                </div>
+            </div>
+            <div v-if="activeSummaryTab === 'metrics'" class="wvw-summary-layout">
                 <div class="wvw-summary-table-wrap">
                     <table class="table table-sm table-striped table-hover wvw-summary-table" cellspacing="0" width="100%">
                         <thead>
@@ -105,7 +185,7 @@
                     </div>
                 </div>
             </div>
-            <div v-if="activeSummaryTab === 'overview'" class="wvw-summary-bottom-panels">
+            <div v-if="activeSummaryTab === 'metrics'" class="wvw-summary-bottom-panels">
                 <div class="wvw-summary-side-panel">
                     <div class="wvw-summary-side-panel-title">Top 5 Squad Player Cleanses</div>
                     <div class="wvw-summary-side-panel-subtitle">Outgoing cleanses. Click a player to open Support Stats sorted by cleanses on squad mates.</div>
@@ -407,7 +487,7 @@
         methods: {
             setSummarySubTab: function(tab) {
                 this.activeSummaryTab = tab;
-                if (tab !== "overview") {
+                if (tab !== "metrics") {
                     this.closeCrowdControlDetails();
                 }
                 if (tab !== "downs") {
@@ -432,6 +512,14 @@
             },
             formatSeconds: function(value) {
                 return this.round1(value) + "s";
+            },
+            formatEffectiveCount: function(value) {
+                if (value == null || isNaN(value)) {
+                    return "0";
+                }
+                return Math.abs(value - Math.round(value)) < 0.05
+                    ? this.integerWithSpaces(Math.round(value))
+                    : this.round1(value).toString();
             },
             formatBoonGenerationValue: function(section, value) {
                 if (section.stacking) {
@@ -460,6 +548,21 @@
                     formatted = this.integerWithSpaces(this.round(parsed));
                 }
                 return row.percentage ? formatted + "%" : formatted;
+            },
+            getGradeToneClass: function(score) {
+                if (score >= 74) {
+                    return "wvw-summary-grade-tone-strong";
+                }
+                if (score >= 58) {
+                    return "wvw-summary-grade-tone-good";
+                }
+                if (score >= 42) {
+                    return "wvw-summary-grade-tone-even";
+                }
+                if (score >= 30) {
+                    return "wvw-summary-grade-tone-weak";
+                }
+                return "wvw-summary-grade-tone-danger";
             },
             getValueClass: function(row, side) {
                 if (row.equalValues) {
@@ -615,11 +718,96 @@
             summary: function() {
                 return this.phase.wvwSummary;
             },
+            enemyGroupFormation: function() {
+                if (!this.summary || !this.summary.oppositionEstimate || !this.summary.oppositionEstimate.formationLabel) {
+                    return "Unavailable";
+                }
+                return this.summary.oppositionEstimate.formationLabel;
+            },
+            playerCountStatusKey: function() {
+                if (!this.summary || !this.summary.squad || !this.summary.enemy) {
+                    return "unknown";
+                }
+                const alliedEffectiveCount = this.summary.effectiveAlliedPlayerCount || this.summary.squad.playerCount;
+                const difference = alliedEffectiveCount - this.summary.enemy.playerCount;
+                if (Math.abs(difference) <= 5) {
+                    return "even";
+                }
+                return difference > 0 ? "superior" : "outnumbered";
+            },
+            playerCountStatusLabel: function() {
+                if (this.playerCountStatusKey === "superior") {
+                    return "Superior Numbers";
+                }
+                if (this.playerCountStatusKey === "outnumbered") {
+                    return "Outnumbered";
+                }
+                if (this.playerCountStatusKey === "even") {
+                    return "Even Numbers";
+                }
+                return "Unavailable";
+            },
+            numbersStatusToneClass: function() {
+                if (this.playerCountStatusKey === "superior") {
+                    return "wvw-summary-header-status-strong";
+                }
+                if (this.playerCountStatusKey === "outnumbered") {
+                    return "wvw-summary-header-status-weak";
+                }
+                if (this.playerCountStatusKey === "even") {
+                    return "wvw-summary-header-status-even";
+                }
+                return "";
+            },
+            playerCountSupporting: function() {
+                if (!this.summary || !this.summary.squad || !this.summary.enemy) {
+                    return "Unavailable";
+                }
+                const squadCount = this.summary.squad.playerCount || 0;
+                const friendlyCount = this.summary.friendlyPlayerCount || 0;
+                const alliedEffectiveCount = this.summary.effectiveAlliedPlayerCount || squadCount;
+                const enemyCount = this.summary.enemy.playerCount || 0;
+                const alliedSummary = friendlyCount > 0
+                    ? squadCount + " squad + " + friendlyCount + " friendlies (" + this.formatEffectiveCount(alliedEffectiveCount) + " effective)"
+                    : squadCount + " squad";
+                return alliedSummary + " vs " + enemyCount + " enemy";
+            },
+            numbersAdjustmentLabel: function() {
+                if (!this.summary || !this.summary.squadGrade) {
+                    return "Unavailable";
+                }
+                const adjustment = this.summary.squadGrade.countAdjustment || 0;
+                if (adjustment > 0) {
+                    return "+" + adjustment + " to squad estimate";
+                }
+                if (adjustment < 0) {
+                    return adjustment + " to squad estimate";
+                }
+                return "No numbers adjustment";
+            },
+            winnerLabel: function() {
+                if (!this.summary || !this.summary.squad || !this.summary.enemy) {
+                    return "Unavailable";
+                }
+                if (this.summary.squad.kills !== this.summary.enemy.kills) {
+                    return this.summary.squad.kills > this.summary.enemy.kills ? this.summary.squad.label : this.summary.enemy.label;
+                }
+                if (this.summary.squad.downs !== this.summary.enemy.downs) {
+                    return this.summary.squad.downs > this.summary.enemy.downs ? this.summary.squad.label : this.summary.enemy.label;
+                }
+                if (this.summary.squad.deaths !== this.summary.enemy.deaths) {
+                    return this.summary.squad.deaths < this.summary.enemy.deaths ? this.summary.squad.label : this.summary.enemy.label;
+                }
+                if (this.summary.squad.damage !== this.summary.enemy.damage) {
+                    return this.summary.squad.damage > this.summary.enemy.damage ? this.summary.squad.label : this.summary.enemy.label;
+                }
+                return "Draw";
+            },
             combatReplayAvailable: function() {
                 return !!crData;
             },
             downsSquadLabel: function() {
-                return "My Squad's Downs";
+                return "Our Squad's Downs";
             },
             downsEnemyLabel: function() {
                 return "Enemy Team's Downs";
