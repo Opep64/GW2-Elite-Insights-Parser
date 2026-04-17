@@ -1271,8 +1271,8 @@ internal class WvwSummaryDto
 
             double clusteredShare = clusteredPlayers / (double)playerCount;
             double averageDistanceToCentroid = totalDistanceToCentroid / playerCount;
-            double compactnessScore = Clamp01((900.0 - averageDistanceToCentroid) / 500.0);
-            double snapshotScore = Math.Round((clusteredShare * 0.7 + compactnessScore * 0.3) * 100.0, 1);
+            double compactnessScore = Clamp01((740.0 - averageDistanceToCentroid) / 500.0);
+            double snapshotScore = Math.Round((clusteredShare * 0.5 + compactnessScore * 0.5) * 100.0, 1);
 
             snapshots.Add(new WvwSummaryFormationSnapshot(
                 time,
