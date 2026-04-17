@@ -28,6 +28,7 @@ internal class WvwSummaryDto
     public WvwSummaryGradeDto SquadGrade { get; set; } = new();
     public WvwSummaryOppositionEstimateDto OppositionEstimate { get; set; } = new();
     public List<WvwSummaryMetricRowDto> MetricRows { get; set; } = [];
+    public List<WvwSummaryMomentDto> Moments { get; set; } = [];
     public WvwSummarySideDto Squad { get; set; } = new();
     public WvwSummarySideDto Enemy { get; set; } = new();
     public List<WvwSummaryTopPlayerDto> TopDamagePlayers { get; set; } = [];
@@ -76,6 +77,7 @@ internal class WvwSummaryDto
         var enemy = BuildSide(log, phase, hostilePlayerTargets, squadActors, squadActors, "Enemy Team");
         var squadDownState = BuildDownStateSide(log, phase, squadActors);
         var enemyDownState = BuildDownStateSide(log, phase, hostilePlayerTargets);
+        List<WvwSummaryMomentDto> moments = BuildMoments(log, phase, combatReplayAnalysis, squadActors, hostilePlayerTargets, squadDownState, enemyDownState);
 
         return new WvwSummaryDto
         {
@@ -94,6 +96,7 @@ internal class WvwSummaryDto
             Squad = squad,
             Enemy = enemy,
             MetricRows = BuildMetricRows(durationInMilliseconds, squad, enemy, friendlyActors.Count),
+            Moments = moments,
             DownsOutcomeRows = BuildDownsOutcomeRows(squadDownState, enemyDownState),
             DownedStateRows = BuildDownedStateRows(squadDownState, enemyDownState),
             SquadMaximumVulnerabilityEntries = squadDownState.MaximumVulnerabilityEntries,
@@ -454,6 +457,563 @@ internal class WvwSummaryDto
         return $"Even numbers from squad view: {alliedSummary} vs {enemyPlayers} enemy. No count adjustment.";
     }
 
+    private static List<WvwSummaryMomentDto> BuildMoments(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        CombatReplayAnalysisDto? combatReplayAnalysis,
+        IReadOnlyList<SingleActor> squadActors,
+        IReadOnlyList<SingleActor> hostilePlayerTargets,
+        WvwSummaryDownStateSideDto squadDownState,
+        WvwSummaryDownStateSideDto enemyDownState)
+    {
+        Player? commander = log.PlayerList.FirstOrDefault(player => !player.IsFakeActor && player.IsCommander(log));
+        var requiredCandidates = new List<WvwSummaryMomentCandidate>();
+        var optionalCandidates = new List<WvwSummaryMomentCandidate>();
+
+        if (TryBuildFirstEventCandidate(enemyDownState.KillConversionEntries, "First enemy kill", entry => $"Our Squad secured the first kill on {entry.Name}. {entry.DetailLabel}".Trim(), "positive", "first-kill-positive", 48.0, out WvwSummaryMomentCandidate firstEnemyKill))
+        {
+            requiredCandidates.Add(firstEnemyKill);
+        }
+        if (TryBuildFirstEventCandidate(squadDownState.KillConversionEntries, "First squad kill", entry => $"Enemy Team secured the first kill on {entry.Name}. {entry.DetailLabel}".Trim(), "negative", "first-kill-negative", 48.0, out WvwSummaryMomentCandidate firstSquadKill))
+        {
+            requiredCandidates.Add(firstSquadKill);
+        }
+        if (TryBuildKillMilestoneCandidate(enemyDownState.KillConversionEntries, squadDownState.KillConversionEntries, out WvwSummaryMomentCandidate firstToFiveKills))
+        {
+            requiredCandidates.Add(firstToFiveKills);
+        }
+
+        List<WvwSummaryFormationSnapshot> enemyFormationSnapshots = BuildGroupFormationSnapshots(log, phase, hostilePlayerTargets, squadActors);
+        foreach (WvwSummaryMomentCandidate momentumSwing in BuildMomentumSwingCandidates(log, phase, squadActors, hostilePlayerTargets, commander))
+        {
+            optionalCandidates.Add(momentumSwing);
+        }
+        AddClusterCandidates(optionalCandidates, enemyDownState.DownEntries, "Enemy downs spiked", count => $"Our Squad caused {count} enemy downs inside 3 seconds.", "positive", "cluster-down-positive", 3.0, 22.0);
+        AddClusterCandidates(optionalCandidates, squadDownState.DownEntries, "Squad downs spiked", count => $"Enemy Team caused {count} squad downs inside 3 seconds.", "negative", "cluster-down-negative", 3.0, 22.0);
+        AddClusterCandidates(optionalCandidates, enemyDownState.KillConversionEntries, "Kill chain started", count => $"Our Squad converted {count} enemy kills inside 3 seconds.", "positive", "cluster-kill-positive", 3.0, 26.0);
+        AddClusterCandidates(optionalCandidates, squadDownState.KillConversionEntries, "Enemy kill chain started", count => $"Enemy Team converted {count} squad kills inside 3 seconds.", "negative", "cluster-kill-negative", 3.0, 26.0);
+        AddClusterCandidates(optionalCandidates, squadDownState.RezEntries, "Rez swing stabilized squad", count => $"Our Squad completed {count} rezzes inside 3 seconds.", "positive", "cluster-rez-positive", 3.0, 18.0);
+        AddClusterCandidates(optionalCandidates, enemyDownState.RezEntries, "Enemy rez swing stabilized", count => $"Enemy Team completed {count} rezzes inside 3 seconds.", "negative", "cluster-rez-negative", 3.0, 18.0);
+
+        if (TryBuildEnemyFormationBreakCandidate(phase, enemyFormationSnapshots, out WvwSummaryMomentCandidate enemyFormationBreak))
+        {
+            optionalCandidates.Add(enemyFormationBreak);
+        }
+        if (TryBuildEnemyShatteredCandidate(phase, enemyFormationSnapshots, enemyDownState.KillConversionEntries, out WvwSummaryMomentCandidate enemyShattered))
+        {
+            optionalCandidates.Add(enemyShattered);
+        }
+
+        if (combatReplayAnalysis?.Squad != null && combatReplayAnalysis.Times.Length > 0)
+        {
+            foreach (CombatReplayAnalysisBurstSummaryDto burst in BuildPhaseTopBursts(combatReplayAnalysis.Squad, combatReplayAnalysis.Times, phase.Start, phase.End).Take(3))
+            {
+                string label = burst.Downs > 0 || burst.Kills > 0 ? "Bomb landed" : "Pressure spike";
+                string detail = $"Our Squad dealt {burst.Damage.ToString("N0", CultureInfo.InvariantCulture)} damage in 3s with {burst.Strips} strips, causing {burst.Downs} downs and {burst.Kills} kills.";
+                double score = burst.Damage / 2000.0 + burst.Strips * 0.5 + burst.Downs * 8 + burst.Kills * 10;
+                optionalCandidates.Add(new WvwSummaryMomentCandidate(burst.Time, 0, label, detail, "positive", "burst-positive", score));
+            }
+        }
+
+        if (combatReplayAnalysis?.Enemy != null && combatReplayAnalysis.Times.Length > 0)
+        {
+            foreach (CombatReplayAnalysisBurstSummaryDto burst in BuildPhaseTopBursts(combatReplayAnalysis.Enemy, combatReplayAnalysis.Times, phase.Start, phase.End).Take(3))
+            {
+                string label = burst.Downs > 0 || burst.Kills > 0 ? "Enemy bomb landed" : "Enemy pressure spike";
+                string detail = $"Enemy Team dealt {burst.Damage.ToString("N0", CultureInfo.InvariantCulture)} damage in 3s with {burst.Strips} strips, causing {burst.Downs} downs and {burst.Kills} kills.";
+                double score = burst.Damage / 2000.0 + burst.Strips * 0.5 + burst.Downs * 8 + burst.Kills * 10;
+                optionalCandidates.Add(new WvwSummaryMomentCandidate(burst.Time, 0, label, detail, "negative", "burst-negative", score));
+            }
+        }
+
+        if (combatReplayAnalysis != null)
+        {
+            if (TryBuildFormationBreakCandidate(phase, combatReplayAnalysis, out WvwSummaryMomentCandidate formationBreak))
+            {
+                optionalCandidates.Add(formationBreak);
+            }
+            if (TryBuildStabilityDropCandidate(phase, combatReplayAnalysis, squadDownState.DownEntries, out WvwSummaryMomentCandidate stabilityDrop))
+            {
+                optionalCandidates.Add(stabilityDrop);
+            }
+        }
+
+        var selected = new List<WvwSummaryMomentCandidate>();
+        foreach (WvwSummaryMomentCandidate candidate in requiredCandidates.OrderBy(candidate => candidate.Time))
+        {
+            if (!selected.Any(existing => existing.Category == candidate.Category && existing.Time == candidate.Time))
+            {
+                selected.Add(candidate);
+            }
+        }
+
+        const int maxMoments = 25;
+        const long dedupeWindow = 4000;
+        foreach (WvwSummaryMomentCandidate candidate in optionalCandidates
+            .OrderByDescending(candidate => candidate.Score)
+            .ThenBy(candidate => candidate.Time))
+        {
+            if (selected.Count >= maxMoments)
+            {
+                break;
+            }
+            bool overlaps = selected.Any(existing => Math.Abs(existing.Time - candidate.Time) <= dedupeWindow);
+            if (!overlaps)
+            {
+                selected.Add(candidate);
+            }
+        }
+
+        return [.. selected
+            .OrderBy(candidate => candidate.Time)
+            .Select(candidate =>
+            {
+                WvwSummarySideStateDto squadState = BuildSideState(log, squadActors, candidate.Time, commander, applyCommanderRange: true);
+                WvwSummarySideStateDto enemyState = BuildSideState(log, hostilePlayerTargets, candidate.Time);
+                return new WvwSummaryMomentDto
+                {
+                    Time = candidate.Time,
+                    RelativeTime = Math.Max(0, candidate.Time - phase.Start),
+                    TimeLabel = ToDurationString(Math.Max(0, candidate.Time - phase.Start)),
+                    UniqueId = candidate.UniqueId,
+                    Label = candidate.Label,
+                    Detail = candidate.Detail,
+                    SquadAlive = squadState.Alive,
+                    EnemyAlive = enemyState.Alive,
+                    StateSummary = $"Our Squad {FormatSideState(squadState)} | Enemy Team {FormatSideState(enemyState)}",
+                    Category = candidate.Category,
+                    Tone = candidate.Tone,
+                };
+            })];
+    }
+
+    private static List<WvwSummaryMomentCandidate> BuildMomentumSwingCandidates(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> squadActors,
+        IReadOnlyList<SingleActor> hostilePlayerTargets,
+        SingleActor? commander)
+    {
+        const long sampleInterval = 1000;
+        const int sustainedWindowSeconds = 10;
+        const double minimumSwingDelta = 0.01;
+        const double directionalEpsilon = 0.005;
+        const int maxOpposingSteps = 2;
+        const int maxMomentumSwings = 4;
+
+        var snapshots = new List<WvwSummaryMomentumSnapshot>();
+        for (long time = phase.Start; time <= phase.End; time += sampleInterval)
+        {
+            WvwSummarySideStateDto squadState = BuildSideState(log, squadActors, time, commander, applyCommanderRange: true);
+            WvwSummarySideStateDto enemyState = BuildSideState(log, hostilePlayerTargets, time);
+            int squadAlive = squadState.Alive;
+            int enemyAlive = enemyState.Alive;
+            int totalAlive = squadAlive + enemyAlive;
+            double odds = totalAlive > 0 ? squadAlive / (double)totalAlive : 0.5;
+            snapshots.Add(new WvwSummaryMomentumSnapshot(time, squadAlive, enemyAlive, odds));
+        }
+
+        if (snapshots.Count <= sustainedWindowSeconds * 2)
+        {
+            return [];
+        }
+
+        var rawCandidates = new List<WvwSummaryMomentCandidate>();
+        for (int pivotIndex = sustainedWindowSeconds; pivotIndex + sustainedWindowSeconds < snapshots.Count; pivotIndex++)
+        {
+            WvwSummaryMomentumSnapshot previousSnapshot = snapshots[pivotIndex - sustainedWindowSeconds];
+            WvwSummaryMomentumSnapshot pivotSnapshot = snapshots[pivotIndex];
+            WvwSummaryMomentumSnapshot nextSnapshot = snapshots[pivotIndex + sustainedWindowSeconds];
+            double previousDelta = pivotSnapshot.Odds - previousSnapshot.Odds;
+            double nextDelta = nextSnapshot.Odds - pivotSnapshot.Odds;
+            if (Math.Abs(previousDelta) < minimumSwingDelta || Math.Abs(nextDelta) < minimumSwingDelta)
+            {
+                continue;
+            }
+
+            int previousDirection = Math.Sign(previousDelta);
+            int nextDirection = Math.Sign(nextDelta);
+            if (previousDirection == 0 || nextDirection == 0 || previousDirection == nextDirection)
+            {
+                continue;
+            }
+
+            if (CountOpposingSteps(snapshots, pivotIndex - sustainedWindowSeconds, pivotIndex, previousDirection, directionalEpsilon) > maxOpposingSteps ||
+                CountOpposingSteps(snapshots, pivotIndex, pivotIndex + sustainedWindowSeconds, nextDirection, directionalEpsilon) > maxOpposingSteps)
+            {
+                continue;
+            }
+
+            int previousOddsPercent = (int)Math.Round(previousSnapshot.Odds * 100.0);
+            int nextOddsPercent = (int)Math.Round(nextSnapshot.Odds * 100.0);
+            bool swungToSquad = nextDirection > 0;
+            string label = swungToSquad ? "Momentum swung to Our Squad" : "Momentum swung to Enemy Team";
+            string detail = $"Alive-based win odds reversed from {previousOddsPercent}% to {nextOddsPercent}% over 10s and sustained the new direction.";
+            string tone = swungToSquad ? "positive" : "negative";
+            string category = swungToSquad ? "momentum-swing-positive" : "momentum-swing-negative";
+            double score = (Math.Abs(previousDelta) + Math.Abs(nextDelta)) * 100.0;
+            rawCandidates.Add(new WvwSummaryMomentCandidate(pivotSnapshot.Time, 0, label, detail, tone, category, score));
+        }
+
+        if (rawCandidates.Count == 0)
+        {
+            return [];
+        }
+
+        var selected = new List<WvwSummaryMomentCandidate>();
+        foreach (WvwSummaryMomentCandidate candidate in rawCandidates
+            .OrderByDescending(candidate => candidate.Score)
+            .ThenBy(candidate => candidate.Time))
+        {
+            if (selected.Count >= maxMomentumSwings)
+            {
+                break;
+            }
+
+            if (!selected.Any(existing => Math.Abs(existing.Time - candidate.Time) < sustainedWindowSeconds * sampleInterval))
+            {
+                selected.Add(candidate);
+            }
+        }
+
+        return [.. selected.OrderBy(candidate => candidate.Time)];
+    }
+
+    private static int CountOpposingSteps(
+        IReadOnlyList<WvwSummaryMomentumSnapshot> snapshots,
+        int startIndex,
+        int endIndex,
+        int direction,
+        double epsilon)
+    {
+        int opposingSteps = 0;
+        for (int index = startIndex + 1; index <= endIndex; index++)
+        {
+            double delta = snapshots[index].Odds - snapshots[index - 1].Odds;
+            if ((direction > 0 && delta <= -epsilon) || (direction < 0 && delta >= epsilon))
+            {
+                opposingSteps++;
+            }
+        }
+        return opposingSteps;
+    }
+
+    private static bool TryBuildFirstEventCandidate(
+        IReadOnlyList<WvwSummaryDownEventEntryDto> entries,
+        string label,
+        Func<WvwSummaryDownEventEntryDto, string> detailBuilder,
+        string tone,
+        string category,
+        double score,
+        out WvwSummaryMomentCandidate candidate)
+    {
+        candidate = default;
+        WvwSummaryDownEventEntryDto? entry = entries.OrderBy(current => current.Time).FirstOrDefault();
+        if (entry == null)
+        {
+            return false;
+        }
+
+        candidate = new WvwSummaryMomentCandidate(entry.Time, entry.UniqueId, label, detailBuilder(entry), tone, category, score);
+        return true;
+    }
+
+    private static bool TryBuildKillMilestoneCandidate(
+        IReadOnlyList<WvwSummaryDownEventEntryDto> enemyKillEntries,
+        IReadOnlyList<WvwSummaryDownEventEntryDto> squadKillEntries,
+        out WvwSummaryMomentCandidate candidate)
+    {
+        candidate = default;
+
+        WvwSummaryDownEventEntryDto? squadMilestone = enemyKillEntries.OrderBy(entry => entry.Time).Skip(4).FirstOrDefault();
+        WvwSummaryDownEventEntryDto? enemyMilestone = squadKillEntries.OrderBy(entry => entry.Time).Skip(4).FirstOrDefault();
+        if (squadMilestone == null && enemyMilestone == null)
+        {
+            return false;
+        }
+
+        bool squadReachedFirst = squadMilestone != null &&
+            (enemyMilestone == null || squadMilestone.Time <= enemyMilestone.Time);
+        if (squadReachedFirst)
+        {
+            candidate = new WvwSummaryMomentCandidate(
+                squadMilestone!.Time,
+                squadMilestone.UniqueId,
+                "Reached 5 kills first",
+                "Our Squad was the first team to reach 5 kills.",
+                "positive",
+                "milestone-five-kills",
+                50.0);
+            return true;
+        }
+
+        candidate = new WvwSummaryMomentCandidate(
+            enemyMilestone!.Time,
+            enemyMilestone.UniqueId,
+            "Enemy reached 5 kills first",
+            "Enemy Team was the first team to reach 5 kills.",
+            "negative",
+            "milestone-five-kills",
+            50.0);
+        return true;
+    }
+
+    private static void AddClusterCandidates(
+        List<WvwSummaryMomentCandidate> candidates,
+        IReadOnlyList<WvwSummaryDownEventEntryDto> entries,
+        string label,
+        Func<int, string> detailBuilder,
+        string tone,
+        string category,
+        double windowSeconds,
+        double baseScore)
+    {
+        foreach (WvwSummaryMomentCandidate candidate in BuildClusterCandidates(entries, label, detailBuilder, tone, category, windowSeconds, baseScore))
+        {
+            candidates.Add(candidate);
+        }
+    }
+
+    private static List<WvwSummaryMomentCandidate> BuildClusterCandidates(
+        IReadOnlyList<WvwSummaryDownEventEntryDto> entries,
+        string label,
+        Func<int, string> detailBuilder,
+        string tone,
+        string category,
+        double windowSeconds,
+        double baseScore)
+    {
+        if (entries.Count < 2)
+        {
+            return [];
+        }
+
+        List<WvwSummaryDownEventEntryDto> orderedEntries = [.. entries.OrderBy(entry => entry.Time)];
+        long window = (long)Math.Round(windowSeconds * 1000.0);
+        var rawCandidates = new List<WvwSummaryClusterWindowCandidate>();
+
+        int start = 0;
+        for (int end = 0; end < orderedEntries.Count; end++)
+        {
+            while (orderedEntries[end].Time - orderedEntries[start].Time > window)
+            {
+                start++;
+            }
+
+            int count = end - start + 1;
+            if (count >= 2)
+            {
+                rawCandidates.Add(new WvwSummaryClusterWindowCandidate(
+                    orderedEntries[start].Time,
+                    orderedEntries[end].Time,
+                    orderedEntries[end].UniqueId,
+                    count,
+                    baseScore + count * 8.0));
+            }
+        }
+
+        if (rawCandidates.Count == 0)
+        {
+            return [];
+        }
+
+        var selected = new List<WvwSummaryClusterWindowCandidate>();
+        foreach (WvwSummaryClusterWindowCandidate candidate in rawCandidates
+            .OrderByDescending(candidate => candidate.Score)
+            .ThenBy(candidate => candidate.StartTime))
+        {
+            if (selected.Count >= 3)
+            {
+                break;
+            }
+
+            bool overlaps = selected.Any(existing =>
+                candidate.StartTime <= existing.EndTime &&
+                candidate.EndTime >= existing.StartTime);
+            if (!overlaps)
+            {
+                selected.Add(candidate);
+            }
+        }
+
+        return [.. selected
+            .OrderBy(candidate => candidate.StartTime)
+            .Select(candidate => new WvwSummaryMomentCandidate(
+                candidate.StartTime,
+                candidate.UniqueId,
+                label,
+                detailBuilder(candidate.Count),
+                tone,
+                category,
+                candidate.Score))];
+    }
+
+    private static bool TryBuildFormationBreakCandidate(PhaseData phase, CombatReplayAnalysisDto combatReplayAnalysis, out WvwSummaryMomentCandidate candidate)
+    {
+        candidate = default;
+        CombatReplayPositioningAnalysisDto positioning = combatReplayAnalysis.Positioning;
+        if (!positioning.HasCommander || combatReplayAnalysis.Times.Length == 0)
+        {
+            return false;
+        }
+
+        int bestIndex = -1;
+        double bestScore = 0.0;
+        for (int index = 0; index < combatReplayAnalysis.Times.Length; index++)
+        {
+            long time = combatReplayAnalysis.Times[index];
+            if (time < phase.Start || time > phase.End || positioning.Mingled[index] || positioning.EligiblePlayerCount[index] < 5)
+            {
+                continue;
+            }
+
+            double inPositionRate = positioning.InPositionRate[index];
+            int overextended = positioning.OverextendedCount[index];
+            int lateralRisk = positioning.LateralRiskCount[index];
+            int tooFar = positioning.TooFarCount[index];
+            double score = overextended * 4.0 + lateralRisk * 2.0 + tooFar * 1.5 + Math.Max(0, 70.0 - inPositionRate) / 4.0;
+            if (overextended < 2 && inPositionRate > 60.0)
+            {
+                continue;
+            }
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestIndex = index;
+            }
+        }
+
+        if (bestIndex < 0)
+        {
+            return false;
+        }
+
+        candidate = new WvwSummaryMomentCandidate(
+            combatReplayAnalysis.Times[bestIndex],
+            0,
+            "Formation broke",
+            $"Only {FormatDecimal(positioning.InPositionRate[bestIndex])}% of eligible players were in position, with {positioning.OverextendedCount[bestIndex]} overextended and {positioning.TooFarCount[bestIndex]} too far from tag.",
+            "negative",
+            "formation-break",
+            bestScore);
+        return true;
+    }
+
+    private static bool TryBuildStabilityDropCandidate(
+        PhaseData phase,
+        CombatReplayAnalysisDto combatReplayAnalysis,
+        IReadOnlyList<WvwSummaryDownEventEntryDto> squadDownEntries,
+        out WvwSummaryMomentCandidate candidate)
+    {
+        candidate = default;
+        CombatReplayThreatBoonTimelineDto? stability = combatReplayAnalysis.ThreatBoons.Boons.FirstOrDefault(boon => boon.Id == Stability);
+        if (stability == null || combatReplayAnalysis.Times.Length == 0)
+        {
+            return false;
+        }
+
+        int bestIndex = -1;
+        double bestScore = 0.0;
+        for (int index = 1; index < combatReplayAnalysis.Times.Length; index++)
+        {
+            long time = combatReplayAnalysis.Times[index];
+            if (time < phase.Start || time > phase.End)
+            {
+                continue;
+            }
+
+            int threatened = combatReplayAnalysis.ThreatBoons.ThreatenedPlayerCount[index];
+            double coverage = stability.CurrentCoverage[index];
+            double previousCoverage = stability.CurrentCoverage[index - 1];
+            if (threatened < 5 || coverage > 45.0 || previousCoverage <= coverage)
+            {
+                continue;
+            }
+
+            int nearbyDowns = squadDownEntries.Count(entry => Math.Abs(entry.Time - time) <= 5000);
+            double score = (45.0 - coverage) + (previousCoverage - coverage) + threatened + nearbyDowns * 6.0;
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestIndex = index;
+            }
+        }
+
+        if (bestIndex < 0)
+        {
+            return false;
+        }
+
+        long bestTime = combatReplayAnalysis.Times[bestIndex];
+        int bestThreatened = combatReplayAnalysis.ThreatBoons.ThreatenedPlayerCount[bestIndex];
+        double bestCoverage = stability.CurrentCoverage[bestIndex];
+        string downSuffix = squadDownEntries.Any(entry => Math.Abs(entry.Time - bestTime) <= 5000)
+            ? " Enemy pressure followed quickly."
+            : "";
+        candidate = new WvwSummaryMomentCandidate(
+            bestTime,
+            0,
+            "Stability coverage dropped",
+            $"Stability coverage fell to {FormatDecimal(bestCoverage)}% across {bestThreatened} threatened squad players.{downSuffix}",
+            "negative",
+            "stability-drop",
+            bestScore);
+        return true;
+    }
+
+    private static WvwSummarySideStateDto BuildSideState(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> actors,
+        long time,
+        SingleActor? commander = null,
+        bool applyCommanderRange = false)
+    {
+        const float runbackRange = 3000.0f;
+        var state = new WvwSummarySideStateDto();
+        Vector3 commanderPosition = default;
+        bool hasCommanderPosition = applyCommanderRange &&
+            commander != null &&
+            TryGetEligiblePosition(commander, log, time, out commanderPosition);
+        foreach (SingleActor actor in actors)
+        {
+            if (time < actor.FirstAware || time > actor.LastAware || actor.IsDC(log, time))
+            {
+                continue;
+            }
+
+            if (actor.IsDead(log, time))
+            {
+                state.Dead++;
+            }
+            else if (actor.IsDowned(log, time))
+            {
+                state.Down++;
+            }
+            else
+            {
+                if (hasCommanderPosition &&
+                    actor.UniqueID != commander!.UniqueID &&
+                    TryGetEligiblePosition(actor, log, time, out Vector3 actorPosition) &&
+                    !IsWithinRange(actorPosition, commanderPosition, runbackRange))
+                {
+                    state.Runback++;
+                }
+                else
+                {
+                    state.Alive++;
+                }
+            }
+        }
+
+        return state;
+    }
+
+    private static string FormatSideState(WvwSummarySideStateDto state)
+    {
+        string runbackSuffix = state.Runback > 0 ? $" / {state.Runback} runback" : "";
+        return $"{state.Alive} alive / {state.Down} down / {state.Dead} downed{runbackSuffix}";
+    }
+
     private static WvwSummaryBurstMetricsDto BuildBurstMetrics(
         PhaseData phase,
         CombatReplayAnalysisDto? combatReplayAnalysis,
@@ -575,109 +1135,30 @@ internal class WvwSummaryDto
         IReadOnlyList<SingleActor> groupActors,
         IReadOnlyList<SingleActor> opposingActors)
     {
-        const long sampleInterval = 1000;
         const long ignoreTailWindow = 10000;
-        const float enemyAllyRange = 600.0f;
-        const float engageRange = 1600.0f;
-        const float maxDistanceFromFight = 5000.0f;
-
-        var snapshots = new List<WvwSummaryEnemySnapshot>();
-        for (long time = phase.Start; time <= phase.End; time += sampleInterval)
-        {
-            var groupPositions = new List<Vector3>();
-            foreach (SingleActor enemy in groupActors)
-            {
-                if (TryGetEligiblePosition(enemy, log, time, out Vector3 position))
-                {
-                    groupPositions.Add(position);
-                }
-            }
-
-            var opposingPositions = new List<Vector3>();
-            foreach (SingleActor squadActor in opposingActors)
-            {
-                if (TryGetEligiblePosition(squadActor, log, time, out Vector3 position))
-                {
-                    opposingPositions.Add(position);
-                }
-            }
-
-            if (groupPositions.Count == 0 || opposingPositions.Count == 0)
-            {
-                continue;
-            }
-
-            bool engaged = AreGroupsEngaged(groupPositions, opposingPositions, engageRange);
-            if (!engaged)
-            {
-                continue;
-            }
-
-            List<Vector3> participatingGroupPositions = FilterPositionsNearFight(groupPositions, opposingPositions, maxDistanceFromFight);
-            List<Vector3> participatingOpposingPositions = FilterPositionsNearFight(opposingPositions, groupPositions, maxDistanceFromFight);
-            if (participatingGroupPositions.Count == 0 || participatingOpposingPositions.Count == 0)
-            {
-                continue;
-            }
-
-            snapshots.Add(new WvwSummaryEnemySnapshot(time, participatingGroupPositions, true));
-        }
-
-        int peakEligibleEnemies = snapshots.Where(snapshot => snapshot.Engaged).Select(snapshot => snapshot.EnemyPositions.Count).DefaultIfEmpty(0).Max();
+        List<WvwSummaryFormationSnapshot> snapshots = BuildGroupFormationSnapshots(log, phase, groupActors, opposingActors);
+        int peakEligibleEnemies = snapshots.Select(snapshot => snapshot.PlayerCount).DefaultIfEmpty(0).Max();
         int minimumEligibleCount = Math.Max(5, (int)Math.Ceiling(peakEligibleEnemies * 0.6));
 
         var cohesionScores = new List<double>();
         int organizedSnapshots = 0;
         int cloudSnapshots = 0;
 
-        foreach (WvwSummaryEnemySnapshot snapshot in snapshots)
+        foreach (WvwSummaryFormationSnapshot snapshot in snapshots)
         {
-            if (!snapshot.Engaged ||
-                snapshot.Time > phase.End - ignoreTailWindow ||
-                snapshot.EnemyPositions.Count < minimumEligibleCount)
+            if (snapshot.Time > phase.End - ignoreTailWindow ||
+                snapshot.PlayerCount < minimumEligibleCount)
             {
                 continue;
             }
 
-            int playerCount = snapshot.EnemyPositions.Count;
-            int neighborThreshold = Math.Max(2, Math.Min(5, (int)Math.Round(playerCount * 0.25)));
-            Vector3 centroid = ComputeCentroid(snapshot.EnemyPositions);
-            int clusteredPlayers = 0;
-            double totalDistanceToCentroid = 0.0;
+            cohesionScores.Add(snapshot.SnapshotScore);
 
-            for (int enemyIndex = 0; enemyIndex < snapshot.EnemyPositions.Count; enemyIndex++)
-            {
-                Vector3 enemyPosition = snapshot.EnemyPositions[enemyIndex];
-                int nearbyAllies = 0;
-                for (int otherIndex = 0; otherIndex < snapshot.EnemyPositions.Count; otherIndex++)
-                {
-                    if (enemyIndex == otherIndex)
-                    {
-                        continue;
-                    }
-                    if (IsWithinRange(enemyPosition, snapshot.EnemyPositions[otherIndex], enemyAllyRange))
-                    {
-                        nearbyAllies++;
-                    }
-                }
-                if (nearbyAllies >= neighborThreshold)
-                {
-                    clusteredPlayers++;
-                }
-                totalDistanceToCentroid += GetDistance2D(enemyPosition, centroid);
-            }
-
-            double clusteredShare = clusteredPlayers / (double)playerCount;
-            double averageDistanceToCentroid = totalDistanceToCentroid / playerCount;
-            double compactnessScore = Clamp01((900.0 - averageDistanceToCentroid) / 500.0);
-            double snapshotScore = Math.Round((clusteredShare * 0.7 + compactnessScore * 0.3) * 100.0, 1);
-            cohesionScores.Add(snapshotScore);
-
-            if (clusteredShare >= 0.7 && compactnessScore >= 0.55)
+            if (snapshot.ClusteredShare >= 0.7 && snapshot.CompactnessScore >= 0.55)
             {
                 organizedSnapshots++;
             }
-            else if (clusteredShare <= 0.4 || compactnessScore <= 0.2)
+            else if (snapshot.ClusteredShare <= 0.4 || snapshot.CompactnessScore <= 0.2)
             {
                 cloudSnapshots++;
             }
@@ -708,6 +1189,253 @@ internal class WvwSummaryDto
             StyleLabel = styleLabel,
             Detail = $"{FormatDecimal(organizedRate)}% organized snapshots, {FormatDecimal(cloudRate)}% cloud snapshots across {cohesionScores.Count} engaged replay samples. Ignores the last 10s and routed cleanup after the enemy falls below 60% of peak active count.",
         };
+    }
+
+    private static List<WvwSummaryFormationSnapshot> BuildGroupFormationSnapshots(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> groupActors,
+        IReadOnlyList<SingleActor> opposingActors)
+    {
+        const long sampleInterval = 1000;
+        const float enemyAllyRange = 600.0f;
+        const float engageRange = 1600.0f;
+        const float maxDistanceFromFight = 5000.0f;
+
+        var snapshots = new List<WvwSummaryFormationSnapshot>();
+        for (long time = phase.Start; time <= phase.End; time += sampleInterval)
+        {
+            var groupPositions = new List<Vector3>();
+            foreach (SingleActor actor in groupActors)
+            {
+                if (TryGetEligiblePosition(actor, log, time, out Vector3 position))
+                {
+                    groupPositions.Add(position);
+                }
+            }
+
+            var opposingPositions = new List<Vector3>();
+            foreach (SingleActor actor in opposingActors)
+            {
+                if (TryGetEligiblePosition(actor, log, time, out Vector3 position))
+                {
+                    opposingPositions.Add(position);
+                }
+            }
+
+            if (groupPositions.Count == 0 || opposingPositions.Count == 0)
+            {
+                continue;
+            }
+
+            if (!AreGroupsEngaged(groupPositions, opposingPositions, engageRange))
+            {
+                continue;
+            }
+
+            List<Vector3> participatingGroupPositions = FilterPositionsNearFight(groupPositions, opposingPositions, maxDistanceFromFight);
+            List<Vector3> participatingOpposingPositions = FilterPositionsNearFight(opposingPositions, groupPositions, maxDistanceFromFight);
+            if (participatingGroupPositions.Count == 0 || participatingOpposingPositions.Count == 0)
+            {
+                continue;
+            }
+
+            int playerCount = participatingGroupPositions.Count;
+            int neighborThreshold = Math.Max(2, Math.Min(5, (int)Math.Round(playerCount * 0.25)));
+            Vector3 groupCentroid = ComputeCentroid(participatingGroupPositions);
+            Vector3 opposingCentroid = ComputeCentroid(participatingOpposingPositions);
+            int clusteredPlayers = 0;
+            double totalDistanceToCentroid = 0.0;
+
+            for (int groupIndex = 0; groupIndex < participatingGroupPositions.Count; groupIndex++)
+            {
+                Vector3 groupPosition = participatingGroupPositions[groupIndex];
+                int nearbyAllies = 0;
+                for (int otherIndex = 0; otherIndex < participatingGroupPositions.Count; otherIndex++)
+                {
+                    if (groupIndex == otherIndex)
+                    {
+                        continue;
+                    }
+                    if (IsWithinRange(groupPosition, participatingGroupPositions[otherIndex], enemyAllyRange))
+                    {
+                        nearbyAllies++;
+                    }
+                }
+                if (nearbyAllies >= neighborThreshold)
+                {
+                    clusteredPlayers++;
+                }
+                totalDistanceToCentroid += GetDistance2D(groupPosition, groupCentroid);
+            }
+
+            double clusteredShare = clusteredPlayers / (double)playerCount;
+            double averageDistanceToCentroid = totalDistanceToCentroid / playerCount;
+            double compactnessScore = Clamp01((900.0 - averageDistanceToCentroid) / 500.0);
+            double snapshotScore = Math.Round((clusteredShare * 0.7 + compactnessScore * 0.3) * 100.0, 1);
+
+            snapshots.Add(new WvwSummaryFormationSnapshot(
+                time,
+                playerCount,
+                participatingOpposingPositions.Count,
+                clusteredShare,
+                compactnessScore,
+                averageDistanceToCentroid,
+                snapshotScore,
+                GetDistance2D(groupCentroid, opposingCentroid)));
+        }
+
+        return snapshots;
+    }
+
+    private static bool TryBuildEnemyFormationBreakCandidate(
+        PhaseData phase,
+        IReadOnlyList<WvwSummaryFormationSnapshot> snapshots,
+        out WvwSummaryMomentCandidate candidate)
+    {
+        const long ignoreTailWindow = 10000;
+        candidate = default;
+        if (snapshots.Count == 0)
+        {
+            return false;
+        }
+
+        int peakPlayers = snapshots.Select(snapshot => snapshot.PlayerCount).DefaultIfEmpty(0).Max();
+        int minimumEligibleCount = Math.Max(5, (int)Math.Ceiling(peakPlayers * 0.6));
+        int bestIndex = -1;
+        double bestScore = 0.0;
+        WvwSummaryFormationSnapshot? previousSnapshot = null;
+
+        for (int index = 0; index < snapshots.Count; index++)
+        {
+            WvwSummaryFormationSnapshot snapshot = snapshots[index];
+            if (snapshot.Time > phase.End - ignoreTailWindow || snapshot.PlayerCount < minimumEligibleCount)
+            {
+                continue;
+            }
+
+            double scoreDrop = previousSnapshot.HasValue ? Math.Max(0.0, previousSnapshot.Value.SnapshotScore - snapshot.SnapshotScore) : 0.0;
+            double clusteredDrop = previousSnapshot.HasValue ? Math.Max(0.0, previousSnapshot.Value.ClusteredShare - snapshot.ClusteredShare) : 0.0;
+            double spreadGain = previousSnapshot.HasValue ? Math.Max(0.0, snapshot.AverageDistanceToCentroid - previousSnapshot.Value.AverageDistanceToCentroid) : 0.0;
+            bool collapsed = snapshot.ClusteredShare <= 0.45 ||
+                snapshot.CompactnessScore <= 0.25 ||
+                (snapshot.SnapshotScore <= 48.0 && scoreDrop >= 15.0);
+            if (collapsed)
+            {
+                double score = (100.0 - snapshot.SnapshotScore) +
+                    scoreDrop * 2.0 +
+                    clusteredDrop * 45.0 +
+                    spreadGain / 20.0;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestIndex = index;
+                }
+            }
+
+            previousSnapshot = snapshot;
+        }
+
+        if (bestIndex < 0)
+        {
+            return false;
+        }
+
+        WvwSummaryFormationSnapshot bestSnapshot = snapshots[bestIndex];
+        candidate = new WvwSummaryMomentCandidate(
+            bestSnapshot.Time,
+            0,
+            "Enemy formation broke",
+            $"Enemy cohesion dropped to {FormatDecimal(bestSnapshot.SnapshotScore)} with {bestSnapshot.PlayerCount} players still in fight and {FormatDecimal(bestSnapshot.ClusteredShare * 100.0)}% moving in a tight group.",
+            "positive",
+            "enemy-formation-break",
+            bestScore);
+        return true;
+    }
+
+    private static bool TryBuildEnemyShatteredCandidate(
+        PhaseData phase,
+        IReadOnlyList<WvwSummaryFormationSnapshot> snapshots,
+        IReadOnlyList<WvwSummaryDownEventEntryDto> enemyKillEntries,
+        out WvwSummaryMomentCandidate candidate)
+    {
+        const long ignoreTailWindow = 5000;
+        const long nearbyKillWindow = 5000;
+        candidate = default;
+        if (snapshots.Count < 2)
+        {
+            return false;
+        }
+
+        int peakPlayers = snapshots.Select(snapshot => snapshot.PlayerCount).DefaultIfEmpty(0).Max();
+        int shatteredCountThreshold = Math.Max(4, (int)Math.Floor(peakPlayers * 0.6));
+        int bestIndex = -1;
+        double bestScore = 0.0;
+
+        for (int index = 0; index < snapshots.Count; index++)
+        {
+            WvwSummaryFormationSnapshot snapshot = snapshots[index];
+            if (snapshot.Time > phase.End - ignoreTailWindow || snapshot.PlayerCount > shatteredCountThreshold)
+            {
+                continue;
+            }
+
+            double retreatGain = 0.0;
+            int retreatingSamples = 0;
+            for (int nextIndex = index + 1; nextIndex < snapshots.Count && nextIndex <= index + 3; nextIndex++)
+            {
+                WvwSummaryFormationSnapshot nextSnapshot = snapshots[nextIndex];
+                if (nextSnapshot.Time - snapshot.Time > 3000)
+                {
+                    break;
+                }
+
+                double distanceGain = nextSnapshot.DistanceToOpposingCentroid - snapshot.DistanceToOpposingCentroid;
+                if (distanceGain > 150.0)
+                {
+                    retreatingSamples++;
+                }
+                retreatGain = Math.Max(retreatGain, distanceGain);
+            }
+
+            bool shattered = snapshot.SnapshotScore <= 40.0 &&
+                snapshot.ClusteredShare <= 0.35 &&
+                retreatingSamples > 0 &&
+                retreatGain >= 250.0;
+            if (!shattered)
+            {
+                continue;
+            }
+
+            int nearbyKills = enemyKillEntries.Count(entry => Math.Abs(entry.Time - snapshot.Time) <= nearbyKillWindow);
+            double score = (peakPlayers - snapshot.PlayerCount) * 5.0 +
+                (100.0 - snapshot.SnapshotScore) +
+                retreatGain / 25.0 +
+                nearbyKills * 6.0;
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestIndex = index;
+            }
+        }
+
+        if (bestIndex < 0)
+        {
+            return false;
+        }
+
+        WvwSummaryFormationSnapshot bestSnapshot = snapshots[bestIndex];
+        int nearbyBestKills = enemyKillEntries.Count(entry => Math.Abs(entry.Time - bestSnapshot.Time) <= nearbyKillWindow);
+        string killSuffix = nearbyBestKills > 0 ? $" Our Squad secured {nearbyBestKills} nearby kills." : "";
+        candidate = new WvwSummaryMomentCandidate(
+            bestSnapshot.Time,
+            0,
+            "Enemy shattered",
+            $"Enemy Team fell to {bestSnapshot.PlayerCount} players in fight from a peak of {peakPlayers} and was actively pulling away from combat.{killSuffix}",
+            "positive",
+            "enemy-shattered",
+            bestScore);
+        return true;
     }
 
     private static double CompareNullableLowerIsBetterScore(double? squadValue, double? enemyValue)
@@ -1113,6 +1841,7 @@ internal class WvwSummaryDto
             Account = actor.Account,
             Profession = actor.Spec.ToString(),
             Icon = actor.GetIcon(),
+            UniqueId = actor.UniqueID,
             Time = eventTime,
             TimeLabel = ToDurationString(Math.Max(0, eventTime - phaseStart)),
             DetailLabel = detailLabel ?? "",
@@ -1476,6 +2205,29 @@ internal class WvwSummaryMetricRowDto(string label, string squadValue, string en
     public bool HigherIsBetter { get; set; } = higherIsBetter;
 }
 
+internal class WvwSummaryMomentDto
+{
+    public long Time { get; set; }
+    public long RelativeTime { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public int UniqueId { get; set; }
+    public string Label { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public int SquadAlive { get; set; }
+    public int EnemyAlive { get; set; }
+    public string StateSummary { get; set; } = "";
+    public string Category { get; set; } = "";
+    public string Tone { get; set; } = "";
+}
+
+internal class WvwSummarySideStateDto
+{
+    public int Alive { get; set; }
+    public int Down { get; set; }
+    public int Dead { get; set; }
+    public int Runback { get; set; }
+}
+
 internal class WvwSummaryGradeDto
 {
     public int BaseScore { get; set; }
@@ -1527,7 +2279,21 @@ internal class WvwSummaryBurstMetricsDto
     public bool HasBurstData => TopBursts.Count > 0;
 }
 
-internal record WvwSummaryEnemySnapshot(long Time, List<Vector3> EnemyPositions, bool Engaged);
+internal readonly record struct WvwSummaryFormationSnapshot(
+    long Time,
+    int PlayerCount,
+    int OpposingPlayerCount,
+    double ClusteredShare,
+    double CompactnessScore,
+    double AverageDistanceToCentroid,
+    double SnapshotScore,
+    double DistanceToOpposingCentroid);
+
+internal readonly record struct WvwSummaryMomentumSnapshot(
+    long Time,
+    int SquadAlive,
+    int EnemyAlive,
+    double Odds);
 
 internal class WvwSummaryTopPlayerDto
 {
@@ -1614,7 +2380,24 @@ internal class WvwSummaryDownEventEntryDto
     public string Account { get; set; } = "";
     public string Profession { get; set; } = "";
     public string Icon { get; set; } = "";
+    public int UniqueId { get; set; }
     public long Time { get; set; }
     public string TimeLabel { get; set; } = "";
     public string DetailLabel { get; set; } = "";
 }
+
+internal readonly record struct WvwSummaryMomentCandidate(
+    long Time,
+    int UniqueId,
+    string Label,
+    string Detail,
+    string Tone,
+    string Category,
+    double Score);
+
+internal readonly record struct WvwSummaryClusterWindowCandidate(
+    long StartTime,
+    long EndTime,
+    int UniqueId,
+    int Count,
+    double Score);

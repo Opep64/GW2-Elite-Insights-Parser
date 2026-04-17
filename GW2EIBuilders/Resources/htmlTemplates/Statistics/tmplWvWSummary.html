@@ -42,6 +42,10 @@
                     @click="setSummarySubTab('metrics')">
                     Metrics
                 </button>
+                <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'moments'}"
+                    @click="setSummarySubTab('moments')">
+                    Moments
+                </button>
                 <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'downs'}"
                     @click="setSummarySubTab('downs')">
                     Downs
@@ -186,7 +190,7 @@
                 </div>
             </div>
             <div v-if="activeSummaryTab === 'metrics'" class="wvw-summary-bottom-panels">
-                <div class="wvw-summary-side-panel">
+                <div class="wvw-summary-side-panel wvw-summary-moments-panel">
                     <div class="wvw-summary-side-panel-title">Top 5 Squad Player Cleanses</div>
                     <div class="wvw-summary-side-panel-subtitle">Outgoing cleanses. Click a player to open Support Stats sorted by cleanses on squad mates.</div>
                     <button v-for="(player, index) in summary.topCleansePlayers" :key="'squad-cleanse-' + player.playerIndex"
@@ -202,7 +206,7 @@
                         No squad players were active for this phase.
                     </div>
                 </div>
-                <div class="wvw-summary-side-panel">
+                <div class="wvw-summary-side-panel wvw-summary-moments-panel">
                     <div class="wvw-summary-side-panel-title">Top 5 Squad Player Barrier</div>
                     <div class="wvw-summary-side-panel-subtitle">Outgoing barrier production. Click a player to open Player Healing Summary.</div>
                     <button v-for="(player, index) in summary.topBarrierPlayers" :key="'squad-barrier-' + player.playerIndex"
@@ -298,6 +302,90 @@
                     </button>
                     <div v-if="section.players.length === 0" class="wvw-summary-side-panel-empty">
                         No squad players generated {{section.name}} for their group in this phase.
+                    </div>
+                </div>
+            </div>
+            <div v-if="activeSummaryTab === 'moments'" class="wvw-summary-moments-layout">
+                <div class="wvw-summary-side-panel wvw-summary-moments-panel">
+                    <div class="wvw-summary-side-panel-title">Fight Turning Points</div>
+                    <div class="wvw-summary-side-panel-subtitle">
+                        <span v-if="combatReplayAvailable">Click a moment to jump Combat Replay to that point in the fight.</span>
+                        <span v-else>Combat Replay is unavailable for this log, so moments cannot be jumped to.</span>
+                    </div>
+                    <div v-if="hasMoments()" class="wvw-summary-moments-body">
+                        <div class="wvw-summary-moments-list">
+                            <div v-for="(moment, index) in summary.moments"
+                                :key="'moment-' + moment.time + '-' + index"
+                                class="wvw-summary-moment-entry"
+                                :class="[
+                                    getMomentToneClass(moment),
+                                    {'wvw-summary-moment-entry-highlighted': hoveredMomentIndex === index},
+                                    {'wvw-summary-moment-entry-clickable': combatReplayAvailable}
+                                ]"
+                                :tabindex="combatReplayAvailable ? 0 : -1"
+                                role="button"
+                                @click="jumpToCombatReplay(moment)"
+                                @keydown.enter.prevent="jumpToCombatReplay(moment)"
+                                @keydown.space.prevent="jumpToCombatReplay(moment)">
+                                <div class="wvw-summary-moment-side">
+                                    <div class="wvw-summary-moment-odds" :title="getMomentWinOddsTitle(moment)">
+                                        <div class="wvw-summary-moment-odds-ring" :style="getMomentWinOddsStyle(moment)">
+                                            <div class="wvw-summary-moment-odds-core" :class="getMomentWinOddsClass(moment)">
+                                                <span class="wvw-summary-moment-odds-value">{{getMomentWinOdds(moment)}}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="wvw-summary-moment-time">{{moment.timeLabel}}</div>
+                                </div>
+                                <div class="wvw-summary-moment-copy">
+                                    <div class="wvw-summary-moment-line">
+                                        <span class="wvw-summary-moment-label">{{moment.label}}</span>
+                                        <span v-if="moment.detail" class="wvw-summary-moment-separator">&middot;</span>
+                                        <span v-if="moment.detail" class="wvw-summary-moment-detail">{{moment.detail}}</span>
+                                        <span v-if="moment.stateSummary" class="wvw-summary-moment-separator">&middot;</span>
+                                        <span v-if="moment.stateSummary" class="wvw-summary-moment-state">{{moment.stateSummary}}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="wvw-summary-moments-timeline">
+                            <div class="wvw-summary-moments-timeline-rail"></div>
+                            <div v-for="tick in getTimelineTicks()"
+                                :key="'moment-tick-' + tick.index"
+                                class="wvw-summary-moments-timeline-tick"
+                                :style="{ left: tick.left }">
+                                <div class="wvw-summary-moments-timeline-tick-mark"></div>
+                                <div class="wvw-summary-moments-timeline-tick-label">{{tick.label}}</div>
+                            </div>
+                            <template v-for="marker in getTimelineMarkers(summary.moments)">
+                                <button
+                                    :key="'moment-marker-' + marker.index"
+                                    type="button"
+                                    class="wvw-summary-moments-timeline-marker"
+                                    :class="'wvw-summary-moments-timeline-marker-' + (marker.moment.tone || 'neutral')"
+                                    :style="getTimelineMarkerStyle(marker)"
+                                    @mouseenter="setHoveredMomentIndex(marker.index)"
+                                    @mouseleave="clearHoveredMomentIndex()"
+                                    @focus="setHoveredMomentIndex(marker.index)"
+                                    @blur="clearHoveredMomentIndex()"
+                                    @click="jumpToCombatReplay(marker.moment)">
+                                </button>
+                                <div
+                                    :key="'moment-bubble-' + marker.index"
+                                    class="wvw-summary-moments-timeline-bubble"
+                                    :class="[
+                                        'wvw-summary-moments-timeline-bubble-' + marker.side,
+                                        'wvw-summary-moments-timeline-bubble-' + (marker.moment.tone || 'neutral'),
+                                        {'wvw-summary-moments-timeline-bubble-highlighted': hoveredMomentIndex === marker.index}
+                                    ]"
+                                    :style="getTimelineBubbleStyle(marker)">
+                                    {{marker.moment.label}}
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <div v-if="!hasMoments()" class="wvw-summary-side-panel-empty">
+                        No major turning points were identified for this phase.
                     </div>
                 </div>
             </div>
@@ -482,6 +570,7 @@
                 crowdControlPopup: null,
                 downDetailPopup: null,
                 downsOutcomePopup: null,
+                hoveredMomentIndex: null,
             };
         },
         methods: {
@@ -563,6 +652,169 @@
                     return "wvw-summary-grade-tone-weak";
                 }
                 return "wvw-summary-grade-tone-danger";
+            },
+            getMomentToneClass: function(moment) {
+                if (!moment || !moment.tone) {
+                    return "";
+                }
+                return "wvw-summary-moment-tone-" + moment.tone;
+            },
+            hasMoments: function() {
+                return !!(this.summary && this.summary.moments && this.summary.moments.length > 0);
+            },
+            getMomentWinOdds: function(moment) {
+                const squadAlive = moment && moment.squadAlive ? moment.squadAlive : 0;
+                const enemyAlive = moment && moment.enemyAlive ? moment.enemyAlive : 0;
+                const totalAlive = squadAlive + enemyAlive;
+                const squadPercent = totalAlive <= 0 ? 50 : Math.round((squadAlive / totalAlive) * 100);
+                return squadPercent + "%";
+            },
+            getMomentWinOddsStyle: function(moment) {
+                const squadAlive = moment && moment.squadAlive ? moment.squadAlive : 0;
+                const enemyAlive = moment && moment.enemyAlive ? moment.enemyAlive : 0;
+                const totalAlive = squadAlive + enemyAlive;
+                const squadPercent = totalAlive <= 0 ? 50 : (squadAlive / totalAlive) * 100;
+                return {
+                    background: "conic-gradient(from -90deg, rgba(74, 132, 100, 0.98) 0 " + squadPercent.toFixed(1) + "%, rgba(142, 72, 72, 0.98) " + squadPercent.toFixed(1) + "% 100%)"
+                };
+            },
+            getMomentWinOddsClass: function(moment) {
+                const squadAlive = moment && moment.squadAlive ? moment.squadAlive : 0;
+                const enemyAlive = moment && moment.enemyAlive ? moment.enemyAlive : 0;
+                if (squadAlive === enemyAlive) {
+                    return "wvw-summary-moment-odds-core-even";
+                }
+                return squadAlive > enemyAlive ? "wvw-summary-moment-odds-core-our" : "wvw-summary-moment-odds-core-enemy";
+            },
+            getMomentWinOddsTitle: function(moment) {
+                const squadAlive = moment && moment.squadAlive ? moment.squadAlive : 0;
+                const enemyAlive = moment && moment.enemyAlive ? moment.enemyAlive : 0;
+                return "Our Squad win odds from alive count: " + this.getMomentWinOdds(moment) + " (" + squadAlive + " alive vs " + enemyAlive + " alive)";
+            },
+            getTimelineMoments: function(moments) {
+                if (!moments) {
+                    return [];
+                }
+                return moments
+                    .map(function(moment, index) {
+                        return { moment: moment, index: index };
+                    })
+                    .filter(function(marker) {
+                        return !marker.moment.category || marker.moment.category.indexOf("first-down") !== 0;
+                    });
+            },
+            getTimelinePercent: function(moment) {
+                const fightDurationMs = ((this.summary && this.summary.fightTimeSeconds) || 0) * 1000;
+                const relativeTime = moment && moment.relativeTime ? moment.relativeTime : 0;
+                return fightDurationMs <= 0 ? 0 : Math.max(0, Math.min(100, (relativeTime / fightDurationMs) * 100));
+            },
+            getTimelineMarkers: function(moments) {
+                const filtered = this.getTimelineMoments(moments)
+                    .map((marker) => {
+                        const bubbleWidth = Math.max(4.6, Math.min(15.5, marker.moment.label.length * 0.42 + 1.6));
+                        const rawLeft = this.getTimelinePercent(marker.moment);
+                        const clampedLeft = Math.max(bubbleWidth / 2, Math.min(100 - bubbleWidth / 2, rawLeft));
+                        return {
+                            index: marker.index,
+                            moment: marker.moment,
+                            rawLeft: rawLeft,
+                            left: clampedLeft,
+                            bubbleWidth: bubbleWidth,
+                        };
+                    })
+                    .sort((left, right) => left.left - right.left);
+                if (filtered.length === 0) {
+                    return [];
+                }
+
+                const laneGap = 1.0;
+                const maxLanes = 6;
+                const laneEnds = {
+                    top: new Array(maxLanes).fill(-Infinity),
+                    bottom: new Array(maxLanes).fill(-Infinity),
+                };
+
+                filtered.forEach((marker, index) => {
+                    const preferredSide = index % 2 === 0 ? "top" : "bottom";
+                    let bestPlacement = null;
+                    ["top", "bottom"].forEach((side) => {
+                        for (let lane = 0; lane < maxLanes; lane++) {
+                            const start = marker.left - marker.bubbleWidth / 2;
+                            const end = marker.left + marker.bubbleWidth / 2;
+                            if (start >= laneEnds[side][lane] + laneGap) {
+                                const penalty = lane * 10 + (side === preferredSide ? 0 : 1);
+                                if (!bestPlacement || penalty < bestPlacement.penalty) {
+                                    bestPlacement = {
+                                        side: side,
+                                        lane: lane,
+                                        start: start,
+                                        end: end,
+                                        penalty: penalty,
+                                    };
+                                }
+                                break;
+                            }
+                        }
+                    });
+
+                    if (!bestPlacement) {
+                        const fallbackSide = preferredSide;
+                        const fallbackLane = maxLanes - 1;
+                        bestPlacement = {
+                            side: fallbackSide,
+                            lane: fallbackLane,
+                            start: marker.left - marker.bubbleWidth / 2,
+                            end: marker.left + marker.bubbleWidth / 2,
+                        };
+                    }
+
+                    laneEnds[bestPlacement.side][bestPlacement.lane] = bestPlacement.end;
+                    marker.side = bestPlacement.side;
+                    marker.lane = bestPlacement.lane;
+                });
+
+                return filtered.sort((left, right) => left.index - right.index);
+            },
+            getTimelineMarkerStyle: function(marker) {
+                return { left: marker.left.toFixed(2) + "%" };
+            },
+            getTimelineTicks: function() {
+                const tickCount = 7;
+                const fightDurationMs = ((this.summary && this.summary.fightTimeSeconds) || 0) * 1000;
+                const ticks = [];
+                for (let index = 0; index < tickCount; index++) {
+                    const ratio = tickCount <= 1 ? 0 : index / (tickCount - 1);
+                    ticks.push({
+                        index: index,
+                        left: (ratio * 100).toFixed(2) + "%",
+                        label: this.formatTimelineTickTime(fightDurationMs * ratio),
+                    });
+                }
+                return ticks;
+            },
+            formatTimelineTickTime: function(timeMs) {
+                const totalSeconds = Math.max(0, Math.round(timeMs / 1000));
+                const minutes = Math.floor(totalSeconds / 60);
+                const seconds = totalSeconds % 60;
+                return minutes + ":" + seconds.toString().padStart(2, "0");
+            },
+            getTimelineBubbleStyle: function(marker) {
+                const lineTop = 10.8;
+                const laneOffset = 1.65;
+                const bubbleOffset = marker.side === "top"
+                    ? lineTop - (2.0 + marker.lane * laneOffset)
+                    : lineTop + (1.45 + marker.lane * laneOffset);
+                return {
+                    left: marker.left.toFixed(2) + "%",
+                    width: marker.bubbleWidth.toFixed(2) + "%",
+                    top: bubbleOffset.toFixed(2) + "rem",
+                };
+            },
+            setHoveredMomentIndex: function(index) {
+                this.hoveredMomentIndex = index;
+            },
+            clearHoveredMomentIndex: function() {
+                this.hoveredMomentIndex = null;
             },
             getValueClass: function(row, side) {
                 if (row.equalValues) {
@@ -698,7 +950,7 @@
                             return;
                         }
                         animator.stopAnimate(true);
-                        if (entry.uniqueId != null) {
+                        if (entry.uniqueId != null && entry.uniqueId > 0) {
                             animator.selectActor(entry.uniqueId);
                         }
                         animator.updateTime(entry.time);
