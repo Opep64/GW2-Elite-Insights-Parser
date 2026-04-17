@@ -28,9 +28,13 @@ internal class CombatReplayTeamAnalysisDto
     public int[] Kills { get; set; } = [];
     public int[] KillsTotal { get; set; } = [];
     public string[] BurstStrength { get; set; } = [];
+    public int[][] TopDamageActorIds { get; set; } = [];
+    public long[][] TopDamageValues { get; set; } = [];
     public int[] Strips { get; set; } = [];
     public int[] StripPeakGap { get; set; } = [];
     public bool[] StripSynced { get; set; } = [];
+    public int[][] TopStripActorIds { get; set; } = [];
+    public int[][] TopStripValues { get; set; } = [];
     public int[] TopTargetIds { get; set; } = [];
     public double[] TopTargetShare { get; set; } = [];
     public double[] TopThreeTargetShare { get; set; } = [];
@@ -263,9 +267,13 @@ internal static class CombatReplayAnalysisBuilder
             Kills = new int[snapshotCount],
             KillsTotal = new int[snapshotCount],
             BurstStrength = new string[snapshotCount],
+            TopDamageActorIds = new int[snapshotCount][],
+            TopDamageValues = new long[snapshotCount][],
             Strips = new int[snapshotCount],
             StripPeakGap = new int[snapshotCount],
             StripSynced = new bool[snapshotCount],
+            TopStripActorIds = new int[snapshotCount][],
+            TopStripValues = new int[snapshotCount][],
             TopTargetIds = new int[snapshotCount],
             TopTargetShare = new double[snapshotCount],
             TopThreeTargetShare = new double[snapshotCount],
@@ -434,7 +442,19 @@ internal static class CombatReplayAnalysisBuilder
             result.DownsTotal[snapshotIndex] = totalDowns;
             result.Kills[snapshotIndex] = kills;
             result.KillsTotal[snapshotIndex] = totalKills;
+            var topDamageAttackers = damageByAttacker
+                .OrderByDescending(pair => pair.Value)
+                .Take(5)
+                .ToArray();
+            result.TopDamageActorIds[snapshotIndex] = [.. topDamageAttackers.Select(pair => pair.Key)];
+            result.TopDamageValues[snapshotIndex] = [.. topDamageAttackers.Select(pair => pair.Value)];
             result.Strips[snapshotIndex] = stripCount;
+            var topStripAttackers = stripByAttacker
+                .OrderByDescending(pair => pair.Value)
+                .Take(5)
+                .ToArray();
+            result.TopStripActorIds[snapshotIndex] = [.. topStripAttackers.Select(pair => pair.Key)];
+            result.TopStripValues[snapshotIndex] = [.. topStripAttackers.Select(pair => pair.Value)];
             result.TopTargetIds[snapshotIndex] = topTargetId;
             result.TopTargetShare[snapshotIndex] = totalDamage > 0 ? Math.Round(topTargetDamage * 100.0 / totalDamage, 1) : 0;
             result.TopThreeTargetShare[snapshotIndex] = totalDamage > 0 ? Math.Round(topThreeDamage * 100.0 / totalDamage, 1) : 0;

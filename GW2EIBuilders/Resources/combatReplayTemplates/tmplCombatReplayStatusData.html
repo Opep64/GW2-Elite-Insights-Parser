@@ -103,6 +103,12 @@
                 animator.updateTime(time);
                 animator.updateTextInput();
             },
+            selectReplayActor: function (uniqueId) {
+                if (!animator || uniqueId == null) {
+                    return;
+                }
+                animator.selectActor(uniqueId);
+            },
             isPlayerActor: function (actor) {
                 return !!(actor && logData.players.some(player => player.uniqueID === actor.uniqueID));
             },
@@ -248,6 +254,13 @@
                         <span class="combat-replay-wvw-analysis-pill" :class="'combat-replay-wvw-analysis-pill-' + burstStrength">{{burstStrength}}</span>
                     </div>
                     <div class="combat-replay-wvw-analysis-detail">{{downs}} ({{downsTotal}}) downs, {{kills}} ({{killsTotal}}) kills</div>
+                    <div v-if="topDamageEntries.length > 0" class="combat-replay-wvw-analysis-top-actors">
+                        <button v-for="(entry, index) in topDamageEntries" :key="teamkey + '-top-damage-' + entry.uniqueId + '-' + index" type="button" class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button" @click="selectReplayActor(entry.uniqueId)">
+                            <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                            <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                            <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(entry.value)}} damage</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-metric">
                     <div class="combat-replay-wvw-analysis-label">Strip to burst</div>
@@ -258,6 +271,13 @@
                         </span>
                     </div>
                     <div class="combat-replay-wvw-analysis-detail">Peak gap {{stripPeakGap}} ms</div>
+                    <div v-if="topStripEntries.length > 0" class="combat-replay-wvw-analysis-top-actors">
+                        <button v-for="(entry, index) in topStripEntries" :key="teamkey + '-top-strip-' + entry.uniqueId + '-' + index" type="button" class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button" @click="selectReplayActor(entry.uniqueId)">
+                            <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                            <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                            <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(entry.value)}} strips</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-metric">
                     <div class="combat-replay-wvw-analysis-label">Focus fire</div>
@@ -313,11 +333,47 @@
             strips: function () {
                 return this.getSeriesValue(this.currentTeam ? this.currentTeam.strips : null, this.snapshotIndex);
             },
+            topDamageEntries: function () {
+                if (!this.currentTeam) {
+                    return [];
+                }
+                const actorIds = this.getSeriesArrayValue(this.currentTeam.topDamageActorIds, this.snapshotIndex);
+                const values = this.getSeriesArrayValue(this.currentTeam.topDamageValues, this.snapshotIndex);
+                return actorIds.map((uniqueId, index) => {
+                    const actor = this.getActorByUniqueId(uniqueId);
+                    if (!actor) {
+                        return null;
+                    }
+                    return {
+                        uniqueId: uniqueId,
+                        name: actor.name,
+                        value: values[index] || 0,
+                    };
+                }).filter(entry => entry != null);
+            },
             stripPeakGap: function () {
                 return this.getSeriesValue(this.currentTeam ? this.currentTeam.stripPeakGap : null, this.snapshotIndex);
             },
             stripSynced: function () {
                 return !!this.getSeriesValue(this.currentTeam ? this.currentTeam.stripSynced : null, this.snapshotIndex);
+            },
+            topStripEntries: function () {
+                if (!this.currentTeam) {
+                    return [];
+                }
+                const actorIds = this.getSeriesArrayValue(this.currentTeam.topStripActorIds, this.snapshotIndex);
+                const values = this.getSeriesArrayValue(this.currentTeam.topStripValues, this.snapshotIndex);
+                return actorIds.map((uniqueId, index) => {
+                    const actor = this.getActorByUniqueId(uniqueId);
+                    if (!actor) {
+                        return null;
+                    }
+                    return {
+                        uniqueId: uniqueId,
+                        name: actor.name,
+                        value: values[index] || 0,
+                    };
+                }).filter(entry => entry != null);
             },
             topTargetId: function () {
                 return this.getSeriesValue(this.currentTeam ? this.currentTeam.topTargetIds : null, this.snapshotIndex);

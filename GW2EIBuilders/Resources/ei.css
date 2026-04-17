@@ -277,6 +277,21 @@ h6.actor-shorten-cr-compact {
     margin-right: 0.15rem;
 }
 
+.theme-slate .combat-replay-analysis-selected-card,
+.theme-yeti .combat-replay-analysis-selected-card {
+    border-radius: 0.35rem;
+}
+
+.theme-slate .combat-replay-analysis-selected-card {
+    background-color: rgba(21, 90, 112, 0.92);
+    box-shadow: 0 0 0 2px rgba(104, 218, 240, 0.95), 0 0 14px rgba(68, 188, 214, 0.32);
+}
+
+.theme-yeti .combat-replay-analysis-selected-card {
+    background-color: rgba(188, 237, 245, 0.96);
+    box-shadow: 0 0 0 2px rgba(28, 134, 160, 0.78), 0 0 10px rgba(80, 177, 197, 0.28);
+}
+
 .combat-replay-analysis-player-data:last-child {
     margin-right: 0;
 }
@@ -723,6 +738,62 @@ h6.actor-shorten-cr-compact {
     margin-top: 0.2rem;
     font-size: 0.78rem;
     opacity: 0.85;
+}
+
+.combat-replay-wvw-analysis-top-actors {
+    margin-top: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.combat-replay-wvw-analysis-top-actor-entry {
+    display: flex;
+    gap: 0.35rem;
+    align-items: baseline;
+    font-size: 0.72rem;
+    opacity: 0.88;
+}
+
+.combat-replay-wvw-analysis-top-actor-rank {
+    width: 1rem;
+    flex: 0 0 auto;
+    opacity: 0.65;
+}
+
+.combat-replay-wvw-analysis-top-actor-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.combat-replay-wvw-analysis-top-actor-value {
+    flex: 0 0 auto;
+    opacity: 0.78;
+}
+
+.combat-replay-wvw-analysis-top-actor-button {
+    width: 100%;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.combat-replay-wvw-analysis-top-actor-button:hover .combat-replay-wvw-analysis-top-actor-name,
+.combat-replay-wvw-analysis-top-actor-button:focus-visible .combat-replay-wvw-analysis-top-actor-name {
+    text-decoration: underline;
+}
+
+.combat-replay-wvw-analysis-top-actor-button:focus-visible {
+    outline: 1px solid rgba(127, 216, 170, 0.65);
+    outline-offset: 2px;
+    border-radius: 0.2rem;
 }
 
 .combat-replay-wvw-analysis-pill {
