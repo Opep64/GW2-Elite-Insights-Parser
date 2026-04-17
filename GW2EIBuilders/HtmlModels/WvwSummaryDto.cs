@@ -40,6 +40,12 @@ internal class WvwSummaryDto
     public List<WvwSummaryDownDetailEntryDto> EnemyMaximumVulnerabilityEntries { get; set; } = [];
     public List<WvwSummaryDownDetailEntryDto> SquadMaximumBurningEntries { get; set; } = [];
     public List<WvwSummaryDownDetailEntryDto> EnemyMaximumBurningEntries { get; set; } = [];
+    public List<WvwSummaryDownEventEntryDto> SquadDownEntries { get; set; } = [];
+    public List<WvwSummaryDownEventEntryDto> SquadKillConversionEntries { get; set; } = [];
+    public List<WvwSummaryDownEventEntryDto> SquadRezEntries { get; set; } = [];
+    public List<WvwSummaryDownEventEntryDto> EnemyDownEntries { get; set; } = [];
+    public List<WvwSummaryDownEventEntryDto> EnemyKillConversionEntries { get; set; } = [];
+    public List<WvwSummaryDownEventEntryDto> EnemyRezEntries { get; set; } = [];
 
     public static WvwSummaryDto? Build(ParsedEvtcLog log, PhaseData phase)
     {
@@ -83,6 +89,12 @@ internal class WvwSummaryDto
             EnemyMaximumVulnerabilityEntries = enemyDownState.MaximumVulnerabilityEntries,
             SquadMaximumBurningEntries = squadDownState.MaximumBurningEntries,
             EnemyMaximumBurningEntries = enemyDownState.MaximumBurningEntries,
+            SquadDownEntries = squadDownState.DownEntries.OrderBy(entry => entry.Time).ToList(),
+            SquadKillConversionEntries = squadDownState.KillConversionEntries.OrderBy(entry => entry.Time).ToList(),
+            SquadRezEntries = squadDownState.RezEntries.OrderBy(entry => entry.Time).ToList(),
+            EnemyDownEntries = enemyDownState.DownEntries.OrderBy(entry => entry.Time).ToList(),
+            EnemyKillConversionEntries = enemyDownState.KillConversionEntries.OrderBy(entry => entry.Time).ToList(),
+            EnemyRezEntries = enemyDownState.RezEntries.OrderBy(entry => entry.Time).ToList(),
             TopDamagePlayers = BuildTopDamagePlayers(log, squadActors, hostilePlayerTargets, phase),
             TopStripPlayers = BuildTopStripPlayers(log, squadActors, phase),
             TopCleansePlayers = BuildTopCleansePlayers(log, squadActors, phase),
@@ -258,6 +270,7 @@ internal class WvwSummaryDto
                 }
 
                 result.Downs++;
+                result.DownEntries.Add(BuildDownEventEntry(actor, down.Start, phase.Start, null));
                 long buffCheckTime = Math.Max(log.LogData.LogStart, down.Start - ServerDelayConstant);
 
                 int poisonStacks = GetBuffStacksAtTime(actor, log, Poison, buffCheckTime);
@@ -302,11 +315,21 @@ internal class WvwSummaryDto
                 {
                     result.KillConversions++;
                     result.KillTimes.Add(downDurationSeconds);
+                    result.KillConversionEntries.Add(BuildDownEventEntry(
+                        actor,
+                        down.End,
+                        phase.Start,
+                        $"Downed at {ToDurationString(Math.Max(0, down.Start - phase.Start))}"));
                 }
                 else if (HasStatusEventAtTime(aliveEvents, down.End))
                 {
                     result.Rezzes++;
                     result.RezTimes.Add(downDurationSeconds);
+                    result.RezEntries.Add(BuildDownEventEntry(
+                        actor,
+                        down.End,
+                        phase.Start,
+                        $"Downed at {ToDurationString(Math.Max(0, down.Start - phase.Start))}"));
                 }
             }
         }
@@ -335,6 +358,20 @@ internal class WvwSummaryDto
         result.AverageBurningStacksOnAffectedDowns = result.DownsWithBurning > 0 ? Math.Round((double)result.TotalBurningStacksOnAffectedDowns / result.DownsWithBurning, 1) : null;
 
         return result;
+    }
+
+    private static WvwSummaryDownEventEntryDto BuildDownEventEntry(SingleActor actor, long eventTime, long phaseStart, string? detailLabel)
+    {
+        return new WvwSummaryDownEventEntryDto
+        {
+            Name = actor.Character,
+            Account = actor.Account,
+            Profession = actor.Spec.ToString(),
+            Icon = actor.GetIcon(),
+            Time = eventTime,
+            TimeLabel = ToDurationString(Math.Max(0, eventTime - phaseStart)),
+            DetailLabel = detailLabel ?? "",
+        };
     }
 
     private static void UpdateStackStats(int stacks, ref int affectedDowns, ref long totalStacksOnAffectedDowns, ref int? minimumStacks, ref int? maximumStacks)
@@ -756,6 +793,9 @@ internal class WvwSummaryDownStateSideDto
     public List<double> RezTimes { get; } = [];
     public List<WvwSummaryDownDetailEntryDto> MaximumVulnerabilityEntries { get; } = [];
     public List<WvwSummaryDownDetailEntryDto> MaximumBurningEntries { get; } = [];
+    public List<WvwSummaryDownEventEntryDto> DownEntries { get; } = [];
+    public List<WvwSummaryDownEventEntryDto> KillConversionEntries { get; } = [];
+    public List<WvwSummaryDownEventEntryDto> RezEntries { get; } = [];
 }
 
 internal class WvwSummaryDownDetailEntryDto
@@ -768,4 +808,15 @@ internal class WvwSummaryDownDetailEntryDto
     public int StackCount { get; set; }
     public long Time { get; set; }
     public string TimeLabel { get; set; } = "";
+}
+
+internal class WvwSummaryDownEventEntryDto
+{
+    public string Name { get; set; } = "";
+    public string Account { get; set; } = "";
+    public string Profession { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public string DetailLabel { get; set; } = "";
 }

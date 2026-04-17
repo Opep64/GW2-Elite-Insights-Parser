@@ -1239,6 +1239,12 @@ h6.actor-shorten-cr-compact {
     font-weight: 600;
 }
 
+.wvw-summary-modal-secondary {
+    white-space: nowrap;
+    font-size: 0.76rem;
+    opacity: 0.82;
+}
+
 .wvw-summary-modal-note {
     margin-top: 0.8rem;
     font-size: 0.78rem;

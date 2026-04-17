@@ -236,8 +236,22 @@
                         <tbody>
                             <tr v-for="row in summary.downsOutcomeRows" :key="'downs-outcome-' + row.label">
                                 <td class="text-left wvw-summary-metric-column">{{row.label}}</td>
-                                <td class="text-right" :class="getValueClass(row, 'squad')">{{formatRowValue(row.squadValue, row)}}</td>
-                                <td class="text-right" :class="getValueClass(row, 'enemy')">{{formatRowValue(row.enemyValue, row)}}</td>
+                                <td class="text-right" :class="getValueClass(row, 'squad')">
+                                    <button v-if="hasDownsOutcomeEntries(row.label, 'squad')" type="button"
+                                        class="wvw-summary-inline-link"
+                                        @click="openDownsOutcomePopup(row.label, 'squad')">
+                                        {{formatRowValue(row.squadValue, row)}}
+                                    </button>
+                                    <span v-else>{{formatRowValue(row.squadValue, row)}}</span>
+                                </td>
+                                <td class="text-right" :class="getValueClass(row, 'enemy')">
+                                    <button v-if="hasDownsOutcomeEntries(row.label, 'enemy')" type="button"
+                                        class="wvw-summary-inline-link"
+                                        @click="openDownsOutcomePopup(row.label, 'enemy')">
+                                        {{formatRowValue(row.enemyValue, row)}}
+                                    </button>
+                                    <span v-else>{{formatRowValue(row.enemyValue, row)}}</span>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -346,6 +360,34 @@
                 </div>
             </div>
         </div>
+        <div v-if="downsOutcomePopup" class="wvw-summary-modal-backdrop" @click.self="closeDownsOutcomePopup">
+            <div class="wvw-summary-modal">
+                <button type="button" class="wvw-summary-modal-close" @click="closeDownsOutcomePopup" aria-label="Close">
+                    &times;
+                </button>
+                <div class="wvw-summary-modal-title">{{downsOutcomePopup.title}}</div>
+                <div class="wvw-summary-modal-subtitle">
+                    {{downsOutcomePopup.subtitle}}
+                </div>
+                <div v-if="downsOutcomePopup.entries && downsOutcomePopup.entries.length > 0" class="wvw-summary-modal-list">
+                    <div v-for="(entry, index) in downsOutcomePopup.entries"
+                        :key="'down-event-' + downsOutcomePopup.key + '-' + index"
+                        class="wvw-summary-modal-row">
+                        <div class="wvw-summary-modal-skill">
+                            <img :src="entry.icon" :alt="entry.profession" class="icon" :data-original-title="entry.profession">
+                            <span class="wvw-summary-modal-skill-name" :data-original-title="getDownsOutcomeEntryTooltip(entry, downsOutcomePopup.side)">{{entry.name}}</span>
+                        </div>
+                        <div class="wvw-summary-modal-values">
+                            <span v-if="entry.detailLabel" class="wvw-summary-modal-secondary">{{entry.detailLabel}}</span>
+                            <span class="wvw-summary-modal-duration">{{entry.timeLabel}}</span>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="wvw-summary-side-panel-empty">
+                    No events are available for this metric.
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -359,6 +401,7 @@
                 activeSummaryTab: "overview",
                 crowdControlPopup: null,
                 downDetailPopup: null,
+                downsOutcomePopup: null,
             };
         },
         methods: {
@@ -369,6 +412,7 @@
                 }
                 if (tab !== "downs") {
                     this.closeDownDetailPopup();
+                    this.closeDownsOutcomePopup();
                 }
             },
             getBoonGenerationValue: function(buffData) {
@@ -471,10 +515,64 @@
             hasDownDetailEntries: function(rowLabel, side) {
                 return this.getDownDetailEntries(rowLabel, side).length > 0;
             },
+            getDownsOutcomeEntryTooltip: function(entry, side) {
+                return side === "squad" ? this.getSquadPlayerTooltip(entry) : entry.name;
+            },
+            getDownsOutcomeEntries: function(rowLabel, side) {
+                if (!this.summary) {
+                    return [];
+                }
+                if (side === "squad") {
+                    if (rowLabel === "Downs") {
+                        return this.summary.squadDownEntries || [];
+                    }
+                    if (rowLabel === "Kill Conversions") {
+                        return this.summary.squadKillConversionEntries || [];
+                    }
+                    if (rowLabel === "Rezzes") {
+                        return this.summary.squadRezEntries || [];
+                    }
+                    return [];
+                }
+                if (rowLabel === "Downs") {
+                    return this.summary.enemyDownEntries || [];
+                }
+                if (rowLabel === "Kill Conversions") {
+                    return this.summary.enemyKillConversionEntries || [];
+                }
+                if (rowLabel === "Rezzes") {
+                    return this.summary.enemyRezEntries || [];
+                }
+                return [];
+            },
+            hasDownsOutcomeEntries: function(rowLabel, side) {
+                return this.getDownsOutcomeEntries(rowLabel, side).length > 0;
+            },
+            openDownsOutcomePopup: function(rowLabel, side) {
+                const entries = this.getDownsOutcomeEntries(rowLabel, side);
+                const sideLabel = side === "enemy" ? this.downsEnemyLabel : this.downsSquadLabel;
+                this.closeCrowdControlDetails();
+                this.closeDownDetailPopup();
+                this.downsOutcomePopup = {
+                    key: rowLabel + "-" + side,
+                    side: side,
+                    title: rowLabel + " - " + sideLabel,
+                    subtitle: rowLabel === "Kill Conversions"
+                        ? sideLabel + " that ended in a kill. Each entry shows the kill time and when the player first went down."
+                        : rowLabel === "Rezzes"
+                            ? sideLabel + " that were rezzed back to alive. Each entry shows the rez time and when the player first went down."
+                            : sideLabel + " recorded during this phase.",
+                    entries: entries,
+                };
+            },
+            closeDownsOutcomePopup: function() {
+                this.downsOutcomePopup = null;
+            },
             openDownDetailPopup: function(rowLabel, side) {
                 const entries = this.getDownDetailEntries(rowLabel, side);
                 const sideLabel = side === "enemy" ? this.downsEnemyLabel : this.downsSquadLabel;
                 this.closeCrowdControlDetails();
+                this.closeDownsOutcomePopup();
                 this.downDetailPopup = {
                     key: rowLabel + "-" + side,
                     title: rowLabel + " - " + sideLabel,
