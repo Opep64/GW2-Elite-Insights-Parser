@@ -844,6 +844,9 @@
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: eventMode === 'kills'}" @click="eventMode = 'kills'">Kills</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: eventMode === 'recovered'}" @click="eventMode = 'recovered'">Recovered</a>
+                </li>
             </ul>
             <combat-replay-downs-component
                 v-if="eventMode === 'downs'"
@@ -855,6 +858,11 @@
                 :time="time"
                 :selectedactorid="selectedactorid">
             </combat-replay-kills-component>
+            <combat-replay-recovered-component
+                v-if="eventMode === 'recovered'"
+                :time="time"
+                :selectedactorid="selectedactorid">
+            </combat-replay-recovered-component>
         </div>
         `,
         computed: {
@@ -1401,6 +1409,361 @@
             },
             hasContributorDamageSplit: function (contributor) {
                 return this.getContributorStrikeAmount(contributor) > 0 || this.getContributorConditionAmount(contributor) > 0;
+            },
+            getEventKey: function (event) {
+                return [event.time, event.actorId, event.side].join("-");
+            },
+            isSelectedEvent: function (event) {
+                return this.selectedEvent && this.getEventKey(this.selectedEvent) === this.getEventKey(event);
+            },
+            getSideClass: function (event) {
+                return event && event.isEnemy
+                    ? "combat-replay-wvw-analysis-pill-weak"
+                    : "combat-replay-wvw-analysis-pill-muted";
+            },
+        },
+    });
+
+    Vue.component("combat-replay-recovered-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time", "selectedactorid"],
+        data: function () {
+            return {
+                selectedEventKey: null,
+            };
+        },
+        template: `
+        <div class="combat-replay-wvw-analysis-panel">
+            <div class="row">
+                <div class="col-lg-4 mb-2">
+                    <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
+                        <div class="combat-replay-wvw-analysis-card-title">Recovered</div>
+                        <div style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;">
+                            <div v-if="events.length === 0" class="combat-replay-wvw-analysis-helper">No recovered events were found in this log.</div>
+                            <div v-else class="combat-replay-wvw-analysis-bursts">
+                                <button
+                                    v-for="event in events"
+                                    :key="getEventKey(event)"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-burst-entry"
+                                    :style="isSelectedEvent(event) ? 'border-color: rgba(255, 255, 255, 0.35); background: rgba(255, 255, 255, 0.08);' : ''"
+                                    @click="openEvent(event)">
+                                    <span class="combat-replay-wvw-analysis-burst-time">{{event.timeLabel}}</span>
+                                    <span class="combat-replay-wvw-analysis-burst-detail">
+                                        <span class="combat-replay-wvw-analysis-pill" :class="getSideClass(event)">{{event.side}}</span>
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-burst-detail">
+                                        <img
+                                            v-if="event.actorIcon"
+                                            :src="event.actorIcon"
+                                            :alt="event.actorName"
+                                            style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                        {{event.actorName}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-burst-detail">
+                                        <span class="combat-replay-wvw-analysis-pill combat-replay-wvw-analysis-pill-success">Recovered</span>
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-burst-detail" v-if="event.outcomeDurationLabel">{{event.outcomeDurationLabel}} from down</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-8 mb-2">
+                    <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
+                        <div class="combat-replay-wvw-analysis-card-title">Selected Recovered Event</div>
+                        <div v-if="selectedEvent" style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;">
+                            <div class="combat-replay-wvw-analysis-selected">
+                                <div class="combat-replay-wvw-analysis-selected-header">
+                                    <img
+                                        v-if="selectedEvent.actorIcon"
+                                        :src="selectedEvent.actorIcon"
+                                        :alt="selectedEvent.actorName"
+                                        class="combat-replay-wvw-analysis-selected-icon">
+                                    <div class="combat-replay-wvw-analysis-selected-title">
+                                        {{selectedEvent.actorName}}
+                                        <span class="combat-replay-wvw-analysis-selected-subtitle">
+                                            {{selectedEvent.timeLabel}} recovered event
+                                        </span>
+                                    </div>
+                                    <span class="combat-replay-wvw-analysis-pill mr-1" :class="getSideClass(selectedEvent)">{{selectedEvent.side}}</span>
+                                    <span class="combat-replay-wvw-analysis-pill combat-replay-wvw-analysis-pill-success">Recovered</span>
+                                    <span v-if="selectedEvent.outcomeDurationLabel" class="combat-replay-wvw-analysis-detail" style="margin-left: 0.35rem;">
+                                        in {{selectedEvent.outcomeDurationLabel}}
+                                    </span>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-detail mb-2">
+                                    {{selectedEvent.isEnemy ? 'Down-to-recover pressure window' : 'Down-to-recover support window'}}: {{selectedEvent.windowStartLabel}} to {{selectedEvent.timeLabel}}
+                                </div>
+
+                                <template v-if="selectedEvent.usesSupportView">
+                                    <div class="combat-replay-wvw-analysis-grid">
+                                        <div class="combat-replay-wvw-analysis-metric">
+                                            <div class="combat-replay-wvw-analysis-label">Downed healing received</div>
+                                            <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.totalDownedHealing)}}</div>
+                                        </div>
+                                        <div class="combat-replay-wvw-analysis-metric">
+                                            <div class="combat-replay-wvw-analysis-label">Healing events</div>
+                                            <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.downedHealingEventCount)}}</div>
+                                        </div>
+                                        <div class="combat-replay-wvw-analysis-metric">
+                                            <div class="combat-replay-wvw-analysis-label">Rez casts</div>
+                                            <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.rezCastCount)}}</div>
+                                            <div v-if="selectedEvent.rezCastDurationSeconds" class="combat-replay-wvw-analysis-detail">{{formatAmount(selectedEvent.rezCastDurationSeconds)}}s total cast time</div>
+                                        </div>
+                                        <div class="combat-replay-wvw-analysis-metric">
+                                            <div class="combat-replay-wvw-analysis-label">Support contributors</div>
+                                            <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.supportContributorCount)}}</div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <div class="combat-replay-wvw-analysis-label">Support contributors</div>
+                                        <div v-if="selectedEvent.supportContributors.length === 0" class="combat-replay-wvw-analysis-helper" style="padding: 0.5rem 0;">No downed-healing or rez support contributors were found in this recovery window.</div>
+                                        <div
+                                            v-else
+                                            style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem 0.6rem;">
+                                            <button
+                                                v-for="contributor in selectedEvent.supportContributors"
+                                                :key="'selected-recovered-support-contributor-' + selectedEvent.actorId + '-' + contributor.name"
+                                                type="button"
+                                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                                :disabled="!contributor.actorId"
+                                                style="min-width: 0;"
+                                                @click.stop="focusContributor(contributor)">
+                                                <div style="display: flex; align-items: center; gap: 0.5rem; width: 100%; min-width: 0;">
+                                                    <span class="combat-replay-wvw-analysis-top-actor-name" style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                                        <img
+                                                            v-if="contributor.icon"
+                                                            :src="contributor.icon"
+                                                            :alt="contributor.name"
+                                                            style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                                        {{contributor.name}}
+                                                    </span>
+                                                    <span style="display: flex; align-items: center; justify-content: flex-end; gap: 0.35rem; flex: 0 0 auto; white-space: nowrap; font-size: 0.78rem; font-variant-numeric: tabular-nums;">
+                                                        <span style="display: inline-flex; align-items: center; justify-content: flex-end; min-width: 5rem; padding: 0.1rem 0.35rem; border-radius: 999px; background: rgba(106, 226, 170, 0.12); color: #98f0c2; line-height: 1.2;">
+                                                            H {{formatAmount(getSupportHealingAmount(contributor))}}
+                                                        </span>
+                                                        <span style="display: inline-flex; align-items: center; justify-content: flex-end; min-width: 3.8rem; padding: 0.1rem 0.35rem; border-radius: 999px; background: rgba(121, 191, 255, 0.12); color: #9fd4ff; line-height: 1.2;">
+                                                            R {{formatAmount(getSupportRezCount(contributor))}}
+                                                        </span>
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <div class="combat-replay-wvw-analysis-label">Recovery support timeline</div>
+                                        <div v-if="selectedEvent.supportTimeline.length === 0" class="combat-replay-wvw-analysis-helper" style="padding: 0.5rem 0;">No healing or rez support effects were found in this recovery window.</div>
+                                        <div v-else class="combat-replay-wvw-analysis-bursts">
+                                            <button
+                                                v-for="entry in selectedEvent.supportTimeline"
+                                                :key="'selected-recovered-support-timeline-' + selectedEvent.actorId + '-' + entry.time + '-' + entry.label"
+                                                type="button"
+                                                class="combat-replay-wvw-analysis-burst-entry"
+                                                @click="jumpToBurst(entry.time)">
+                                                <span class="combat-replay-wvw-analysis-burst-time">{{entry.timeLabel}}</span>
+                                                <span class="combat-replay-wvw-analysis-burst-detail">{{entry.label}}</span>
+                                                <span class="combat-replay-wvw-analysis-burst-detail">{{entry.value}}</span>
+                                                <span class="combat-replay-wvw-analysis-burst-detail" v-if="entry.secondary">{{entry.secondary}}</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <template v-else>
+                                    <div class="combat-replay-wvw-analysis-grid">
+                                        <div class="combat-replay-wvw-analysis-metric">
+                                            <div class="combat-replay-wvw-analysis-label">Total damage taken</div>
+                                            <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.totalDamageTaken)}}</div>
+                                        </div>
+                                        <div class="combat-replay-wvw-analysis-metric">
+                                            <div class="combat-replay-wvw-analysis-label">Strike damage</div>
+                                            <div class="combat-replay-wvw-analysis-value">{{formatStrikeDamage(selectedEvent)}}</div>
+                                        </div>
+                                        <div class="combat-replay-wvw-analysis-metric">
+                                            <div class="combat-replay-wvw-analysis-label">Condition damage</div>
+                                            <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.conditionDamageTaken)}}</div>
+                                        </div>
+                                        <div class="combat-replay-wvw-analysis-metric">
+                                            <div class="combat-replay-wvw-analysis-label">Barrier damage</div>
+                                            <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.barrierDamageTaken)}}</div>
+                                        </div>
+                                        <div class="combat-replay-wvw-analysis-metric">
+                                            <div class="combat-replay-wvw-analysis-label">Damage hits</div>
+                                            <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.hitCount)}}</div>
+                                        </div>
+                                        <div class="combat-replay-wvw-analysis-metric">
+                                            <div class="combat-replay-wvw-analysis-label">Contributors</div>
+                                            <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.contributorCount)}}</div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <div class="combat-replay-wvw-analysis-label">
+                                            Conditions present
+                                            <span class="combat-replay-wvw-analysis-detail" style="display: inline; margin-left: 0.35rem;">
+                                                (enemy cleanses are hidden, so actual conditions may differ)
+                                            </span>
+                                        </div>
+                                        <div v-if="selectedEvent.conditions.length === 0" class="combat-replay-wvw-analysis-helper" style="padding: 0.5rem 0;">No tracked conditions were present in the pre-recovery snapshot.</div>
+                                        <div
+                                            v-else
+                                            style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem 0.5rem; padding-bottom: 0.25rem;">
+                                            <div
+                                                v-for="condition in selectedEvent.conditions"
+                                                :key="'selected-recovered-condition-' + selectedEvent.actorId + '-' + condition.name"
+                                                class="combat-replay-wvw-analysis-top-actor-entry"
+                                                style="min-width: 0; padding: 0.35rem 0.5rem;">
+                                                <span class="combat-replay-wvw-analysis-top-actor-name">
+                                                    <img
+                                                        v-if="condition.icon"
+                                                        :src="condition.icon"
+                                                        :alt="condition.name"
+                                                        style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                                    {{condition.name}}
+                                                </span>
+                                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(condition.amount)}} stacks</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <div class="combat-replay-wvw-analysis-label">Recovery pressure contributors</div>
+                                        <div v-if="selectedEvent.contributors.length === 0" class="combat-replay-wvw-analysis-helper" style="padding: 0.5rem 0;">No squad damage contributors were found while the enemy was downed.</div>
+                                        <div
+                                            v-else
+                                            style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem 0.6rem;">
+                                            <button
+                                                v-for="contributor in selectedEvent.contributors"
+                                                :key="'selected-recovered-contributor-' + selectedEvent.actorId + '-' + contributor.name"
+                                                type="button"
+                                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                                :disabled="!contributor.actorId"
+                                                style="min-width: 0;"
+                                                @click.stop="focusContributor(contributor)">
+                                                <div style="display: flex; align-items: center; gap: 0.5rem; width: 100%; min-width: 0;">
+                                                    <span class="combat-replay-wvw-analysis-top-actor-name" style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                                        <img
+                                                            v-if="contributor.icon"
+                                                            :src="contributor.icon"
+                                                            :alt="contributor.name"
+                                                            style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                                        {{contributor.name}}
+                                                    </span>
+                                                    <span style="display: flex; align-items: center; justify-content: flex-end; gap: 0.35rem; flex: 0 0 auto; white-space: nowrap; font-size: 0.78rem; font-variant-numeric: tabular-nums;">
+                                                        <span class="combat-replay-wvw-analysis-top-actor-value" style="display: inline-block; min-width: 4.75rem; text-align: right;">{{formatAmount(contributor.amount)}}</span>
+                                                        <span v-if="contributor.percent" class="combat-replay-wvw-analysis-detail" style="display: inline-block; min-width: 3.35rem; text-align: right;">{{formatPercent(contributor.percent)}}</span>
+                                                        <span
+                                                            v-if="hasContributorDamageSplit(contributor)"
+                                                            style="display: inline-flex; align-items: center; justify-content: flex-end; min-width: 4.8rem; padding: 0.1rem 0.35rem; border-radius: 999px; background: rgba(86, 161, 255, 0.12); color: #9fcfff; line-height: 1.2;">
+                                                            S {{formatAmount(getContributorStrikeAmount(contributor))}}
+                                                        </span>
+                                                        <span
+                                                            v-if="hasContributorDamageSplit(contributor)"
+                                                            style="display: inline-flex; align-items: center; justify-content: flex-end; min-width: 4.8rem; padding: 0.1rem 0.35rem; border-radius: 999px; background: rgba(255, 120, 120, 0.12); color: #ffb0b0; line-height: 1.2;">
+                                                            C {{formatAmount(getContributorConditionAmount(contributor))}}
+                                                        </span>
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <div class="combat-replay-wvw-analysis-label">Damage taken timeline</div>
+                                        <div v-if="selectedEvent.damageTimeline.length === 0" class="combat-replay-wvw-analysis-helper" style="padding: 0.5rem 0;">No incoming damage was found while the enemy was downed.</div>
+                                        <div v-else class="combat-replay-wvw-analysis-bursts">
+                                            <button
+                                                v-for="entry in selectedEvent.damageTimeline"
+                                                :key="'selected-recovered-timeline-' + selectedEvent.actorId + '-' + entry.time + '-' + entry.label"
+                                                type="button"
+                                                class="combat-replay-wvw-analysis-burst-entry"
+                                                @click="jumpToBurst(entry.time)">
+                                                <span class="combat-replay-wvw-analysis-burst-time">{{entry.timeLabel}}</span>
+                                                <span class="combat-replay-wvw-analysis-burst-detail">{{entry.label}}</span>
+                                                <span class="combat-replay-wvw-analysis-burst-detail">{{entry.value}}</span>
+                                                <span class="combat-replay-wvw-analysis-burst-detail" v-if="entry.secondary">{{entry.secondary}}</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <div v-else class="combat-replay-wvw-analysis-helper" style="flex: 1 1 auto; display: flex; align-items: center; justify-content: center;">
+                            Select a recovered event to inspect the recovery support or damage pressure.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `,
+        computed: {
+            eventAnalysis: function () {
+                return this.getEventAnalysis();
+            },
+            recoveredAnalysis: function () {
+                return this.eventAnalysis && this.eventAnalysis.recovered ? this.eventAnalysis.recovered : { events: [] };
+            },
+            events: function () {
+                return this.recoveredAnalysis.events || [];
+            },
+            selectedEvent: function () {
+                if (this.events.length === 0) {
+                    return null;
+                }
+                if (!this.selectedEventKey) {
+                    return this.events[0];
+                }
+                return this.events.find(event => this.getEventKey(event) === this.selectedEventKey) || this.events[0];
+            },
+        },
+        methods: {
+            openEvent: function (event) {
+                this.selectedEventKey = this.getEventKey(event);
+                this.jumpToBurst(event.time);
+                this.selectReplayActor(event.actorId);
+            },
+            focusContributor: function (contributor) {
+                if (contributor && contributor.actorId) {
+                    this.selectReplayActor(contributor.actorId);
+                }
+            },
+            formatStrikeDamage: function (event) {
+                if (!event) {
+                    return this.formatCount(0);
+                }
+                const strikeDamage = this.formatCount(event.strikeDamageTaken);
+                if (!event.mysticRebukeDamageTaken) {
+                    return strikeDamage;
+                }
+                return strikeDamage + " (" + this.formatCount(event.mysticRebukeDamageTaken) + " MR)";
+            },
+            getContributorStrikeAmount: function (contributor) {
+                if (!contributor || !contributor.details) {
+                    return 0;
+                }
+                const strike = contributor.details.find(detail => detail.name === "Strike");
+                return strike ? strike.amount : 0;
+            },
+            getContributorConditionAmount: function (contributor) {
+                if (!contributor || !contributor.details) {
+                    return 0;
+                }
+                const condition = contributor.details.find(detail => detail.name === "Condition");
+                return condition ? condition.amount : 0;
+            },
+            hasContributorDamageSplit: function (contributor) {
+                return this.getContributorStrikeAmount(contributor) > 0 || this.getContributorConditionAmount(contributor) > 0;
+            },
+            getSupportDetailAmount: function (contributor, detailName) {
+                if (!contributor || !contributor.details) {
+                    return 0;
+                }
+                const detail = contributor.details.find(entry => entry.name === detailName);
+                return detail ? detail.amount : 0;
+            },
+            getSupportHealingAmount: function (contributor) {
+                return this.getSupportDetailAmount(contributor, "Downed healing");
+            },
+            getSupportRezCount: function (contributor) {
+                return this.getSupportDetailAmount(contributor, "Rez casts");
             },
             getEventKey: function (event) {
                 return [event.time, event.actorId, event.side].join("-");
