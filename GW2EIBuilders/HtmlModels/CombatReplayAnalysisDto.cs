@@ -183,11 +183,17 @@ internal class CombatReplayPositioningPlayerTimelineDto
 internal class CombatReplayEventAnalysisDto
 {
     public CombatReplayDownAnalysisDto Downs { get; set; } = new();
+    public CombatReplayKillAnalysisDto Kills { get; set; } = new();
 }
 
 internal class CombatReplayDownAnalysisDto
 {
     public List<CombatReplayDownEventDto> Events { get; set; } = [];
+}
+
+internal class CombatReplayKillAnalysisDto
+{
+    public List<CombatReplayKillEventDto> Events { get; set; } = [];
 }
 
 internal class CombatReplayDownEventDto
@@ -216,6 +222,10 @@ internal class CombatReplayDownEventDto
     public List<CombatReplayEventContributionDto> Conditions { get; set; } = [];
     public List<CombatReplayEventContributionDto> Contributors { get; set; } = [];
     public List<CombatReplayEventTimelineEntryDto> DamageTimeline { get; set; } = [];
+}
+
+internal class CombatReplayKillEventDto : CombatReplayDownEventDto
+{
 }
 
 internal class CombatReplayBarrierSaveAnalysisDto
@@ -494,6 +504,17 @@ internal static class CombatReplayAnalysisBuilder
     private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId);
     private readonly record struct EvaluationWindow(long Start, long End);
     private readonly record struct DownOutcomeInfo(string Outcome, long? TransitionTime);
+    private readonly record struct DamageWindowSummary(
+        int TotalDamageTaken,
+        int StrikeDamageTaken,
+        int MysticRebukeDamageTaken,
+        int ConditionDamageTaken,
+        int BarrierDamageTaken,
+        int HitCount,
+        int ContributorCount,
+        IReadOnlyList<CombatReplayEventContributionDto> Conditions,
+        IReadOnlyList<CombatReplayEventContributionDto> Contributors,
+        IReadOnlyList<CombatReplayEventTimelineEntryDto> DamageTimeline);
     private readonly record struct BarrierSaveCandidate(
         long StartTime,
         long EndTime,
@@ -1710,6 +1731,7 @@ internal static class CombatReplayAnalysisBuilder
         return new CombatReplayEventAnalysisDto
         {
             Downs = BuildDownAnalysis(log, squadPlayers, hostileTargets),
+            Kills = BuildKillAnalysis(log, squadPlayers, hostileTargets),
         };
     }
 
@@ -1753,7 +1775,147 @@ internal static class CombatReplayAnalysisBuilder
         DownOutcomeInfo outcomeInfo = GetDownOutcomeInfo(log, actor.AgentItem, downEvent.Time);
         long windowStart = Math.Max(log.LogData.LogStart, downEvent.Time - LookbackWindow);
         long conditionSnapshotTime = Math.Max(log.LogData.LogStart, downEvent.Time - 1);
-        List<HealthDamageEvent> damageEvents = [.. actor.GetDamageTakenEvents(null, log, windowStart, downEvent.Time)
+        DamageWindowSummary summary = BuildDamageWindowSummary(log, actor, windowStart, downEvent.Time, conditionSnapshotTime);
+
+        return new CombatReplayDownEventDto
+        {
+            Time = downEvent.Time,
+            TimeLabel = FormatTime(downEvent.Time),
+            WindowStart = windowStart,
+            WindowStartLabel = FormatTime(windowStart),
+            ConditionSnapshotTime = conditionSnapshotTime,
+            ConditionSnapshotTimeLabel = FormatTime(conditionSnapshotTime),
+            ActorId = actor.UniqueID,
+            ActorName = actor.Character,
+            ActorIcon = actor.GetIcon(),
+            Side = side,
+            IsEnemy = isEnemy,
+            Outcome = outcomeInfo.Outcome,
+            OutcomeTime = outcomeInfo.TransitionTime,
+            OutcomeDurationLabel = outcomeInfo.TransitionTime.HasValue
+                ? FormatDuration(outcomeInfo.TransitionTime.Value - downEvent.Time)
+                : "",
+            TotalDamageTaken = summary.TotalDamageTaken,
+            StrikeDamageTaken = summary.StrikeDamageTaken,
+            MysticRebukeDamageTaken = summary.MysticRebukeDamageTaken,
+            ConditionDamageTaken = summary.ConditionDamageTaken,
+            BarrierDamageTaken = summary.BarrierDamageTaken,
+            HitCount = summary.HitCount,
+            ContributorCount = summary.ContributorCount,
+            Conditions = [.. summary.Conditions],
+            Contributors = [.. summary.Contributors],
+            DamageTimeline = [.. summary.DamageTimeline],
+        };
+    }
+
+    private static CombatReplayKillAnalysisDto BuildKillAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostileTargets)
+    {
+        var events = new List<CombatReplayKillEventDto>();
+        events.AddRange(BuildKillEvents(log, squadPlayers, "Squad", false));
+        events.AddRange(BuildKillEvents(log, hostileTargets, "Enemy", true));
+        events.Sort((left, right) => left.Time.CompareTo(right.Time));
+        return new CombatReplayKillAnalysisDto
+        {
+            Events = events,
+        };
+    }
+
+    private static IEnumerable<CombatReplayKillEventDto> BuildKillEvents(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> actors,
+        string side,
+        bool isEnemy)
+    {
+        foreach (SingleActor actor in actors)
+        {
+            foreach (DownEvent downEvent in log.CombatData.GetDownEvents(actor.AgentItem).OrderBy(evt => evt.Time))
+            {
+                CombatReplayKillEventDto? killEvent = BuildKillEvent(log, actor, downEvent, side, isEnemy);
+                if (killEvent != null)
+                {
+                    yield return killEvent;
+                }
+            }
+        }
+    }
+
+    private static CombatReplayKillEventDto? BuildKillEvent(
+        ParsedEvtcLog log,
+        SingleActor actor,
+        DownEvent downEvent,
+        string side,
+        bool isEnemy)
+    {
+        DownOutcomeInfo outcomeInfo = GetDownOutcomeInfo(log, actor.AgentItem, downEvent.Time);
+        if (!string.Equals(outcomeInfo.Outcome, "Killed", StringComparison.OrdinalIgnoreCase)
+            || !outcomeInfo.TransitionTime.HasValue)
+        {
+            return null;
+        }
+
+        long killTime = outcomeInfo.TransitionTime.Value;
+        long conditionSnapshotTime = Math.Max(log.LogData.LogStart, killTime - 1);
+        DamageWindowSummary summary = BuildDamageWindowSummary(log, actor, downEvent.Time, killTime, conditionSnapshotTime);
+        return new CombatReplayKillEventDto
+        {
+            Time = killTime,
+            TimeLabel = FormatTime(killTime),
+            WindowStart = downEvent.Time,
+            WindowStartLabel = FormatTime(downEvent.Time),
+            ConditionSnapshotTime = conditionSnapshotTime,
+            ConditionSnapshotTimeLabel = FormatTime(conditionSnapshotTime),
+            ActorId = actor.UniqueID,
+            ActorName = actor.Character,
+            ActorIcon = actor.GetIcon(),
+            Side = side,
+            IsEnemy = isEnemy,
+            Outcome = "Killed",
+            OutcomeTime = killTime,
+            OutcomeDurationLabel = FormatDuration(killTime - downEvent.Time),
+            TotalDamageTaken = summary.TotalDamageTaken,
+            StrikeDamageTaken = summary.StrikeDamageTaken,
+            MysticRebukeDamageTaken = summary.MysticRebukeDamageTaken,
+            ConditionDamageTaken = summary.ConditionDamageTaken,
+            BarrierDamageTaken = summary.BarrierDamageTaken,
+            HitCount = summary.HitCount,
+            ContributorCount = summary.ContributorCount,
+            Conditions = [.. summary.Conditions],
+            Contributors = [.. summary.Contributors],
+            DamageTimeline = [.. summary.DamageTimeline],
+        };
+    }
+
+    private static string GetDownOutcome(ParsedEvtcLog log, AgentItem agent, long downTime)
+    {
+        return GetDownOutcomeInfo(log, agent, downTime).Outcome;
+    }
+
+    private static DownOutcomeInfo GetDownOutcomeInfo(ParsedEvtcLog log, AgentItem agent, long downTime)
+    {
+        DeadEvent? nextDead = log.CombatData.GetDeadEvents(agent).FirstOrDefault(evt => evt.Time >= downTime);
+        AliveEvent? nextAlive = log.CombatData.GetAliveEvents(agent).FirstOrDefault(evt => evt.Time >= downTime);
+        if (nextDead != null && (nextAlive == null || nextDead.Time <= nextAlive.Time))
+        {
+            return new DownOutcomeInfo("Killed", nextDead.Time);
+        }
+        if (nextAlive != null)
+        {
+            return new DownOutcomeInfo("Recovered", nextAlive.Time);
+        }
+        return new DownOutcomeInfo("Unresolved", null);
+    }
+
+    private static DamageWindowSummary BuildDamageWindowSummary(
+        ParsedEvtcLog log,
+        SingleActor actor,
+        long windowStart,
+        long windowEnd,
+        long conditionSnapshotTime)
+    {
+        List<HealthDamageEvent> damageEvents = [.. actor.GetDamageTakenEvents(null, log, windowStart, windowEnd)
             .Where(damageEvent => damageEvent.HasHit && (damageEvent.HealthDamage > 0 || damageEvent.ShieldDamage > 0))
             .OrderBy(damageEvent => damageEvent.Time)];
         var contributorTotals = new Dictionary<AgentItem, double>();
@@ -1809,55 +1971,17 @@ internal static class CombatReplayAnalysisBuilder
             contributorConditionTotals,
             totalDamageTaken);
 
-        return new CombatReplayDownEventDto
-        {
-            Time = downEvent.Time,
-            TimeLabel = FormatTime(downEvent.Time),
-            WindowStart = windowStart,
-            WindowStartLabel = FormatTime(windowStart),
-            ConditionSnapshotTime = conditionSnapshotTime,
-            ConditionSnapshotTimeLabel = FormatTime(conditionSnapshotTime),
-            ActorId = actor.UniqueID,
-            ActorName = actor.Character,
-            ActorIcon = actor.GetIcon(),
-            Side = side,
-            IsEnemy = isEnemy,
-            Outcome = outcomeInfo.Outcome,
-            OutcomeTime = outcomeInfo.TransitionTime,
-            OutcomeDurationLabel = outcomeInfo.TransitionTime.HasValue
-                ? FormatDuration(outcomeInfo.TransitionTime.Value - downEvent.Time)
-                : "",
-            TotalDamageTaken = totalDamageTaken,
-            StrikeDamageTaken = strikeDamageTaken,
-            MysticRebukeDamageTaken = mysticRebukeDamageTaken,
-            ConditionDamageTaken = conditionDamageTaken,
-            BarrierDamageTaken = barrierDamageTaken,
-            HitCount = damageEvents.Count,
-            ContributorCount = contributorTotals.Count(pair => pair.Value > 0.0),
-            Conditions = conditions,
-            Contributors = contributors,
-            DamageTimeline = BuildDownDamageTimeline(log, damageEvents),
-        };
-    }
-
-    private static string GetDownOutcome(ParsedEvtcLog log, AgentItem agent, long downTime)
-    {
-        return GetDownOutcomeInfo(log, agent, downTime).Outcome;
-    }
-
-    private static DownOutcomeInfo GetDownOutcomeInfo(ParsedEvtcLog log, AgentItem agent, long downTime)
-    {
-        DeadEvent? nextDead = log.CombatData.GetDeadEvents(agent).FirstOrDefault(evt => evt.Time >= downTime);
-        AliveEvent? nextAlive = log.CombatData.GetAliveEvents(agent).FirstOrDefault(evt => evt.Time >= downTime);
-        if (nextDead != null && (nextAlive == null || nextDead.Time <= nextAlive.Time))
-        {
-            return new DownOutcomeInfo("Killed", nextDead.Time);
-        }
-        if (nextAlive != null)
-        {
-            return new DownOutcomeInfo("Recovered", nextAlive.Time);
-        }
-        return new DownOutcomeInfo("Unresolved", null);
+        return new DamageWindowSummary(
+            TotalDamageTaken: totalDamageTaken,
+            StrikeDamageTaken: strikeDamageTaken,
+            MysticRebukeDamageTaken: mysticRebukeDamageTaken,
+            ConditionDamageTaken: conditionDamageTaken,
+            BarrierDamageTaken: barrierDamageTaken,
+            HitCount: damageEvents.Count,
+            ContributorCount: contributorTotals.Count(pair => pair.Value > 0.0),
+            Conditions: conditions,
+            Contributors: contributors,
+            DamageTimeline: BuildDownDamageTimeline(log, damageEvents));
     }
 
     private static CombatReplayBarrierSaveAnalysisDto BuildBarrierSaveAnalysis(
