@@ -877,6 +877,7 @@
         data: function () {
             return {
                 selectedEventKey: null,
+                selectedProviderKey: null,
             };
         },
         template: `
@@ -1102,11 +1103,11 @@
         <div class="combat-replay-wvw-analysis-panel">
             <div class="combat-replay-wvw-analysis-card">
                 <div class="combat-replay-wvw-analysis-card-title">Condition Conversion Summary</div>
-                <div v-if="events.length === 0" class="combat-replay-wvw-analysis-helper">No enemy downs had tracked offensive condition pressure in the final 3 seconds before the down.</div>
+                <div v-if="events.length === 0" class="combat-replay-wvw-analysis-helper">No enemy downs had actual condition damage in the final 3 seconds before the down.</div>
                 <template v-else>
                     <div class="combat-replay-wvw-analysis-grid">
                         <div class="combat-replay-wvw-analysis-metric">
-                            <div class="combat-replay-wvw-analysis-label">Downs with condition pressure</div>
+                            <div class="combat-replay-wvw-analysis-label">Downs with condition damage</div>
                             <div class="combat-replay-wvw-analysis-value">{{formatCount(conditionAnalysis.totalEvents)}}</div>
                         </div>
                         <div class="combat-replay-wvw-analysis-metric">
@@ -1114,29 +1115,120 @@
                             <div class="combat-replay-wvw-analysis-value">{{formatCount(conditionAnalysis.convertedEvents)}}</div>
                         </div>
                         <div class="combat-replay-wvw-analysis-metric">
-                            <div class="combat-replay-wvw-analysis-label">Burning pressure</div>
-                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(conditionAnalysis.totalBurningPressure)}}</div>
+                            <div class="combat-replay-wvw-analysis-label">Condition-necessary downs</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(conditionAnalysis.conditionNecessaryEvents)}}</div>
                         </div>
                         <div class="combat-replay-wvw-analysis-metric">
-                            <div class="combat-replay-wvw-analysis-label">Total tracked pressure</div>
-                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(conditionAnalysis.totalPressure)}}</div>
+                            <div class="combat-replay-wvw-analysis-label">Burning damage</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(conditionAnalysis.totalBurningDamage)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Total condition damage</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(conditionAnalysis.totalConditionDamage)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Vulnerability bonus</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(conditionAnalysis.totalVulnerabilityBonusDamage)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Total attributed value</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(conditionAnalysis.totalAttributedValue)}}</div>
                         </div>
                     </div>
                     <div v-if="topProvider" class="mt-2 combat-replay-wvw-analysis-detail text-center">
-                        Top provider: <button type="button" class="btn btn-link p-0 align-baseline" @click="focusActor(topProvider.actorId)">{{topProvider.name}}</button> with {{formatAmount(topProvider.amount)}} tracked pressure.
+                        Top provider: <button type="button" class="btn btn-link p-0 align-baseline" @click="selectProvider(topProvider)">{{topProvider.name}}</button> with {{formatAmount(topProvider.amount)}} total value.
                     </div>
                     <div v-if="providers.length > 0" class="mt-2">
-                        <div class="combat-replay-wvw-analysis-label">Top providers by condition conversion pressure</div>
+                        <div class="combat-replay-wvw-analysis-label">Top providers by condition conversion value</div>
                         <div class="combat-replay-wvw-analysis-top-actors">
                             <button
                                 v-for="provider in providers.slice(0, 5)"
-                                :key="'condition-provider-' + provider.actorId"
+                                :key="'condition-provider-' + makeProviderKey(provider)"
                                 type="button"
                                 class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
-                                @click="focusActor(provider.actorId)">
+                                @click="selectProvider(provider)">
+                                <img
+                                    v-if="provider.icon"
+                                    :src="provider.icon"
+                                    :alt="provider.name"
+                                    style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
                                 <span class="combat-replay-wvw-analysis-top-actor-name">{{provider.name}}</span>
                                 <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(provider.amount)}}</span>
                             </button>
+                        </div>
+                    </div>
+                    <div v-if="selectedProviderSummary" class="mt-3">
+                        <div class="combat-replay-wvw-analysis-label">Selected Provider Summary</div>
+                        <div class="combat-replay-wvw-analysis-selected">
+                            <div class="combat-replay-wvw-analysis-selected-header">
+                                <img
+                                    v-if="selectedProviderSummary.icon"
+                                    :src="selectedProviderSummary.icon"
+                                    :alt="selectedProviderSummary.name"
+                                    class="combat-replay-wvw-analysis-selected-icon">
+                                <div>
+                                    <div class="combat-replay-wvw-analysis-selected-name">{{selectedProviderSummary.name}}</div>
+                                    <div class="combat-replay-wvw-analysis-selected-type">{{formatCount(selectedProviderSummary.eventCount)}} down events influenced</div>
+                                </div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-grid">
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Total value</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatAmount(selectedProviderSummary.amount)}}</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Share of panel</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatPercent(selectedProviderSummary.percent)}}</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Converted downs</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedProviderSummary.convertedCount)}}</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Recovered / down only</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedProviderSummary.recoveredCount)}} / {{formatCount(selectedProviderSummary.downOnlyCount)}}</div>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <div class="combat-replay-wvw-analysis-label">Source breakdown</div>
+                                <div class="wvw-summary-modal-list">
+                                    <div
+                                        v-for="source in selectedProviderSummary.sources.slice(0, 6)"
+                                        :key="'provider-source-' + selectedProviderSummary.key + '-' + source.name"
+                                        class="wvw-summary-modal-row">
+                                        <div class="wvw-summary-modal-skill">
+                                            <img v-if="source.icon" :src="source.icon" :alt="source.name" class="combat-replay-threat-boon-icon">
+                                            <span class="wvw-summary-modal-skill-name">{{source.name}}</span>
+                                        </div>
+                                        <div class="wvw-summary-modal-values">
+                                            <span class="wvw-summary-modal-count">{{formatAmount(source.amount)}}</span>
+                                            <span class="wvw-summary-modal-secondary">{{formatPercent(source.percent)}}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-if="selectedProviderSummary.topEvents.length > 0" class="mt-2">
+                                <div class="combat-replay-wvw-analysis-label">Top contributing events</div>
+                                <div class="combat-replay-wvw-analysis-bursts">
+                                    <button
+                                        v-for="providerEvent in selectedProviderSummary.topEvents"
+                                        :key="'provider-top-event-' + selectedProviderSummary.key + '-' + providerEvent.time + '-' + providerEvent.targetId"
+                                        type="button"
+                                        class="combat-replay-wvw-analysis-burst-entry"
+                                        @click="openProviderEvent(providerEvent)">
+                                        <span class="combat-replay-wvw-analysis-burst-time">{{providerEvent.timeLabel}}</span>
+                                        <span class="combat-replay-wvw-analysis-burst-detail">{{providerEvent.targetName}}</span>
+                                        <span class="combat-replay-wvw-analysis-burst-detail">
+                                            <span class="combat-replay-wvw-analysis-pill" :class="getOutcomeClass(providerEvent.outcome)">{{providerEvent.outcome}}</span>
+                                        </span>
+                                        <span v-if="providerEvent.conditionDamageNecessary" class="combat-replay-wvw-analysis-burst-detail">
+                                            <span class="combat-replay-wvw-analysis-pill combat-replay-wvw-analysis-pill-success">Condition needed</span>
+                                        </span>
+                                        <span class="combat-replay-wvw-analysis-burst-detail">{{formatAmount(providerEvent.amount)}} value</span>
+                                        <span class="combat-replay-wvw-analysis-burst-detail">{{providerEvent.topConditionName}}</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </template>
@@ -1159,8 +1251,12 @@
                                     <span class="combat-replay-wvw-analysis-burst-detail">
                                         <span class="combat-replay-wvw-analysis-pill" :class="getOutcomeClass(event.outcome)">{{event.outcome}}</span>
                                     </span>
-                                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatAmount(event.totalPressure)}} pressure</span>
-                                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatAmount(event.burningPressure)}} burning</span>
+                                    <span v-if="event.conditionDamageNecessary" class="combat-replay-wvw-analysis-burst-detail">
+                                        <span class="combat-replay-wvw-analysis-pill combat-replay-wvw-analysis-pill-success">Condition needed</span>
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatAmount(event.totalAttributedValue)}} value</span>
+                                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatAmount(event.burningDamage)}} burning</span>
+                                    <span class="combat-replay-wvw-analysis-burst-detail">+{{formatAmount(event.vulnerabilityBonusDamage)}} vuln bonus</span>
                                     <span class="combat-replay-wvw-analysis-burst-detail">{{event.topConditionName}}</span>
                                     <span class="combat-replay-wvw-analysis-burst-detail">{{event.topContributorSummary}}</span>
                                 </button>
@@ -1172,7 +1268,7 @@
                     <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
                         <div class="combat-replay-wvw-analysis-card-title">Selected Conversion Event</div>
                         <div style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;">
-                            <div v-if="!selectedEvent" class="combat-replay-wvw-analysis-helper">Select an enemy down event to inspect condition pressure and contributor context.</div>
+                            <div v-if="!selectedEvent" class="combat-replay-wvw-analysis-helper">Select an enemy down event to inspect actual condition damage and vulnerability-enabled bonus value.</div>
                             <div v-else class="combat-replay-wvw-analysis-selected">
                                 <div class="combat-replay-wvw-analysis-selected-header">
                                     <img :src="selectedEvent.targetIcon" :alt="selectedEvent.targetName" class="combat-replay-wvw-analysis-selected-icon">
@@ -1186,16 +1282,28 @@
                                 </div>
                                 <div class="combat-replay-wvw-analysis-grid">
                                     <div class="combat-replay-wvw-analysis-metric">
-                                        <div class="combat-replay-wvw-analysis-label">Total tracked pressure</div>
-                                        <div class="combat-replay-wvw-analysis-value">{{formatAmount(selectedEvent.totalPressure)}}</div>
+                                        <div class="combat-replay-wvw-analysis-label">Total attributed value</div>
+                                        <div class="combat-replay-wvw-analysis-value">{{formatAmount(selectedEvent.totalAttributedValue)}}</div>
                                     </div>
                                     <div class="combat-replay-wvw-analysis-metric">
-                                        <div class="combat-replay-wvw-analysis-label">Burning pressure</div>
-                                        <div class="combat-replay-wvw-analysis-value">{{formatAmount(selectedEvent.burningPressure)}}</div>
+                                        <div class="combat-replay-wvw-analysis-label">Total condition damage</div>
+                                        <div class="combat-replay-wvw-analysis-value">{{formatAmount(selectedEvent.totalConditionDamage)}}</div>
+                                    </div>
+                                    <div class="combat-replay-wvw-analysis-metric">
+                                        <div class="combat-replay-wvw-analysis-label">Burning damage</div>
+                                        <div class="combat-replay-wvw-analysis-value">{{formatAmount(selectedEvent.burningDamage)}}</div>
+                                    </div>
+                                    <div class="combat-replay-wvw-analysis-metric">
+                                        <div class="combat-replay-wvw-analysis-label">Vulnerability bonus</div>
+                                        <div class="combat-replay-wvw-analysis-value">{{formatAmount(selectedEvent.vulnerabilityBonusDamage)}}</div>
                                     </div>
                                     <div class="combat-replay-wvw-analysis-metric">
                                         <div class="combat-replay-wvw-analysis-label">Top condition</div>
                                         <div class="combat-replay-wvw-analysis-value">{{selectedEvent.topConditionName}}</div>
+                                    </div>
+                                    <div class="combat-replay-wvw-analysis-metric">
+                                        <div class="combat-replay-wvw-analysis-label">Condition needed</div>
+                                        <div class="combat-replay-wvw-analysis-value">{{selectedEvent.conditionDamageNecessary ? 'Yes' : 'No'}}</div>
                                     </div>
                                     <div class="combat-replay-wvw-analysis-metric">
                                         <div class="combat-replay-wvw-analysis-label">Conversion time</div>
@@ -1203,7 +1311,7 @@
                                     </div>
                                 </div>
                                 <div class="mt-2">
-                                    <div class="combat-replay-wvw-analysis-label">Condition breakdown</div>
+                                    <div class="combat-replay-wvw-analysis-label">Condition damage breakdown</div>
                                     <div class="wvw-summary-modal-list">
                                         <div v-for="condition in selectedEvent.conditions" :key="'condition-breakdown-' + selectedEvent.time + '-' + condition.name" class="wvw-summary-modal-row">
                                             <div class="wvw-summary-modal-skill">
@@ -1237,7 +1345,7 @@
                                             v-if="provider.details && provider.details.length > 0"
                                             :key="'conversion-provider-detail-' + selectedEvent.time + '-' + provider.name"
                                             class="combat-replay-wvw-analysis-detail">
-                                            {{provider.name}} by condition: {{formatProviderConditionBreakdown(provider.details)}}
+                                            {{provider.name}} by source: {{formatProviderConditionBreakdown(provider.details)}}
                                         </div>
                                     </div>
                                 </div>
@@ -1253,7 +1361,7 @@
                 return this.getEventAnalysis();
             },
             conditionAnalysis: function () {
-                return this.eventAnalysis && this.eventAnalysis.conditionConversions ? this.eventAnalysis.conditionConversions : { totalEvents: 0, convertedEvents: 0, totalBurningPressure: 0, totalPressure: 0, providers: [], events: [] };
+                return this.eventAnalysis && this.eventAnalysis.conditionConversions ? this.eventAnalysis.conditionConversions : { totalEvents: 0, convertedEvents: 0, conditionNecessaryEvents: 0, totalBurningDamage: 0, totalConditionDamage: 0, totalVulnerabilityBonusDamage: 0, totalAttributedValue: 0, providers: [], events: [] };
             },
             events: function () {
                 return this.conditionAnalysis.events || [];
@@ -1265,26 +1373,157 @@
                 return this.events.find(event => this.makeEventKey(event) === this.selectedEventKey) || this.events[0];
             },
             providers: function () {
-                return this.conditionAnalysis.providers || [];
+                return this.providerSummaries.filter(provider => provider.actorId != null || provider.name !== "Other");
             },
             topProvider: function () {
                 return this.providers.length > 0 ? this.providers[0] : null;
+            },
+            providerSummaries: function () {
+                const summaries = {};
+                const totalAttributedValue = this.conditionAnalysis && this.conditionAnalysis.totalAttributedValue ? this.conditionAnalysis.totalAttributedValue : 0;
+                this.events.forEach(event => {
+                    (event.providers || []).forEach(provider => {
+                        const key = this.makeProviderKey(provider);
+                        if (!summaries[key]) {
+                            summaries[key] = {
+                                key: key,
+                                actorId: provider.actorId,
+                                name: provider.name,
+                                icon: provider.icon || "",
+                                amount: 0,
+                                eventCount: 0,
+                                convertedCount: 0,
+                                recoveredCount: 0,
+                                downOnlyCount: 0,
+                                sourceMap: {},
+                                topEvents: [],
+                            };
+                        }
+                        const summary = summaries[key];
+                        summary.amount += provider.amount || 0;
+                        summary.eventCount += 1;
+                        if (event.outcome === "Converted") {
+                            summary.convertedCount += 1;
+                        } else if (event.outcome === "Recovered") {
+                            summary.recoveredCount += 1;
+                        } else {
+                            summary.downOnlyCount += 1;
+                        }
+                        (provider.details || []).forEach(detail => {
+                            const detailKey = detail.buffId != null ? String(detail.buffId) : String(detail.name);
+                            if (!summary.sourceMap[detailKey]) {
+                                summary.sourceMap[detailKey] = {
+                                    name: detail.name,
+                                    icon: detail.icon || "",
+                                    amount: 0,
+                                };
+                            }
+                            summary.sourceMap[detailKey].amount += detail.amount || 0;
+                        });
+                        summary.topEvents.push({
+                            time: event.time,
+                            timeLabel: event.timeLabel,
+                            targetId: event.targetId,
+                            targetName: event.targetName,
+                            outcome: event.outcome,
+                            conditionDamageNecessary: !!event.conditionDamageNecessary,
+                            amount: provider.amount || 0,
+                            topConditionName: event.topConditionName,
+                        });
+                    });
+                });
+                return Object.values(summaries)
+                    .map(summary => {
+                        const amount = this.roundToTenth(summary.amount);
+                        const sources = Object.values(summary.sourceMap)
+                            .map(source => {
+                                const sourceAmount = this.roundToTenth(source.amount);
+                                return {
+                                    name: source.name,
+                                    icon: source.icon,
+                                    amount: sourceAmount,
+                                    percent: amount > 0 ? this.roundToTenth(sourceAmount * 100 / amount) : 0,
+                                };
+                            })
+                            .sort((left, right) => right.amount - left.amount || left.name.localeCompare(right.name));
+                        const topEvents = summary.topEvents
+                            .sort((left, right) => right.amount - left.amount || left.time - right.time)
+                            .slice(0, 5)
+                            .map(providerEvent => ({
+                                time: providerEvent.time,
+                                timeLabel: providerEvent.timeLabel,
+                                targetId: providerEvent.targetId,
+                                targetName: providerEvent.targetName,
+                                outcome: providerEvent.outcome,
+                                conditionDamageNecessary: !!providerEvent.conditionDamageNecessary,
+                                amount: this.roundToTenth(providerEvent.amount),
+                                topConditionName: providerEvent.topConditionName,
+                            }));
+                        return {
+                            key: summary.key,
+                            actorId: summary.actorId,
+                            name: summary.name,
+                            icon: summary.icon,
+                            amount: amount,
+                            percent: totalAttributedValue > 0 ? this.roundToTenth(amount * 100 / totalAttributedValue) : 0,
+                            eventCount: summary.eventCount,
+                            convertedCount: summary.convertedCount,
+                            recoveredCount: summary.recoveredCount,
+                            downOnlyCount: summary.downOnlyCount,
+                            sources: sources,
+                            topEvents: topEvents,
+                        };
+                    })
+                    .sort((left, right) => right.amount - left.amount || left.name.localeCompare(right.name));
+            },
+            selectedProviderSummary: function () {
+                if (this.providers.length === 0) {
+                    return null;
+                }
+                if (this.selectedactorid != null) {
+                    const actorMatchedProvider = this.providers.find(provider => provider.actorId === this.selectedactorid);
+                    if (actorMatchedProvider) {
+                        return actorMatchedProvider;
+                    }
+                }
+                const selectedKey = this.selectedProviderKey || this.providers[0].key;
+                return this.providers.find(provider => provider.key === selectedKey) || this.providers[0];
             },
         },
         methods: {
             makeEventKey: function (event) {
                 return String(event.time) + ":" + String(event.targetId);
             },
+            makeProviderKey: function (provider) {
+                return provider && provider.actorId != null
+                    ? "actor:" + String(provider.actorId)
+                    : "name:" + String(provider && provider.name ? provider.name : "");
+            },
             openEvent: function (event) {
                 this.selectedEventKey = this.makeEventKey(event);
                 this.jumpToBurst(event.time);
                 this.selectReplayActor(event.targetId);
+            },
+            openProviderEvent: function (providerEvent) {
+                this.selectedEventKey = this.makeEventKey(providerEvent);
+                this.jumpToBurst(providerEvent.time);
+                this.selectReplayActor(providerEvent.targetId);
+            },
+            selectProvider: function (provider) {
+                if (!provider) {
+                    return;
+                }
+                this.selectedProviderKey = this.makeProviderKey(provider);
+                this.focusActor(provider.actorId);
             },
             focusActor: function (actorId) {
                 if (actorId == null) {
                     return;
                 }
                 this.selectReplayActor(actorId);
+            },
+            roundToTenth: function (value) {
+                return Math.round((Number(value) || 0) * 10) / 10;
             },
             getOutcomeClass: function (outcome) {
                 if (outcome === "Converted") {

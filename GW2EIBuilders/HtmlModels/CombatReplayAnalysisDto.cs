@@ -199,8 +199,11 @@ internal class CombatReplayConditionConversionAnalysisDto
 {
     public int TotalEvents { get; set; }
     public int ConvertedEvents { get; set; }
-    public double TotalBurningPressure { get; set; }
-    public double TotalPressure { get; set; }
+    public int ConditionNecessaryEvents { get; set; }
+    public double TotalBurningDamage { get; set; }
+    public double TotalConditionDamage { get; set; }
+    public double TotalVulnerabilityBonusDamage { get; set; }
+    public double TotalAttributedValue { get; set; }
     public List<CombatReplayEventActorSummaryDto> Providers { get; set; } = [];
     public List<CombatReplayConditionConversionEventDto> Events { get; set; } = [];
 }
@@ -263,8 +266,11 @@ internal class CombatReplayConditionConversionEventDto
     public string Outcome { get; set; } = "";
     public long? ConversionTime { get; set; }
     public string ConversionTimeLabel { get; set; } = "";
-    public double TotalPressure { get; set; }
-    public double BurningPressure { get; set; }
+    public bool ConditionDamageNecessary { get; set; }
+    public double TotalConditionDamage { get; set; }
+    public double BurningDamage { get; set; }
+    public double VulnerabilityBonusDamage { get; set; }
+    public double TotalAttributedValue { get; set; }
     public string TopConditionName { get; set; } = "";
     public string TopConditionIcon { get; set; } = "";
     public string TopContributorSummary { get; set; } = "";
@@ -423,14 +429,13 @@ internal static class CombatReplayAnalysisBuilder
         Blind,
         Chilled,
     ];
-    private static readonly IReadOnlyList<long> ConditionConversionDisplayBuffIds =
+    private static readonly IReadOnlyList<long> ConditionConversionDamageBuffIds =
     [
         Burning,
         Poison,
         Bleeding,
         Torment,
         Confusion,
-        Vulnerability,
     ];
 
     private readonly record struct DamageRecord(long Time, int TargetUniqueId, int AttackerUniqueId, int Damage, bool HasDowned, bool HasKilled);
@@ -1855,8 +1860,11 @@ internal static class CombatReplayAnalysisBuilder
         result.Events = events;
         result.TotalEvents = events.Count;
         result.ConvertedEvents = events.Count(evt => evt.Outcome == "Converted");
-        result.TotalBurningPressure = Math.Round(events.Sum(evt => evt.BurningPressure), 1);
-        result.TotalPressure = Math.Round(events.Sum(evt => evt.TotalPressure), 1);
+        result.ConditionNecessaryEvents = events.Count(evt => evt.ConditionDamageNecessary);
+        result.TotalBurningDamage = Math.Round(events.Sum(evt => evt.BurningDamage), 1);
+        result.TotalConditionDamage = Math.Round(events.Sum(evt => evt.TotalConditionDamage), 1);
+        result.TotalVulnerabilityBonusDamage = Math.Round(events.Sum(evt => evt.VulnerabilityBonusDamage), 1);
+        result.TotalAttributedValue = Math.Round(events.Sum(evt => evt.TotalAttributedValue), 1);
         result.Providers = BuildTopActorSummaries(events.SelectMany(
             evt => evt.Providers.Select(provider => (provider.ActorId, provider.Name, provider.Icon, provider.Amount, evt.Time))));
         return result;
@@ -1868,41 +1876,106 @@ internal static class CombatReplayAnalysisBuilder
         DownEvent downEvent)
     {
         long windowStart = Math.Max(log.LogData.LogStart, downEvent.Time - LookbackWindow);
-        var buffBreakdowns = new List<CombatReplayEventContributionDto>(ConditionConversionDisplayBuffIds.Count);
-        var providerTotals = new Dictionary<SingleActor, double>();
-        var providerConditionTotals = new Dictionary<SingleActor, Dictionary<long, double>>();
-        IReadOnlyDictionary<long, BuffVolumeByActorStatistics> activeBuffVolumes = target.GetActiveBuffVolumesDictionary(log, windowStart, downEvent.Time);
-        foreach (long buffId in ConditionConversionDisplayBuffIds)
+        List<SingleActor> squadPlayers = [.. log.PlayerList.Where(player => !player.IsFakeActor).Cast<SingleActor>()];
+        int healthAtWindowStart = target.GetCurrentHealth(log, windowStart);
+        if (healthAtWindowStart <= 0)
+        {
+            healthAtWindowStart = GetApproximateCurrentHealth(target, log, windowStart);
+        }
+        int incomingHealing = log.CombatData.HasEXTHealing
+            ? target.EXTHealing.GetIncomingHealEvents(null, log, windowStart, downEvent.Time)
+                .Where(healingEvent => !healingEvent.AgainstDowned)
+                .Sum(healingEvent => healingEvent.HealingDone)
+            : 0;
+        var buffBreakdowns = new List<CombatReplayEventContributionDto>(ConditionConversionDamageBuffIds.Count);
+        var providerTotals = new Dictionary<AgentItem, double>();
+        var providerConditionTotals = new Dictionary<AgentItem, Dictionary<long, double>>();
+        var providerVulnerabilityTotals = new Dictionary<AgentItem, double>();
+        int nonConditionDamage = 0;
+
+        foreach (HealthDamageEvent damageEvent in target.GetHitDamageTakenEvents(null, log, windowStart, downEvent.Time, ParserHelper.DamageType.All))
+        {
+            int amount = damageEvent.HealthDamage;
+            if (amount <= 0)
+            {
+                continue;
+            }
+
+            if (!damageEvent.ConditionDamageBased(log))
+            {
+                nonConditionDamage += amount;
+                continue;
+            }
+            if (!ConditionConversionDamageBuffIds.Contains(damageEvent.SkillID))
+            {
+                continue;
+            }
+
+            AgentItem provider = damageEvent.CreditedFrom;
+            providerTotals[provider] = providerTotals.TryGetValue(provider, out double existingProviderDamage)
+                ? existingProviderDamage + amount
+                : amount;
+            if (!providerConditionTotals.TryGetValue(provider, out Dictionary<long, double>? conditionTotals))
+            {
+                conditionTotals = [];
+                providerConditionTotals[provider] = conditionTotals;
+            }
+            conditionTotals[damageEvent.SkillID] = conditionTotals.TryGetValue(damageEvent.SkillID, out double existingConditionDamage)
+                ? existingConditionDamage + amount
+                : amount;
+        }
+
+        foreach (HealthDamageEvent damageEvent in target.GetHitDamageTakenEvents(null, log, windowStart, downEvent.Time, ParserHelper.DamageType.StrikeAndCondition))
+        {
+            if (damageEvent.HealthDamage <= 0 || damageEvent.IsLifeLeech)
+            {
+                continue;
+            }
+
+            double totalVulnerabilityStacks = Math.Max(0.0, target.GetBuffStatus(log, Vulnerability, damageEvent.Time).Value);
+            if (totalVulnerabilityStacks <= 0.0)
+            {
+                continue;
+            }
+
+            double vulnerabilityBonus = damageEvent.HealthDamage * totalVulnerabilityStacks / (100.0 + totalVulnerabilityStacks);
+            foreach (SingleActor squadPlayer in squadPlayers)
+            {
+                double providerVulnerabilityStacks = Math.Max(0.0, target.GetBuffStatus(log, squadPlayer, Vulnerability, damageEvent.Time).Value);
+                if (providerVulnerabilityStacks <= 0.0)
+                {
+                    continue;
+                }
+
+                double providerBonus = vulnerabilityBonus * providerVulnerabilityStacks / totalVulnerabilityStacks;
+                if (providerBonus <= 0.0)
+                {
+                    continue;
+                }
+
+                AgentItem provider = squadPlayer.AgentItem;
+                providerTotals[provider] = providerTotals.TryGetValue(provider, out double existingProviderValue)
+                    ? existingProviderValue + providerBonus
+                    : providerBonus;
+                providerVulnerabilityTotals[provider] = providerVulnerabilityTotals.TryGetValue(provider, out double existingVulnerabilityBonus)
+                    ? existingVulnerabilityBonus + providerBonus
+                    : providerBonus;
+            }
+        }
+
+        foreach (long buffId in ConditionConversionDamageBuffIds)
         {
             if (!log.Buffs.BuffsByIDs.TryGetValue(buffId, out Buff? buff))
             {
                 continue;
             }
 
-            if (!activeBuffVolumes.TryGetValue(buffId, out BuffVolumeByActorStatistics? buffStats))
-            {
-                continue;
-            }
-
-            double totalAmount = Math.Round(buffStats.IncomingBy.Values.Sum(), 1);
+            double totalAmount = Math.Round(providerConditionTotals.Values
+                .Where(conditionTotals => conditionTotals.TryGetValue(buffId, out double amount) && amount > 0.0)
+                .Sum(conditionTotals => conditionTotals[buffId]), 1);
             if (totalAmount <= 0.0)
             {
                 continue;
-            }
-
-            foreach ((SingleActor provider, double amount) in buffStats.IncomingBy)
-            {
-                if (amount <= 0.0)
-                {
-                    continue;
-                }
-                providerTotals[provider] = providerTotals.TryGetValue(provider, out double existingAmount) ? existingAmount + amount : amount;
-                if (!providerConditionTotals.TryGetValue(provider, out Dictionary<long, double>? conditionTotals))
-                {
-                    conditionTotals = [];
-                    providerConditionTotals[provider] = conditionTotals;
-                }
-                conditionTotals[buffId] = conditionTotals.TryGetValue(buffId, out double existingConditionAmount) ? existingConditionAmount + amount : amount;
             }
 
             buffBreakdowns.Add(new CombatReplayEventContributionDto
@@ -1914,18 +1987,26 @@ internal static class CombatReplayAnalysisBuilder
             });
         }
 
-        double totalPressure = Math.Round(buffBreakdowns.Sum(entry => entry.Amount), 1);
-        if (totalPressure <= 0.0)
+        double totalConditionDamage = Math.Round(buffBreakdowns.Sum(entry => entry.Amount), 1);
+        if (totalConditionDamage <= 0.0)
         {
             return null;
         }
 
+        bool conditionDamageNecessary = healthAtWindowStart > 0 && nonConditionDamage < healthAtWindowStart + incomingHealing;
+        double vulnerabilityBonusDamage = Math.Round(providerVulnerabilityTotals.Values.Sum(), 1);
+        double totalAttributedValue = Math.Round(totalConditionDamage + vulnerabilityBonusDamage, 1);
         foreach (CombatReplayEventContributionDto entry in buffBreakdowns)
         {
-            entry.Percent = Math.Round(entry.Amount * 100.0 / totalPressure, 1);
+            entry.Percent = Math.Round(entry.Amount * 100.0 / totalConditionDamage, 1);
         }
 
-        List<CombatReplayEventContributionDto> providers = BuildMeaningfulConditionProviders(log, providerTotals, providerConditionTotals, totalPressure);
+        List<CombatReplayEventContributionDto> providers = BuildMeaningfulConditionProviders(
+            log,
+            providerTotals,
+            providerConditionTotals,
+            providerVulnerabilityTotals,
+            totalAttributedValue);
         CombatReplayEventContributionDto? burningBreakdown = buffBreakdowns.FirstOrDefault(entry => entry.BuffId == Burning);
         CombatReplayEventContributionDto topCondition = buffBreakdowns
             .OrderByDescending(entry => entry.Amount)
@@ -1955,8 +2036,11 @@ internal static class CombatReplayAnalysisBuilder
             Outcome = outcome,
             ConversionTime = conversionTime,
             ConversionTimeLabel = conversionTime.HasValue ? FormatTime(conversionTime.Value) : "",
-            TotalPressure = totalPressure,
-            BurningPressure = Math.Round(burningBreakdown?.Amount ?? 0.0, 1),
+            ConditionDamageNecessary = conditionDamageNecessary,
+            TotalConditionDamage = totalConditionDamage,
+            BurningDamage = Math.Round(burningBreakdown?.Amount ?? 0.0, 1),
+            VulnerabilityBonusDamage = vulnerabilityBonusDamage,
+            TotalAttributedValue = totalAttributedValue,
             TopConditionName = topCondition.Name,
             TopConditionIcon = topCondition.Icon,
             TopContributorSummary = BuildCompactContributorSummary(providers),
@@ -1978,39 +2062,66 @@ internal static class CombatReplayAnalysisBuilder
 
     private static List<CombatReplayEventContributionDto> BuildMeaningfulConditionProviders(
         ParsedEvtcLog log,
-        IReadOnlyDictionary<SingleActor, double> providerTotals,
-        IReadOnlyDictionary<SingleActor, Dictionary<long, double>> providerConditionTotals,
-        double totalPressure)
+        IReadOnlyDictionary<AgentItem, double> providerTotals,
+        IReadOnlyDictionary<AgentItem, Dictionary<long, double>> providerConditionTotals,
+        IReadOnlyDictionary<AgentItem, double> providerVulnerabilityTotals,
+        double totalAttributedValue)
     {
-        var actorTotals = providerTotals.ToDictionary(pair => pair.Key.AgentItem, pair => pair.Value);
-        List<CombatReplayEventContributionDto> providers = BuildMeaningfulActorContributionList(log, actorTotals, totalPressure);
-        Dictionary<int, SingleActor> actorsById = providerTotals.Keys.ToDictionary(actor => actor.UniqueID, actor => actor);
+        List<CombatReplayEventContributionDto> providers = BuildMeaningfulActorContributionList(log, providerTotals, totalAttributedValue);
+        Dictionary<int, AgentItem> agentsById = providerTotals.Keys
+            .Select(agent => (Agent: agent, Actor: FindActor(log, agent)))
+            .Where(entry => entry.Actor != null)
+            .ToDictionary(entry => entry.Actor!.UniqueID, entry => entry.Agent);
         foreach (CombatReplayEventContributionDto provider in providers)
         {
-            if (provider.ActorId == null || !actorsById.TryGetValue(provider.ActorId.Value, out SingleActor? actor))
+            AgentItem? providerAgent = null;
+            if (provider.ActorId != null && agentsById.TryGetValue(provider.ActorId.Value, out AgentItem? agent))
             {
-                continue;
+                providerAgent = agent;
             }
-            if (!providerConditionTotals.TryGetValue(actor, out Dictionary<long, double>? conditionTotals))
+            else if (!string.Equals(provider.Name, "Other", StringComparison.OrdinalIgnoreCase))
+            {
+                providerAgent = providerTotals.Keys.FirstOrDefault(agentItem => string.Equals(GetActorName(log, agentItem), provider.Name, StringComparison.OrdinalIgnoreCase));
+            }
+            if (providerAgent == null)
             {
                 continue;
             }
 
-            provider.Details = [.. ConditionConversionDisplayBuffIds
-                .Where(buffId => conditionTotals.TryGetValue(buffId, out double amount) && amount > 0.0)
-                .Select(buffId =>
-                {
-                    Buff buff = log.Buffs.BuffsByIDs[buffId];
-                    double amount = Math.Round(conditionTotals[buffId], 1);
-                    return new CombatReplayEventContributionDto
+            var details = new List<CombatReplayEventContributionDto>();
+            if (providerConditionTotals.TryGetValue(providerAgent, out Dictionary<long, double>? conditionTotals))
+            {
+                details.AddRange(ConditionConversionDamageBuffIds
+                    .Where(buffId => conditionTotals.TryGetValue(buffId, out double amount) && amount > 0.0)
+                    .Select(buffId =>
                     {
-                        BuffId = buffId,
-                        Name = buff.Name,
-                        Icon = buff.Link,
-                        Amount = amount,
-                        Percent = provider.Amount > 0.0 ? Math.Round(amount * 100.0 / provider.Amount, 1) : 0.0,
-                    };
-                })];
+                        Buff buff = log.Buffs.BuffsByIDs[buffId];
+                        double amount = Math.Round(conditionTotals[buffId], 1);
+                        return new CombatReplayEventContributionDto
+                        {
+                            BuffId = buffId,
+                            Name = buff.Name,
+                            Icon = buff.Link,
+                            Amount = amount,
+                            Percent = provider.Amount > 0.0 ? Math.Round(amount * 100.0 / provider.Amount, 1) : 0.0,
+                        };
+                    }));
+            }
+
+            if (providerVulnerabilityTotals.TryGetValue(providerAgent, out double vulnerabilityAmount) && vulnerabilityAmount > 0.0)
+            {
+                string vulnerabilityIcon = log.Buffs.BuffsByIDs.TryGetValue(Vulnerability, out Buff? vulnerabilityBuff) ? vulnerabilityBuff.Link : "";
+                details.Add(new CombatReplayEventContributionDto
+                {
+                    BuffId = Vulnerability,
+                    Name = "Vulnerability bonus",
+                    Icon = vulnerabilityIcon,
+                    Amount = Math.Round(vulnerabilityAmount, 1),
+                    Percent = provider.Amount > 0.0 ? Math.Round(vulnerabilityAmount * 100.0 / provider.Amount, 1) : 0.0,
+                });
+            }
+
+            provider.Details = [.. details];
         }
         return providers;
     }
