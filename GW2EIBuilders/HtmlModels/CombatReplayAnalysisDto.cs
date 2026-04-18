@@ -216,6 +216,7 @@ internal class CombatReplayDownSummaryDto
     public double TotalMysticRebukeDamage { get; set; }
     public double AverageMysticRebukeDamage { get; set; }
     public double AverageEffectiveSoftCcSeconds { get; set; }
+    public List<CombatReplayEventActorSummaryDto> TopContributors { get; set; } = [];
     public List<CombatReplayEventActorSummaryDto> MysticRebukeContributors { get; set; } = [];
     public List<CombatReplayEventActorSummaryDto> ConditionContributors { get; set; } = [];
     public List<CombatReplayEventSummaryEntryDto> TopConditions { get; set; } = [];
@@ -258,7 +259,46 @@ internal class CombatReplayKillSummaryDto
 
 internal class CombatReplayRecoveredAnalysisDto
 {
+    public CombatReplayRecoveredSquadSummaryDto SquadSummary { get; set; } = new();
+    public CombatReplayRecoveredEnemySummaryDto EnemySummary { get; set; } = new();
     public List<CombatReplayRecoveredEventDto> Events { get; set; } = [];
+}
+
+internal class CombatReplayRecoveredSquadSummaryDto
+{
+    public int RecoveredCount { get; set; }
+    public double AverageRecoverTimeSeconds { get; set; }
+    public int TotalDownedHealing { get; set; }
+    public int TotalHealingEvents { get; set; }
+    public int TotalRezCasts { get; set; }
+    public double TotalRezCastDurationSeconds { get; set; }
+    public List<CombatReplayEventActorSummaryDto> SupportContributors { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> HealingContributors { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> RezContributors { get; set; } = [];
+    public List<string> Takeaways { get; set; } = [];
+}
+
+internal class CombatReplayRecoveredEnemySummaryDto
+{
+    public int RecoveredCount { get; set; }
+    public int ConditionImpactedRecoveries { get; set; }
+    public int MysticRebukeRecoveries { get; set; }
+    public int BurningRecoveries { get; set; }
+    public int ConditionMajorityRecoveries { get; set; }
+    public int MysticRebukeHeavyRecoveries { get; set; }
+    public double TotalDamage { get; set; }
+    public double TotalStrikeDamage { get; set; }
+    public double TotalConditionDamage { get; set; }
+    public double TotalBurningDamage { get; set; }
+    public double TotalMysticRebukeDamage { get; set; }
+    public double TotalBarrierDamage { get; set; }
+    public double AverageRecoverTimeSeconds { get; set; }
+    public double AverageMysticRebukeDamage { get; set; }
+    public List<CombatReplayEventActorSummaryDto> PressureContributors { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> MysticRebukeContributors { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> ConditionContributors { get; set; } = [];
+    public List<CombatReplayEventSummaryEntryDto> TopConditions { get; set; } = [];
+    public List<string> Takeaways { get; set; } = [];
 }
 
 internal class CombatReplayDownEventDto
@@ -1950,6 +1990,16 @@ internal static class CombatReplayAnalysisBuilder
                 .Average(), 1)
             : 0.0;
 
+        summary.TopContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.Contributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    contributor.Amount,
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
         summary.MysticRebukeContributors = BuildTopActorSummaries(events.SelectMany(evt =>
             evt.Contributors
                 .Where(contributor => contributor.ActorId != null)
@@ -2142,6 +2192,8 @@ internal static class CombatReplayAnalysisBuilder
         events.Sort((left, right) => left.Time.CompareTo(right.Time));
         return new CombatReplayRecoveredAnalysisDto
         {
+            SquadSummary = BuildRecoveredSquadSummary([.. events.Where(evt => !evt.IsEnemy && evt.UsesSupportView)]),
+            EnemySummary = BuildRecoveredEnemySummary([.. events.Where(evt => evt.IsEnemy && !evt.UsesSupportView)]),
             Events = events,
         };
     }
@@ -2210,6 +2262,7 @@ internal static class CombatReplayAnalysisBuilder
                 HitCount = summary.HitCount,
                 ContributorCount = summary.ContributorCount,
                 Conditions = [.. summary.Conditions],
+                ConditionDamageBreakdown = [.. summary.ConditionDamageBreakdown],
                 Contributors = [.. summary.Contributors],
                 DamageTimeline = [.. summary.DamageTimeline],
             };
@@ -2241,6 +2294,115 @@ internal static class CombatReplayAnalysisBuilder
             SupportContributors = [.. supportSummary.SupportContributors],
             SupportTimeline = [.. supportSummary.SupportTimeline],
         };
+    }
+
+    private static CombatReplayRecoveredSquadSummaryDto BuildRecoveredSquadSummary(IReadOnlyList<CombatReplayRecoveredEventDto> events)
+    {
+        var summary = new CombatReplayRecoveredSquadSummaryDto
+        {
+            RecoveredCount = events.Count,
+            AverageRecoverTimeSeconds = events.Count > 0
+                ? Math.Round(events.Average(evt => (evt.Time - evt.WindowStart) / 1000.0), 1)
+                : 0.0,
+            TotalDownedHealing = events.Sum(evt => evt.TotalDownedHealing),
+            TotalHealingEvents = events.Sum(evt => evt.DownedHealingEventCount),
+            TotalRezCasts = events.Sum(evt => evt.RezCastCount),
+            TotalRezCastDurationSeconds = Math.Round(events.Sum(evt => evt.RezCastDurationSeconds), 1),
+        };
+        summary.SupportContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.SupportContributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    GetSupportDetailAmount(contributor, "Downed healing") + GetSupportDetailAmount(contributor, "Rez casts"),
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.HealingContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.SupportContributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    GetSupportDetailAmount(contributor, "Downed healing"),
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.RezContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.SupportContributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    GetSupportDetailAmount(contributor, "Rez casts"),
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.Takeaways = BuildRecoveredSquadSummaryTakeaways(summary);
+        return summary;
+    }
+
+    private static CombatReplayRecoveredEnemySummaryDto BuildRecoveredEnemySummary(IReadOnlyList<CombatReplayRecoveredEventDto> events)
+    {
+        var summary = new CombatReplayRecoveredEnemySummaryDto
+        {
+            RecoveredCount = events.Count,
+            ConditionImpactedRecoveries = events.Count(evt => evt.ConditionDamageTaken > 0),
+            MysticRebukeRecoveries = events.Count(evt => evt.MysticRebukeDamageTaken > 0),
+            BurningRecoveries = events.Count(evt => evt.ConditionDamageBreakdown.Any(entry => entry.BuffId == Burning && entry.Amount > 0)),
+            ConditionMajorityRecoveries = events.Count(evt => evt.ConditionDamageTaken > evt.StrikeDamageTaken),
+            MysticRebukeHeavyRecoveries = events.Count(evt => evt.StrikeDamageTaken > 0 && evt.MysticRebukeDamageTaken >= evt.StrikeDamageTaken * 0.10),
+            TotalDamage = Math.Round(events.Sum(evt => (double)evt.TotalDamageTaken), 1),
+            TotalStrikeDamage = Math.Round(events.Sum(evt => (double)evt.StrikeDamageTaken), 1),
+            TotalConditionDamage = Math.Round(events.Sum(evt => (double)evt.ConditionDamageTaken), 1),
+            TotalMysticRebukeDamage = Math.Round(events.Sum(evt => (double)evt.MysticRebukeDamageTaken), 1),
+            TotalBarrierDamage = Math.Round(events.Sum(evt => (double)evt.BarrierDamageTaken), 1),
+            AverageRecoverTimeSeconds = events.Count > 0
+                ? Math.Round(events.Average(evt => (evt.Time - evt.WindowStart) / 1000.0), 1)
+                : 0.0,
+        };
+        summary.TotalBurningDamage = Math.Round(events.Sum(evt =>
+            evt.ConditionDamageBreakdown
+                .Where(entry => entry.BuffId == Burning)
+                .Sum(entry => (double)entry.Amount)), 1);
+        summary.AverageMysticRebukeDamage = summary.MysticRebukeRecoveries > 0
+            ? Math.Round(summary.TotalMysticRebukeDamage / summary.MysticRebukeRecoveries, 1)
+            : 0.0;
+        summary.PressureContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.Contributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    contributor.Amount,
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.MysticRebukeContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.Contributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    GetContributionAmount(contributor, "Mystic Rebuke"),
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.ConditionContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.Contributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    GetContributionAmount(contributor, "Condition"),
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.TopConditions = BuildTopSummaryEntries(events.SelectMany(evt =>
+            evt.ConditionDamageBreakdown.Select(entry => (entry.Name, entry.Icon, entry.Amount, GetEventSummaryKey(evt)))));
+        summary.Takeaways = BuildRecoveredEnemySummaryTakeaways(summary);
+        return summary;
     }
 
     private static string GetDownOutcome(ParsedEvtcLog log, AgentItem agent, long downTime)
@@ -3365,6 +3527,12 @@ internal static class CombatReplayAnalysisBuilder
             string.Equals(detail.Name, detailName, StringComparison.OrdinalIgnoreCase))?.Amount ?? 0.0), 1);
     }
 
+    private static double GetSupportDetailAmount(CombatReplayEventContributionDto contribution, string detailName)
+    {
+        return Math.Round((double)(contribution.Details.FirstOrDefault(detail =>
+            string.Equals(detail.Name, detailName, StringComparison.OrdinalIgnoreCase))?.Amount ?? 0.0), 1);
+    }
+
     private static string GetEventSummaryKey(CombatReplayDownEventDto evt)
     {
         return $"{evt.Time}-{evt.ActorId}-{evt.Side}";
@@ -3490,6 +3658,50 @@ internal static class CombatReplayAnalysisBuilder
             takeaways.Add($"Conditions outweighed strike damage in {summary.ConditionMajorityKills} kill windows.");
         }
 
+        return takeaways.Take(4).ToList();
+    }
+
+    private static List<string> BuildRecoveredSquadSummaryTakeaways(CombatReplayRecoveredSquadSummaryDto summary)
+    {
+        var takeaways = new List<string>();
+        if (summary.RecoveredCount == 0)
+        {
+            return takeaways;
+        }
+
+        takeaways.Add($"Average squad down-to-recover time was {FormatOneDecimal(summary.AverageRecoverTimeSeconds)}s across {summary.RecoveredCount} recoveries.");
+        if (summary.TotalDownedHealing > 0)
+        {
+            takeaways.Add($"Squad recoveries received {FormatWholeNumber(summary.TotalDownedHealing)} downed healing across {summary.TotalHealingEvents} healing events.");
+        }
+        if (summary.TotalRezCasts > 0)
+        {
+            takeaways.Add($"{summary.TotalRezCasts} rez casts contributed {FormatOneDecimal(summary.TotalRezCastDurationSeconds)}s of total rez time.");
+        }
+        return takeaways.Take(4).ToList();
+    }
+
+    private static List<string> BuildRecoveredEnemySummaryTakeaways(CombatReplayRecoveredEnemySummaryDto summary)
+    {
+        var takeaways = new List<string>();
+        if (summary.RecoveredCount == 0)
+        {
+            return takeaways;
+        }
+
+        takeaways.Add($"Enemy downs that recovered lasted {FormatOneDecimal(summary.AverageRecoverTimeSeconds)}s on average.");
+        if (summary.MysticRebukeRecoveries > 0)
+        {
+            takeaways.Add($"Mystic Rebuke appeared in {summary.MysticRebukeRecoveries} enemy recoveries for {FormatWholeNumber((long)Math.Round(summary.TotalMysticRebukeDamage))} total damage.");
+        }
+        if (summary.ConditionImpactedRecoveries > 0)
+        {
+            CombatReplayEventSummaryEntryDto? topCondition = summary.TopConditions.FirstOrDefault();
+            string topConditionText = topCondition != null
+                ? $" Top pressure condition: {topCondition.Name} ({FormatWholeNumber((long)Math.Round(topCondition.Amount))})."
+                : "";
+            takeaways.Add($"Condition damage appeared in {summary.ConditionImpactedRecoveries} enemy recoveries, with Burning contributing {FormatWholeNumber((long)Math.Round(summary.TotalBurningDamage))}.{topConditionText}");
+        }
         return takeaways.Take(4).ToList();
     }
 

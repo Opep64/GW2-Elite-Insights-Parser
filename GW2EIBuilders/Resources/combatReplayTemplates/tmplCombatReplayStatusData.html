@@ -133,6 +133,32 @@
                 }
                 return this.formatPercent((Number(amount || 0) * 100.0) / denominator);
             },
+            getSummaryToggleGroupStyle: function () {
+                return {
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.25rem",
+                    padding: "0.2rem",
+                    borderRadius: "999px",
+                    background: "rgba(255, 255, 255, 0.06)",
+                    border: "1px solid rgba(255, 255, 255, 0.14)",
+                    boxShadow: "0 10px 24px rgba(0, 0, 0, 0.18)",
+                };
+            },
+            getSummaryToggleButtonStyle: function (isActive) {
+                return {
+                    minWidth: "5.75rem",
+                    padding: "0.28rem 0.72rem",
+                    borderRadius: "999px",
+                    border: isActive ? "1px solid rgba(118, 182, 128, 0.95)" : "1px solid rgba(255, 255, 255, 0.08)",
+                    background: isActive ? "linear-gradient(135deg, rgba(90, 146, 98, 0.94), rgba(114, 168, 118, 0.9))" : "rgba(255, 255, 255, 0.03)",
+                    color: isActive ? "#08100a" : "#d9e4f2",
+                    fontWeight: isActive ? "700" : "600",
+                    fontSize: "0.82rem",
+                    letterSpacing: "0.01em",
+                    boxShadow: isActive ? "0 8px 18px rgba(84, 130, 92, 0.24)" : "none",
+                };
+            },
         }
     };
 
@@ -891,12 +917,12 @@
         template: `
         <div class="combat-replay-wvw-analysis-panel">
             <div class="combat-replay-wvw-analysis-card mb-2">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
-                    <div class="combat-replay-wvw-analysis-card-title" style="margin-bottom: 0;">Down Summary</div>
-                    <div class="btn-group btn-group-sm" role="group" aria-label="Down summary view">
-                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'combined'}" @click="summaryView = 'combined'">Combined</button>
-                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'squad'}" @click="summaryView = 'squad'">Squad</button>
-                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'enemy'}" @click="summaryView = 'enemy'">Enemy</button>
+                <div class="combat-replay-wvw-analysis-card-title">Down Summary</div>
+                <div style="display: flex; justify-content: center; margin-bottom: 0.85rem;">
+                    <div :style="getSummaryToggleGroupStyle()" role="group" aria-label="Down summary view">
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'combined')" @click="summaryView = 'combined'">Combined</button>
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'squad')" @click="summaryView = 'squad'">Squad</button>
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'enemy')" @click="summaryView = 'enemy'">Enemy</button>
                     </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-grid mb-2">
@@ -923,15 +949,39 @@
                 </div>
                 <div class="row">
                     <div class="col-lg-4 mb-2">
-                        <div class="combat-replay-wvw-analysis-label">Mystic Rebuke</div>
+                        <div class="combat-replay-wvw-analysis-label">Top Down Contributors</div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            {{formatAmount(downSummary.totalStrikeDamage)}} strike, {{formatAmount(downSummary.totalConditionDamage)}} condition
+                        </div>
+                        <div v-if="downSummary.topContributors.length === 0" class="combat-replay-wvw-analysis-helper">No damage contributors were found in down windows.</div>
+                        <div v-else style="display: grid; gap: 0.3rem;">
+                            <button
+                                v-for="entry in downSummary.topContributors"
+                                :key="'down-summary-top-contributor-' + entry.name"
+                                type="button"
+                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                :disabled="!entry.actorId"
+                                @click.stop="focusSummaryActor(entry)">
+                                <span class="combat-replay-wvw-analysis-top-actor-name">
+                                    <img
+                                        v-if="entry.icon"
+                                        :src="entry.icon"
+                                        :alt="entry.name"
+                                        style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                    {{entry.name}}
+                                </span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                            </button>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-label mt-2">Mystic Rebuke</div>
                         <div class="combat-replay-wvw-analysis-detail mb-1">
                             {{formatCount(downSummary.mysticRebukeDowns)}} downs, {{formatAmount(downSummary.totalMysticRebukeDamage)}} total ({{formatDamageShare(downSummary.totalMysticRebukeDamage, downSummary.totalDamage)}}), {{formatAmount(downSummary.averageMysticRebukeDamage)}} avg when present
                         </div>
                         <div class="combat-replay-wvw-analysis-detail mb-1">
                             Heavy MR downs: {{formatCount(downSummary.mysticRebukeHeavyDowns)}}
                         </div>
-                        <div v-if="downSummary.mysticRebukeContributors.length === 0" class="combat-replay-wvw-analysis-helper">No Mystic Rebuke damage was found in down windows.</div>
-                        <div v-else style="display: grid; gap: 0.3rem;">
+                        <div v-if="downSummary.mysticRebukeContributors.length > 0" class="combat-replay-wvw-analysis-detail">Top MR contributors</div>
+                        <div v-if="downSummary.mysticRebukeContributors.length > 0" style="display: grid; gap: 0.3rem; margin-top: 0.25rem;">
                             <button
                                 v-for="entry in downSummary.mysticRebukeContributors"
                                 :key="'down-summary-mr-' + entry.name"
@@ -1283,6 +1333,7 @@
                     totalMysticRebukeDamage: 0,
                     averageMysticRebukeDamage: 0,
                     averageEffectiveSoftCcSeconds: 0,
+                    topContributors: [],
                     mysticRebukeContributors: [],
                     conditionContributors: [],
                     topConditions: [],
@@ -1390,12 +1441,12 @@
         template: `
         <div class="combat-replay-wvw-analysis-panel">
             <div class="combat-replay-wvw-analysis-card mb-2">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
-                    <div class="combat-replay-wvw-analysis-card-title" style="margin-bottom: 0;">Kill Summary</div>
-                    <div class="btn-group btn-group-sm" role="group" aria-label="Kill summary view">
-                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'combined'}" @click="summaryView = 'combined'">Combined</button>
-                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'squad'}" @click="summaryView = 'squad'">Squad</button>
-                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'enemy'}" @click="summaryView = 'enemy'">Enemy</button>
+                <div class="combat-replay-wvw-analysis-card-title">Kill Summary</div>
+                <div style="display: flex; justify-content: center; margin-bottom: 0.85rem;">
+                    <div :style="getSummaryToggleGroupStyle()" role="group" aria-label="Kill summary view">
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'combined')" @click="summaryView = 'combined'">Combined</button>
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'squad')" @click="summaryView = 'squad'">Squad</button>
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'enemy')" @click="summaryView = 'enemy'">Enemy</button>
                     </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-grid mb-2">
@@ -1832,10 +1883,263 @@
         data: function () {
             return {
                 selectedEventKey: null,
+                summaryView: "squad",
             };
         },
         template: `
         <div class="combat-replay-wvw-analysis-panel">
+            <div class="combat-replay-wvw-analysis-card mb-2">
+                <div class="combat-replay-wvw-analysis-card-title">Recovered Summary</div>
+                <div style="display: flex; justify-content: center; margin-bottom: 0.85rem;">
+                    <div :style="getSummaryToggleGroupStyle()" role="group" aria-label="Recovered summary view">
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'squad')" @click="summaryView = 'squad'">Squad</button>
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'enemy')" @click="summaryView = 'enemy'">Enemy</button>
+                    </div>
+                </div>
+
+                <template v-if="summaryView === 'squad'">
+                    <div class="combat-replay-wvw-analysis-grid mb-2">
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Squad recoveries</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(recoveredSquadSummary.recoveredCount)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Avg down-to-recover</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(recoveredSquadSummary.averageRecoverTimeSeconds)}}s</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Downed healing</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(recoveredSquadSummary.totalDownedHealing)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Healing events</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(recoveredSquadSummary.totalHealingEvents)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Rez casts</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(recoveredSquadSummary.totalRezCasts)}}</div>
+                            <div v-if="recoveredSquadSummary.totalRezCastDurationSeconds" class="combat-replay-wvw-analysis-detail">{{formatAmount(recoveredSquadSummary.totalRezCastDurationSeconds)}}s total rez time</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-lg-4 mb-2">
+                            <div class="combat-replay-wvw-analysis-label">Top support contributors</div>
+                            <div v-if="recoveredSquadSummary.supportContributors.length === 0" class="combat-replay-wvw-analysis-helper">No support contributors were found in squad recovery windows.</div>
+                            <div v-else style="display: grid; gap: 0.3rem;">
+                                <button
+                                    v-for="entry in recoveredSquadSummary.supportContributors"
+                                    :key="'recovered-summary-support-' + entry.name"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                    :disabled="!entry.actorId"
+                                    @click.stop="focusSummaryActor(entry)">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img
+                                            v-if="entry.icon"
+                                            :src="entry.icon"
+                                            :alt="entry.name"
+                                            style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                        {{entry.name}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-lg-4 mb-2">
+                            <div class="combat-replay-wvw-analysis-label">Top healers</div>
+                            <div v-if="recoveredSquadSummary.healingContributors.length === 0" class="combat-replay-wvw-analysis-helper">No downed healing was found in squad recovery windows.</div>
+                            <div v-else style="display: grid; gap: 0.3rem;">
+                                <button
+                                    v-for="entry in recoveredSquadSummary.healingContributors"
+                                    :key="'recovered-summary-healing-' + entry.name"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                    :disabled="!entry.actorId"
+                                    @click.stop="focusSummaryActor(entry)">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img
+                                            v-if="entry.icon"
+                                            :src="entry.icon"
+                                            :alt="entry.name"
+                                            style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                        {{entry.name}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-lg-4 mb-2">
+                            <div class="combat-replay-wvw-analysis-label">Top rezzers</div>
+                            <div v-if="recoveredSquadSummary.rezContributors.length === 0" class="combat-replay-wvw-analysis-helper">No rez contributions were found in squad recovery windows.</div>
+                            <div v-else style="display: grid; gap: 0.3rem;">
+                                <button
+                                    v-for="entry in recoveredSquadSummary.rezContributors"
+                                    :key="'recovered-summary-rez-' + entry.name"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                    :disabled="!entry.actorId"
+                                    @click.stop="focusSummaryActor(entry)">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img
+                                            v-if="entry.icon"
+                                            :src="entry.icon"
+                                            :alt="entry.name"
+                                            style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                        {{entry.name}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="recoveredSquadSummary.takeaways.length > 0" class="mt-1">
+                        <div class="combat-replay-wvw-analysis-label">Key Takeaways</div>
+                        <div style="display: grid; gap: 0.25rem;">
+                            <div
+                                v-for="(line, index) in recoveredSquadSummary.takeaways"
+                                :key="'recovered-squad-takeaway-' + index"
+                                class="combat-replay-wvw-analysis-detail">
+                                {{line}}
+                            </div>
+                        </div>
+                    </div>
+                </template>
+
+                <template v-else>
+                    <div class="combat-replay-wvw-analysis-grid mb-2">
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Enemy recoveries</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(recoveredEnemySummary.recoveredCount)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Avg down-to-recover</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(recoveredEnemySummary.averageRecoverTimeSeconds)}}s</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Condition-pressured</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(recoveredEnemySummary.conditionImpactedRecoveries)}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Mystic Rebuke recoveries</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(recoveredEnemySummary.mysticRebukeRecoveries)}}</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-lg-4 mb-2">
+                            <div class="combat-replay-wvw-analysis-label">Pressure</div>
+                            <div class="combat-replay-wvw-analysis-detail mb-1">
+                                {{formatAmount(recoveredEnemySummary.totalStrikeDamage)}} strike, {{formatAmount(recoveredEnemySummary.totalConditionDamage)}} condition ({{formatDamageShare(recoveredEnemySummary.totalConditionDamage, recoveredEnemySummary.totalDamage)}}), {{formatAmount(recoveredEnemySummary.totalBarrierDamage)}} barrier
+                            </div>
+                            <div v-if="recoveredEnemySummary.pressureContributors.length === 0" class="combat-replay-wvw-analysis-helper">No pressure contributors were found in enemy recovery windows.</div>
+                            <div v-else style="display: grid; gap: 0.3rem;">
+                                <button
+                                    v-for="entry in recoveredEnemySummary.pressureContributors"
+                                    :key="'recovered-summary-pressure-' + entry.name"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                    :disabled="!entry.actorId"
+                                    @click.stop="focusSummaryActor(entry)">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img
+                                            v-if="entry.icon"
+                                            :src="entry.icon"
+                                            :alt="entry.name"
+                                            style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                        {{entry.name}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-lg-4 mb-2">
+                            <div class="combat-replay-wvw-analysis-label">Mystic Rebuke</div>
+                            <div class="combat-replay-wvw-analysis-detail mb-1">
+                                {{formatCount(recoveredEnemySummary.mysticRebukeRecoveries)}} recoveries, {{formatAmount(recoveredEnemySummary.totalMysticRebukeDamage)}} total ({{formatDamageShare(recoveredEnemySummary.totalMysticRebukeDamage, recoveredEnemySummary.totalDamage)}}), {{formatAmount(recoveredEnemySummary.averageMysticRebukeDamage)}} avg when present
+                            </div>
+                            <div class="combat-replay-wvw-analysis-detail mb-1">
+                                Heavy MR recoveries: {{formatCount(recoveredEnemySummary.mysticRebukeHeavyRecoveries)}}
+                            </div>
+                            <div v-if="recoveredEnemySummary.mysticRebukeContributors.length === 0" class="combat-replay-wvw-analysis-helper">No Mystic Rebuke damage was found in enemy recovery windows.</div>
+                            <div v-else style="display: grid; gap: 0.3rem;">
+                                <button
+                                    v-for="entry in recoveredEnemySummary.mysticRebukeContributors"
+                                    :key="'recovered-summary-mr-' + entry.name"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                    :disabled="!entry.actorId"
+                                    @click.stop="focusSummaryActor(entry)">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img
+                                            v-if="entry.icon"
+                                            :src="entry.icon"
+                                            :alt="entry.name"
+                                            style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                        {{entry.name}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-lg-4 mb-2">
+                            <div class="combat-replay-wvw-analysis-label">Conditions</div>
+                            <div class="combat-replay-wvw-analysis-detail mb-1">
+                                {{formatCount(recoveredEnemySummary.conditionImpactedRecoveries)}} recoveries, {{formatCount(recoveredEnemySummary.conditionMajorityRecoveries)}} condition-majority
+                            </div>
+                            <div class="combat-replay-wvw-analysis-detail mb-1">
+                                {{formatAmount(recoveredEnemySummary.totalConditionDamage)}} total condition damage ({{formatDamageShare(recoveredEnemySummary.totalConditionDamage, recoveredEnemySummary.totalDamage)}}), {{formatAmount(recoveredEnemySummary.totalBurningDamage)}} Burning ({{formatDamageShare(recoveredEnemySummary.totalBurningDamage, recoveredEnemySummary.totalDamage)}})
+                            </div>
+                            <div v-if="recoveredEnemySummary.topConditions.length === 0" class="combat-replay-wvw-analysis-helper">No damaging conditions were found in enemy recovery windows.</div>
+                            <div v-else style="display: grid; gap: 0.3rem;">
+                                <div
+                                    v-for="entry in recoveredEnemySummary.topConditions"
+                                    :key="'recovered-summary-condition-' + entry.name"
+                                    class="combat-replay-wvw-analysis-top-actor-entry">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img
+                                            v-if="entry.icon"
+                                            :src="entry.icon"
+                                            :alt="entry.name"
+                                            style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                        {{entry.name}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}} <span class="combat-replay-wvw-analysis-detail">({{formatCount(entry.count)}} recoveries)</span></span>
+                                </div>
+                            </div>
+                            <div v-if="recoveredEnemySummary.conditionContributors.length > 0" class="combat-replay-wvw-analysis-detail mt-1">Top condition contributors</div>
+                            <div v-if="recoveredEnemySummary.conditionContributors.length > 0" style="display: grid; gap: 0.3rem; margin-top: 0.25rem;">
+                                <button
+                                    v-for="entry in recoveredEnemySummary.conditionContributors"
+                                    :key="'recovered-summary-condition-contributor-' + entry.name"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                    :disabled="!entry.actorId"
+                                    @click.stop="focusSummaryActor(entry)">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img
+                                            v-if="entry.icon"
+                                            :src="entry.icon"
+                                            :alt="entry.name"
+                                            style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                        {{entry.name}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="recoveredEnemySummary.takeaways.length > 0" class="mt-1">
+                        <div class="combat-replay-wvw-analysis-label">Key Takeaways</div>
+                        <div style="display: grid; gap: 0.25rem;">
+                            <div
+                                v-for="(line, index) in recoveredEnemySummary.takeaways"
+                                :key="'recovered-enemy-takeaway-' + index"
+                                class="combat-replay-wvw-analysis-detail">
+                                {{line}}
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
             <div class="row">
                 <div class="col-lg-4 mb-2">
                     <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
@@ -2101,7 +2405,43 @@
                 return this.getEventAnalysis();
             },
             recoveredAnalysis: function () {
-                return this.eventAnalysis && this.eventAnalysis.recovered ? this.eventAnalysis.recovered : { events: [] };
+                return this.eventAnalysis && this.eventAnalysis.recovered ? this.eventAnalysis.recovered : { squadSummary: null, enemySummary: null, events: [] };
+            },
+            recoveredSquadSummary: function () {
+                return this.recoveredAnalysis.squadSummary || {
+                    recoveredCount: 0,
+                    averageRecoverTimeSeconds: 0,
+                    totalDownedHealing: 0,
+                    totalHealingEvents: 0,
+                    totalRezCasts: 0,
+                    totalRezCastDurationSeconds: 0,
+                    supportContributors: [],
+                    healingContributors: [],
+                    rezContributors: [],
+                    takeaways: [],
+                };
+            },
+            recoveredEnemySummary: function () {
+                return this.recoveredAnalysis.enemySummary || {
+                    recoveredCount: 0,
+                    conditionImpactedRecoveries: 0,
+                    mysticRebukeRecoveries: 0,
+                    conditionMajorityRecoveries: 0,
+                    mysticRebukeHeavyRecoveries: 0,
+                    totalDamage: 0,
+                    totalStrikeDamage: 0,
+                    totalConditionDamage: 0,
+                    totalBurningDamage: 0,
+                    totalMysticRebukeDamage: 0,
+                    totalBarrierDamage: 0,
+                    averageRecoverTimeSeconds: 0,
+                    averageMysticRebukeDamage: 0,
+                    pressureContributors: [],
+                    mysticRebukeContributors: [],
+                    conditionContributors: [],
+                    topConditions: [],
+                    takeaways: [],
+                };
             },
             events: function () {
                 return this.recoveredAnalysis.events || [];
@@ -2125,6 +2465,11 @@
             focusContributor: function (contributor) {
                 if (contributor && contributor.actorId) {
                     this.selectReplayActor(contributor.actorId);
+                }
+            },
+            focusSummaryActor: function (entry) {
+                if (entry && entry.actorId) {
+                    this.selectReplayActor(entry.actorId);
                 }
             },
             formatStrikeDamage: function (event) {
