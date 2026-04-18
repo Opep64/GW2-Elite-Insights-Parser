@@ -882,6 +882,150 @@
         },
         template: `
         <div class="combat-replay-wvw-analysis-panel">
+            <div class="combat-replay-wvw-analysis-card mb-2">
+                <div class="combat-replay-wvw-analysis-card-title">Down Summary</div>
+                <div class="combat-replay-wvw-analysis-grid mb-2">
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Squad downs</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(downSummary.squadDowns)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Enemy downs</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(downSummary.enemyDowns)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">CC-impacted downs</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(downSummary.ccImpactedDowns)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Condition-impacted downs</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(downSummary.conditionImpactedDowns)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Mystic Rebuke downs</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(downSummary.mysticRebukeDowns)}}</div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-lg-4 mb-2">
+                        <div class="combat-replay-wvw-analysis-label">Mystic Rebuke</div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            {{formatCount(downSummary.mysticRebukeDowns)}} downs, {{formatAmount(downSummary.totalMysticRebukeDamage)}} total, {{formatAmount(downSummary.averageMysticRebukeDamage)}} avg when present
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            Heavy MR downs: {{formatCount(downSummary.mysticRebukeHeavyDowns)}}
+                        </div>
+                        <div v-if="downSummary.mysticRebukeContributors.length === 0" class="combat-replay-wvw-analysis-helper">No Mystic Rebuke damage was found in down windows.</div>
+                        <div v-else style="display: grid; gap: 0.3rem;">
+                            <button
+                                v-for="entry in downSummary.mysticRebukeContributors"
+                                :key="'down-summary-mr-' + entry.name"
+                                type="button"
+                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                :disabled="!entry.actorId"
+                                @click.stop="focusSummaryActor(entry)">
+                                <span class="combat-replay-wvw-analysis-top-actor-name">
+                                    <img
+                                        v-if="entry.icon"
+                                        :src="entry.icon"
+                                        :alt="entry.name"
+                                        style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                    {{entry.name}}
+                                </span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 mb-2">
+                        <div class="combat-replay-wvw-analysis-label">Conditions</div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            {{formatCount(downSummary.conditionImpactedDowns)}} downs, {{formatCount(downSummary.conditionMajorityDowns)}} condition-majority
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            {{formatAmount(downSummary.totalConditionDamage)}} total condition damage, {{formatAmount(downSummary.totalBurningDamage)}} Burning
+                        </div>
+                        <div v-if="downSummary.topConditions.length === 0" class="combat-replay-wvw-analysis-helper">No damaging conditions were found in down windows.</div>
+                        <div v-else style="display: grid; gap: 0.3rem;">
+                            <div
+                                v-for="entry in downSummary.topConditions"
+                                :key="'down-summary-condition-' + entry.name"
+                                class="combat-replay-wvw-analysis-top-actor-entry">
+                                <span class="combat-replay-wvw-analysis-top-actor-name">
+                                    <img
+                                        v-if="entry.icon"
+                                        :src="entry.icon"
+                                        :alt="entry.name"
+                                        style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                    {{entry.name}}
+                                </span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}} <span class="combat-replay-wvw-analysis-detail">({{formatCount(entry.count)}} downs)</span></span>
+                            </div>
+                        </div>
+                        <div v-if="downSummary.conditionContributors.length > 0" class="combat-replay-wvw-analysis-detail mt-1">Top condition contributors</div>
+                        <div v-if="downSummary.conditionContributors.length > 0" style="display: grid; gap: 0.3rem; margin-top: 0.25rem;">
+                            <button
+                                v-for="entry in downSummary.conditionContributors"
+                                :key="'down-summary-condition-contributor-' + entry.name"
+                                type="button"
+                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                :disabled="!entry.actorId"
+                                @click.stop="focusSummaryActor(entry)">
+                                <span class="combat-replay-wvw-analysis-top-actor-name">
+                                    <img
+                                        v-if="entry.icon"
+                                        :src="entry.icon"
+                                        :alt="entry.name"
+                                        style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                    {{entry.name}}
+                                </span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 mb-2">
+                        <div class="combat-replay-wvw-analysis-label">CC</div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            {{formatCount(downSummary.hardCcDowns)}} hard, {{formatCount(downSummary.softCcDowns)}} soft, {{formatCount(downSummary.bothCcDowns)}} both
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            Avg squad soft-CC impact: {{formatAmount(downSummary.averageEffectiveSoftCcSeconds)}}s
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail">Top hard CC</div>
+                        <div v-if="downSummary.topHardCcSources.length === 0" class="combat-replay-wvw-analysis-helper">No hard CC was found before downs.</div>
+                        <div v-else style="display: grid; gap: 0.3rem; margin: 0.25rem 0 0.5rem 0;">
+                            <div
+                                v-for="entry in downSummary.topHardCcSources"
+                                :key="'down-summary-hard-cc-' + entry.name"
+                                class="combat-replay-wvw-analysis-top-actor-entry">
+                                <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(entry.count)}} downs</span>
+                            </div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail">Top soft CC</div>
+                        <div v-if="downSummary.topSoftCcSources.length === 0" class="combat-replay-wvw-analysis-helper">No soft CC was found before downs.</div>
+                        <div v-else style="display: grid; gap: 0.3rem; margin-top: 0.25rem;">
+                            <div
+                                v-for="entry in downSummary.topSoftCcSources"
+                                :key="'down-summary-soft-cc-' + entry.name"
+                                class="combat-replay-wvw-analysis-top-actor-entry">
+                                <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}s <span class="combat-replay-wvw-analysis-detail">({{formatCount(entry.count)}} downs)</span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="downSummary.takeaways.length > 0" class="mt-1">
+                    <div class="combat-replay-wvw-analysis-label">Key Takeaways</div>
+                    <div style="display: grid; gap: 0.25rem;">
+                        <div
+                            v-for="(line, index) in downSummary.takeaways"
+                            :key="'down-summary-takeaway-' + index"
+                            class="combat-replay-wvw-analysis-detail">
+                            {{line}}
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="row">
                 <div class="col-lg-4 mb-2">
                     <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
@@ -1099,7 +1243,32 @@
                 return this.getEventAnalysis();
             },
             downAnalysis: function () {
-                return this.eventAnalysis && this.eventAnalysis.downs ? this.eventAnalysis.downs : { events: [] };
+                return this.eventAnalysis && this.eventAnalysis.downs ? this.eventAnalysis.downs : { summary: null, events: [] };
+            },
+            downSummary: function () {
+                return this.downAnalysis.summary || {
+                    squadDowns: 0,
+                    enemyDowns: 0,
+                    ccImpactedDowns: 0,
+                    conditionImpactedDowns: 0,
+                    mysticRebukeDowns: 0,
+                    hardCcDowns: 0,
+                    softCcDowns: 0,
+                    bothCcDowns: 0,
+                    conditionMajorityDowns: 0,
+                    mysticRebukeHeavyDowns: 0,
+                    totalConditionDamage: 0,
+                    totalBurningDamage: 0,
+                    totalMysticRebukeDamage: 0,
+                    averageMysticRebukeDamage: 0,
+                    averageEffectiveSoftCcSeconds: 0,
+                    mysticRebukeContributors: [],
+                    conditionContributors: [],
+                    topConditions: [],
+                    topHardCcSources: [],
+                    topSoftCcSources: [],
+                    takeaways: [],
+                };
             },
             events: function () {
                 return this.downAnalysis.events || [];
@@ -1123,6 +1292,11 @@
             focusContributor: function (contributor) {
                 if (contributor && contributor.actorId) {
                     this.selectReplayActor(contributor.actorId);
+                }
+            },
+            focusSummaryActor: function (entry) {
+                if (entry && entry.actorId) {
+                    this.selectReplayActor(entry.actorId);
                 }
             },
             formatStrikeDamage: function (event) {

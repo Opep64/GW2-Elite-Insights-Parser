@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using GW2EIEvtcParser;
 using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.Extensions;
@@ -189,7 +190,35 @@ internal class CombatReplayEventAnalysisDto
 
 internal class CombatReplayDownAnalysisDto
 {
+    public CombatReplayDownSummaryDto Summary { get; set; } = new();
     public List<CombatReplayDownEventDto> Events { get; set; } = [];
+}
+
+internal class CombatReplayDownSummaryDto
+{
+    public int SquadDowns { get; set; }
+    public int EnemyDowns { get; set; }
+    public int CcImpactedDowns { get; set; }
+    public int ConditionImpactedDowns { get; set; }
+    public int MysticRebukeDowns { get; set; }
+    public int HardCcDowns { get; set; }
+    public int SoftCcDowns { get; set; }
+    public int BothCcDowns { get; set; }
+    public int BurningDowns { get; set; }
+    public int ConditionMajorityDowns { get; set; }
+    public int MysticRebukeHeavyDowns { get; set; }
+    public double TotalStrikeDamage { get; set; }
+    public double TotalConditionDamage { get; set; }
+    public double TotalBurningDamage { get; set; }
+    public double TotalMysticRebukeDamage { get; set; }
+    public double AverageMysticRebukeDamage { get; set; }
+    public double AverageEffectiveSoftCcSeconds { get; set; }
+    public List<CombatReplayEventActorSummaryDto> MysticRebukeContributors { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> ConditionContributors { get; set; } = [];
+    public List<CombatReplayEventSummaryEntryDto> TopConditions { get; set; } = [];
+    public List<CombatReplayEventSummaryEntryDto> TopHardCcSources { get; set; } = [];
+    public List<CombatReplayEventSummaryEntryDto> TopSoftCcSources { get; set; } = [];
+    public List<string> Takeaways { get; set; } = [];
 }
 
 internal class CombatReplayKillAnalysisDto
@@ -229,6 +258,7 @@ internal class CombatReplayDownEventDto
     public int CcImpactCount { get; set; }
     public int HardCcImpactCount { get; set; }
     public List<CombatReplayEventContributionDto> Conditions { get; set; } = [];
+    public List<CombatReplayEventContributionDto> ConditionDamageBreakdown { get; set; } = [];
     public List<CombatReplayEventTimelineEntryDto> CrowdControlEffects { get; set; } = [];
     public List<CombatReplayEventContributionDto> Contributors { get; set; } = [];
     public List<CombatReplayEventTimelineEntryDto> DamageTimeline { get; set; } = [];
@@ -292,6 +322,15 @@ internal class CombatReplayEventContributionDto
     public List<CombatReplayEventContributionDto> Details { get; set; } = [];
 }
 
+internal class CombatReplayEventSummaryEntryDto
+{
+    public long? BuffId { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public int Count { get; set; }
+    public double Amount { get; set; }
+}
+
 internal class CombatReplayEventTimelineEntryDto
 {
     public long Time { get; set; }
@@ -299,6 +338,7 @@ internal class CombatReplayEventTimelineEntryDto
     public string Label { get; set; } = "";
     public string Value { get; set; } = "";
     public string Secondary { get; set; } = "";
+    public bool IsHardCc { get; set; }
 }
 
 internal class CombatReplayBarrierSaveEventDto
@@ -536,6 +576,7 @@ internal static class CombatReplayAnalysisBuilder
         int HitCount,
         int ContributorCount,
         IReadOnlyList<CombatReplayEventContributionDto> Conditions,
+        IReadOnlyList<CombatReplayEventContributionDto> ConditionDamageBreakdown,
         IReadOnlyList<CombatReplayEventContributionDto> Contributors,
         IReadOnlyList<CombatReplayEventTimelineEntryDto> DamageTimeline);
     private readonly record struct BarrierSaveCandidate(
@@ -1770,6 +1811,7 @@ internal static class CombatReplayAnalysisBuilder
         events.Sort((left, right) => left.Time.CompareTo(right.Time));
         return new CombatReplayDownAnalysisDto
         {
+            Summary = BuildDownSummary(events),
             Events = events,
         };
     }
@@ -1831,10 +1873,82 @@ internal static class CombatReplayAnalysisBuilder
             CcImpactCount = crowdControlEffects.Count,
             HardCcImpactCount = hardCcImpactCount,
             Conditions = [.. summary.Conditions],
+            ConditionDamageBreakdown = [.. summary.ConditionDamageBreakdown],
             CrowdControlEffects = crowdControlEffects,
             Contributors = [.. summary.Contributors],
             DamageTimeline = [.. summary.DamageTimeline],
         };
+    }
+
+    private static CombatReplayDownSummaryDto BuildDownSummary(IReadOnlyList<CombatReplayDownEventDto> events)
+    {
+        var summary = new CombatReplayDownSummaryDto
+        {
+            SquadDowns = events.Count(evt => !evt.IsEnemy),
+            EnemyDowns = events.Count(evt => evt.IsEnemy),
+            CcImpactedDowns = events.Count(evt => evt.CcImpacted),
+            ConditionImpactedDowns = events.Count(evt => evt.ConditionDamageTaken > 0),
+            MysticRebukeDowns = events.Count(evt => evt.MysticRebukeDamageTaken > 0),
+            HardCcDowns = events.Count(evt => evt.HardCcImpactCount > 0),
+            SoftCcDowns = events.Count(evt => evt.CrowdControlEffects.Any(effect => !effect.IsHardCc)),
+            BurningDowns = events.Count(evt => evt.ConditionDamageBreakdown.Any(entry => entry.BuffId == Burning && entry.Amount > 0)),
+            ConditionMajorityDowns = events.Count(evt => evt.ConditionDamageTaken > evt.StrikeDamageTaken),
+            MysticRebukeHeavyDowns = events.Count(evt => evt.StrikeDamageTaken > 0 && evt.MysticRebukeDamageTaken >= evt.StrikeDamageTaken * 0.10),
+            TotalStrikeDamage = Math.Round(events.Sum(evt => (double)evt.StrikeDamageTaken), 1),
+            TotalConditionDamage = Math.Round(events.Sum(evt => (double)evt.ConditionDamageTaken), 1),
+            TotalMysticRebukeDamage = Math.Round(events.Sum(evt => (double)evt.MysticRebukeDamageTaken), 1),
+        };
+        summary.BothCcDowns = events.Count(evt => evt.HardCcImpactCount > 0 && evt.CrowdControlEffects.Any(effect => !effect.IsHardCc));
+        summary.TotalBurningDamage = Math.Round(events.Sum(evt =>
+            evt.ConditionDamageBreakdown
+                .Where(entry => entry.BuffId == Burning)
+                .Sum(entry => (double)entry.Amount)), 1);
+        summary.AverageMysticRebukeDamage = summary.MysticRebukeDowns > 0
+            ? Math.Round(summary.TotalMysticRebukeDamage / summary.MysticRebukeDowns, 1)
+            : 0.0;
+
+        List<CombatReplayDownEventDto> squadCcEvents = [.. events.Where(evt => !evt.IsEnemy && evt.CrowdControlEffects.Any(effect => !effect.IsHardCc))];
+        summary.AverageEffectiveSoftCcSeconds = squadCcEvents.Count > 0
+            ? Math.Round(squadCcEvents
+                .SelectMany(evt => evt.CrowdControlEffects.Where(effect => !effect.IsHardCc))
+                .Select(ParseEffectiveCcSeconds)
+                .Where(seconds => seconds > 0.0)
+                .DefaultIfEmpty(0.0)
+                .Average(), 1)
+            : 0.0;
+
+        summary.MysticRebukeContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.Contributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    GetContributionAmount(contributor, "Mystic Rebuke"),
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.ConditionContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.Contributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    GetContributionAmount(contributor, "Condition"),
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.TopConditions = BuildTopSummaryEntries(events.SelectMany(evt =>
+            evt.ConditionDamageBreakdown.Select(entry => (entry.Name, entry.Icon, entry.Amount, GetEventSummaryKey(evt)))));
+        summary.TopHardCcSources = BuildTopSummaryEntries(events.SelectMany(evt =>
+            evt.CrowdControlEffects
+                .Where(effect => effect.IsHardCc)
+                .Select(effect => (effect.Label, "", 0.0, GetEventSummaryKey(evt)))));
+        summary.TopSoftCcSources = BuildTopSummaryEntries(events.SelectMany(evt =>
+            evt.CrowdControlEffects
+                .Where(effect => !effect.IsHardCc)
+                .Select(effect => (effect.Label, "", ParseEffectiveCcSeconds(effect), GetEventSummaryKey(evt)))));
+        summary.Takeaways = BuildDownSummaryTakeaways(summary);
+        return summary;
     }
 
     private static CombatReplayKillAnalysisDto BuildKillAnalysis(
@@ -2132,6 +2246,8 @@ internal static class CombatReplayAnalysisBuilder
         var contributorTotals = new Dictionary<AgentItem, double>();
         var contributorStrikeTotals = new Dictionary<AgentItem, double>();
         var contributorConditionTotals = new Dictionary<AgentItem, double>();
+        var contributorMysticRebukeTotals = new Dictionary<AgentItem, double>();
+        var conditionDamageBySkill = new Dictionary<long, CombatReplayEventSummaryEntryDto>();
         int strikeDamageTaken = 0;
         int mysticRebukeDamageTaken = 0;
         int conditionDamageTaken = 0;
@@ -2154,6 +2270,19 @@ internal static class CombatReplayAnalysisBuilder
                 contributorConditionTotals[source] = contributorConditionTotals.TryGetValue(source, out double existingConditionAmount)
                     ? existingConditionAmount + damageEvent.HealthDamage
                     : damageEvent.HealthDamage;
+                long conditionKey = damageEvent.SkillID;
+                if (!conditionDamageBySkill.TryGetValue(conditionKey, out CombatReplayEventSummaryEntryDto? conditionSummary))
+                {
+                    conditionSummary = new CombatReplayEventSummaryEntryDto
+                    {
+                        BuffId = conditionKey,
+                        Name = NormalizeConditionDamageName(damageEvent.Skill.Name),
+                        Icon = damageEvent.Skill.Icon,
+                    };
+                    conditionDamageBySkill[conditionKey] = conditionSummary;
+                }
+                conditionSummary.Amount = Math.Round(conditionSummary.Amount + damageEvent.HealthDamage, 1);
+                conditionSummary.Count++;
             }
             else
             {
@@ -2165,6 +2294,9 @@ internal static class CombatReplayAnalysisBuilder
                     && damageEvent.Skill.Name.IndexOf(MysticRebukeSkillName, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     mysticRebukeDamageTaken += totalDamage;
+                    contributorMysticRebukeTotals[source] = contributorMysticRebukeTotals.TryGetValue(source, out double existingMysticRebukeAmount)
+                        ? existingMysticRebukeAmount + totalDamage
+                        : totalDamage;
                 }
             }
             contributorTotals[source] = contributorTotals.TryGetValue(source, out double existingAmount)
@@ -2175,11 +2307,26 @@ internal static class CombatReplayAnalysisBuilder
         int totalDamageTaken = damageEvents.Sum(damageEvent => damageEvent.HealthDamage + damageEvent.ShieldDamage);
         int barrierDamageTaken = damageEvents.Sum(damageEvent => damageEvent.ShieldDamage);
         List<CombatReplayEventContributionDto> conditions = BuildDownConditionList(log, actor, conditionSnapshotTime);
+        List<CombatReplayEventContributionDto> conditionDamageBreakdown = [.. conditionDamageBySkill.Values
+            .Where(entry => entry.Amount > 0.0)
+            .OrderByDescending(entry => entry.Amount)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(entry => new CombatReplayEventContributionDto
+            {
+                BuffId = entry.BuffId,
+                Name = entry.Name,
+                Icon = entry.Icon,
+                Amount = entry.Amount,
+                Percent = conditionDamageTaken > 0
+                    ? Math.Round(entry.Amount * 100.0 / conditionDamageTaken, 1)
+                    : 0.0,
+            })];
         List<CombatReplayEventContributionDto> contributors = BuildTopActorContributionList(
             log,
             contributorTotals,
             contributorStrikeTotals,
             contributorConditionTotals,
+            contributorMysticRebukeTotals,
             totalDamageTaken);
 
         return new DamageWindowSummary(
@@ -2191,6 +2338,7 @@ internal static class CombatReplayAnalysisBuilder
             HitCount: damageEvents.Count,
             ContributorCount: contributorTotals.Count(pair => pair.Value > 0.0),
             Conditions: conditions,
+            ConditionDamageBreakdown: conditionDamageBreakdown,
             Contributors: contributors,
             DamageTimeline: BuildDownDamageTimeline(log, damageEvents));
     }
@@ -2222,6 +2370,7 @@ internal static class CombatReplayAnalysisBuilder
                     Label = firstEvent.Skill.Name,
                     Value = BuildPluralizedLabel(count, "hard CC event", "hard CC events"),
                     Secondary = $"{FormatOneDecimal(totalDuration)}s total control",
+                    IsHardCc = true,
                 };
             })];
         hardCcCount = hardCrowdControlEffects.Count;
@@ -2268,6 +2417,7 @@ internal static class CombatReplayAnalysisBuilder
                     : resistedMilliseconds > 0
                         ? $"{FormatOneDecimal(effectiveSeconds)}s effective ({FormatOneDecimal(resistedSeconds)}s resisted)"
                         : $"{FormatOneDecimal(effectiveSeconds)}s effective",
+                IsHardCc = false,
             });
         }
 
@@ -2934,6 +3084,7 @@ internal static class CombatReplayAnalysisBuilder
         IReadOnlyDictionary<AgentItem, double> contributorTotals,
         IReadOnlyDictionary<AgentItem, double> contributorStrikeTotals,
         IReadOnlyDictionary<AgentItem, double> contributorConditionTotals,
+        IReadOnlyDictionary<AgentItem, double> contributorMysticRebukeTotals,
         double totalAmount,
         int maxActors = 6)
     {
@@ -2959,6 +3110,7 @@ internal static class CombatReplayAnalysisBuilder
             SingleActor? actor = FindActor(log, agent);
             double strikeAmount = Math.Round(contributorStrikeTotals.TryGetValue(agent, out double strikeTotal) ? strikeTotal : 0.0, 1);
             double conditionAmount = Math.Round(contributorConditionTotals.TryGetValue(agent, out double conditionTotal) ? conditionTotal : 0.0, 1);
+            double mysticRebukeAmount = Math.Round(contributorMysticRebukeTotals.TryGetValue(agent, out double mysticRebukeTotal) ? mysticRebukeTotal : 0.0, 1);
             result.Add(new CombatReplayEventContributionDto
             {
                 ActorId = actor?.UniqueID,
@@ -2977,6 +3129,11 @@ internal static class CombatReplayAnalysisBuilder
                     {
                         Name = "Condition",
                         Amount = conditionAmount,
+                    },
+                    new CombatReplayEventContributionDto
+                    {
+                        Name = "Mystic Rebuke",
+                        Amount = mysticRebukeAmount,
                     },
                 ],
             });
@@ -3100,6 +3257,107 @@ internal static class CombatReplayAnalysisBuilder
                 Secondary = secondary,
             };
         })];
+    }
+
+    private static double GetContributionAmount(CombatReplayEventContributionDto contribution, string detailName)
+    {
+        return Math.Round((double)(contribution.Details.FirstOrDefault(detail =>
+            string.Equals(detail.Name, detailName, StringComparison.OrdinalIgnoreCase))?.Amount ?? 0.0), 1);
+    }
+
+    private static string GetEventSummaryKey(CombatReplayDownEventDto evt)
+    {
+        return $"{evt.Time}-{evt.ActorId}-{evt.Side}";
+    }
+
+    private static string NormalizeConditionDamageName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "";
+        }
+
+        int separatorIndex = name.IndexOf('-');
+        if (separatorIndex > 0 && name.Take(separatorIndex).All(char.IsDigit))
+        {
+            return name[(separatorIndex + 1)..].Trim();
+        }
+        return name.Trim();
+    }
+
+    private static double ParseEffectiveCcSeconds(CombatReplayEventTimelineEntryDto effect)
+    {
+        if (string.IsNullOrWhiteSpace(effect.Secondary))
+        {
+            return 0.0;
+        }
+
+        Match match = Regex.Match(effect.Secondary, @"(?<seconds>\d+(?:\.\d+)?)s\s+(effective|active)", RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return 0.0;
+        }
+        if (!double.TryParse(match.Groups["seconds"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds))
+        {
+            return 0.0;
+        }
+        return Math.Round(seconds, 1);
+    }
+
+    private static List<CombatReplayEventSummaryEntryDto> BuildTopSummaryEntries(
+        IEnumerable<(string Name, string Icon, double Amount, string EventKey)> entries,
+        int maxEntries = 5)
+    {
+        return [.. entries
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Name))
+            .GroupBy(entry => entry.Name)
+            .Select(group => new CombatReplayEventSummaryEntryDto
+            {
+                Name = group.Key,
+                Icon = group.First().Icon,
+                Count = group.Select(entry => entry.EventKey).Distinct(StringComparer.Ordinal).Count(),
+                Amount = Math.Round(group.Sum(entry => entry.Amount), 1),
+            })
+            .OrderByDescending(entry => entry.Amount)
+            .ThenByDescending(entry => entry.Count)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(maxEntries)];
+    }
+
+    private static List<string> BuildDownSummaryTakeaways(CombatReplayDownSummaryDto summary)
+    {
+        var takeaways = new List<string>();
+        int totalDowns = summary.SquadDowns + summary.EnemyDowns;
+        if (totalDowns == 0)
+        {
+            return takeaways;
+        }
+
+        if (summary.MysticRebukeDowns > 0)
+        {
+            takeaways.Add($"Mystic Rebuke showed up in {summary.MysticRebukeDowns} of {totalDowns} downs ({FormatWholeNumber((long)Math.Round(summary.MysticRebukeDowns * 100.0 / totalDowns))}%) for {FormatWholeNumber((long)Math.Round(summary.TotalMysticRebukeDamage))} total damage.");
+        }
+
+        if (summary.ConditionImpactedDowns > 0)
+        {
+            CombatReplayEventSummaryEntryDto? topCondition = summary.TopConditions.FirstOrDefault();
+            string topConditionText = topCondition != null
+                ? $" Top damaging condition: {topCondition.Name} ({FormatWholeNumber((long)Math.Round(topCondition.Amount))})."
+                : "";
+            takeaways.Add($"Condition damage appeared in {summary.ConditionImpactedDowns} downs, with Burning contributing {FormatWholeNumber((long)Math.Round(summary.TotalBurningDamage))} across the fight.{topConditionText}");
+        }
+
+        if (summary.CcImpactedDowns > 0)
+        {
+            takeaways.Add($"CC affected {summary.CcImpactedDowns} downs, with hard CC on {summary.HardCcDowns} and soft CC on {summary.SoftCcDowns}.");
+        }
+
+        if (summary.ConditionMajorityDowns > 0)
+        {
+            takeaways.Add($"Conditions outweighed strike damage in {summary.ConditionMajorityDowns} down windows.");
+        }
+
+        return takeaways.Take(4).ToList();
     }
 
     private static List<CombatReplayEventActorSummaryDto> BuildTopActorSummaries(
