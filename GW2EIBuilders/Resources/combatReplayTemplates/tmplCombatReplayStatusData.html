@@ -126,6 +126,13 @@
                     maximumFractionDigits: 1,
                 });
             },
+            formatDamageShare: function (amount, total) {
+                const denominator = Number(total || 0);
+                if (denominator <= 0) {
+                    return this.formatPercent(0);
+                }
+                return this.formatPercent((Number(amount || 0) * 100.0) / denominator);
+            },
         }
     };
 
@@ -878,12 +885,20 @@
         data: function () {
             return {
                 selectedEventKey: null,
+                summaryView: "combined",
             };
         },
         template: `
         <div class="combat-replay-wvw-analysis-panel">
             <div class="combat-replay-wvw-analysis-card mb-2">
-                <div class="combat-replay-wvw-analysis-card-title">Down Summary</div>
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
+                    <div class="combat-replay-wvw-analysis-card-title" style="margin-bottom: 0;">Down Summary</div>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Down summary view">
+                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'combined'}" @click="summaryView = 'combined'">Combined</button>
+                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'squad'}" @click="summaryView = 'squad'">Squad</button>
+                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'enemy'}" @click="summaryView = 'enemy'">Enemy</button>
+                    </div>
+                </div>
                 <div class="combat-replay-wvw-analysis-grid mb-2">
                     <div class="combat-replay-wvw-analysis-metric">
                         <div class="combat-replay-wvw-analysis-label">Squad downs</div>
@@ -910,7 +925,7 @@
                     <div class="col-lg-4 mb-2">
                         <div class="combat-replay-wvw-analysis-label">Mystic Rebuke</div>
                         <div class="combat-replay-wvw-analysis-detail mb-1">
-                            {{formatCount(downSummary.mysticRebukeDowns)}} downs, {{formatAmount(downSummary.totalMysticRebukeDamage)}} total, {{formatAmount(downSummary.averageMysticRebukeDamage)}} avg when present
+                            {{formatCount(downSummary.mysticRebukeDowns)}} downs, {{formatAmount(downSummary.totalMysticRebukeDamage)}} total ({{formatDamageShare(downSummary.totalMysticRebukeDamage, downSummary.totalDamage)}}), {{formatAmount(downSummary.averageMysticRebukeDamage)}} avg when present
                         </div>
                         <div class="combat-replay-wvw-analysis-detail mb-1">
                             Heavy MR downs: {{formatCount(downSummary.mysticRebukeHeavyDowns)}}
@@ -942,7 +957,7 @@
                             {{formatCount(downSummary.conditionImpactedDowns)}} downs, {{formatCount(downSummary.conditionMajorityDowns)}} condition-majority
                         </div>
                         <div class="combat-replay-wvw-analysis-detail mb-1">
-                            {{formatAmount(downSummary.totalConditionDamage)}} total condition damage, {{formatAmount(downSummary.totalBurningDamage)}} Burning
+                            {{formatAmount(downSummary.totalConditionDamage)}} total condition damage ({{formatDamageShare(downSummary.totalConditionDamage, downSummary.totalDamage)}}), {{formatAmount(downSummary.totalBurningDamage)}} Burning ({{formatDamageShare(downSummary.totalBurningDamage, downSummary.totalDamage)}})
                         </div>
                         <div v-if="downSummary.topConditions.length === 0" class="combat-replay-wvw-analysis-helper">No damaging conditions were found in down windows.</div>
                         <div v-else style="display: grid; gap: 0.3rem;">
@@ -1243,10 +1258,15 @@
                 return this.getEventAnalysis();
             },
             downAnalysis: function () {
-                return this.eventAnalysis && this.eventAnalysis.downs ? this.eventAnalysis.downs : { summary: null, events: [] };
+                return this.eventAnalysis && this.eventAnalysis.downs ? this.eventAnalysis.downs : { combinedSummary: null, squadSummary: null, enemySummary: null, events: [] };
             },
             downSummary: function () {
-                return this.downAnalysis.summary || {
+                const summaries = {
+                    combined: this.downAnalysis.combinedSummary,
+                    squad: this.downAnalysis.squadSummary,
+                    enemy: this.downAnalysis.enemySummary,
+                };
+                return summaries[this.summaryView] || {
                     squadDowns: 0,
                     enemyDowns: 0,
                     ccImpactedDowns: 0,
@@ -1257,6 +1277,7 @@
                     bothCcDowns: 0,
                     conditionMajorityDowns: 0,
                     mysticRebukeHeavyDowns: 0,
+                    totalDamage: 0,
                     totalConditionDamage: 0,
                     totalBurningDamage: 0,
                     totalMysticRebukeDamage: 0,
@@ -1363,10 +1384,157 @@
         data: function () {
             return {
                 selectedEventKey: null,
+                summaryView: "combined",
             };
         },
         template: `
         <div class="combat-replay-wvw-analysis-panel">
+            <div class="combat-replay-wvw-analysis-card mb-2">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
+                    <div class="combat-replay-wvw-analysis-card-title" style="margin-bottom: 0;">Kill Summary</div>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Kill summary view">
+                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'combined'}" @click="summaryView = 'combined'">Combined</button>
+                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'squad'}" @click="summaryView = 'squad'">Squad</button>
+                        <button type="button" class="btn btn-secondary" :class="{active: summaryView === 'enemy'}" @click="summaryView = 'enemy'">Enemy</button>
+                    </div>
+                </div>
+                <div class="combat-replay-wvw-analysis-grid mb-2">
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Squad kills</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(killSummary.squadKills)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Enemy kills</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(killSummary.enemyKills)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Avg down-to-kill</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatAmount(killSummary.averageKillTimeSeconds)}}s</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Condition-impacted kills</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(killSummary.conditionImpactedKills)}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Mystic Rebuke kills</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(killSummary.mysticRebukeKills)}}</div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-lg-4 mb-2">
+                        <div class="combat-replay-wvw-analysis-label">Finishers</div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            {{formatAmount(killSummary.totalStrikeDamage)}} strike, {{formatAmount(killSummary.totalConditionDamage)}} condition, {{formatAmount(killSummary.totalBarrierDamage)}} barrier
+                        </div>
+                        <div v-if="killSummary.finishContributors.length === 0" class="combat-replay-wvw-analysis-helper">No damage contributors were found in kill windows.</div>
+                        <div v-else style="display: grid; gap: 0.3rem;">
+                            <button
+                                v-for="entry in killSummary.finishContributors"
+                                :key="'kill-summary-finisher-' + entry.name"
+                                type="button"
+                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                :disabled="!entry.actorId"
+                                @click.stop="focusSummaryActor(entry)">
+                                <span class="combat-replay-wvw-analysis-top-actor-name">
+                                    <img
+                                        v-if="entry.icon"
+                                        :src="entry.icon"
+                                        :alt="entry.name"
+                                        style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                    {{entry.name}}
+                                </span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 mb-2">
+                        <div class="combat-replay-wvw-analysis-label">Mystic Rebuke</div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            {{formatCount(killSummary.mysticRebukeKills)}} kills, {{formatAmount(killSummary.totalMysticRebukeDamage)}} total ({{formatDamageShare(killSummary.totalMysticRebukeDamage, killSummary.totalDamage)}}), {{formatAmount(killSummary.averageMysticRebukeDamage)}} avg when present
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            Heavy MR kills: {{formatCount(killSummary.mysticRebukeHeavyKills)}}
+                        </div>
+                        <div v-if="killSummary.mysticRebukeContributors.length === 0" class="combat-replay-wvw-analysis-helper">No Mystic Rebuke damage was found in kill windows.</div>
+                        <div v-else style="display: grid; gap: 0.3rem;">
+                            <button
+                                v-for="entry in killSummary.mysticRebukeContributors"
+                                :key="'kill-summary-mr-' + entry.name"
+                                type="button"
+                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                :disabled="!entry.actorId"
+                                @click.stop="focusSummaryActor(entry)">
+                                <span class="combat-replay-wvw-analysis-top-actor-name">
+                                    <img
+                                        v-if="entry.icon"
+                                        :src="entry.icon"
+                                        :alt="entry.name"
+                                        style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                    {{entry.name}}
+                                </span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 mb-2">
+                        <div class="combat-replay-wvw-analysis-label">Conditions</div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            {{formatCount(killSummary.conditionImpactedKills)}} kills, {{formatCount(killSummary.conditionMajorityKills)}} condition-majority
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail mb-1">
+                            {{formatAmount(killSummary.totalConditionDamage)}} total condition damage ({{formatDamageShare(killSummary.totalConditionDamage, killSummary.totalDamage)}}), {{formatAmount(killSummary.totalBurningDamage)}} Burning ({{formatDamageShare(killSummary.totalBurningDamage, killSummary.totalDamage)}})
+                        </div>
+                        <div v-if="killSummary.topConditions.length === 0" class="combat-replay-wvw-analysis-helper">No damaging conditions were found in kill windows.</div>
+                        <div v-else style="display: grid; gap: 0.3rem;">
+                            <div
+                                v-for="entry in killSummary.topConditions"
+                                :key="'kill-summary-condition-' + entry.name"
+                                class="combat-replay-wvw-analysis-top-actor-entry">
+                                <span class="combat-replay-wvw-analysis-top-actor-name">
+                                    <img
+                                        v-if="entry.icon"
+                                        :src="entry.icon"
+                                        :alt="entry.name"
+                                        style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                    {{entry.name}}
+                                </span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}} <span class="combat-replay-wvw-analysis-detail">({{formatCount(entry.count)}} kills)</span></span>
+                            </div>
+                        </div>
+                        <div v-if="killSummary.conditionContributors.length > 0" class="combat-replay-wvw-analysis-detail mt-1">Top condition contributors</div>
+                        <div v-if="killSummary.conditionContributors.length > 0" style="display: grid; gap: 0.3rem; margin-top: 0.25rem;">
+                            <button
+                                v-for="entry in killSummary.conditionContributors"
+                                :key="'kill-summary-condition-contributor-' + entry.name"
+                                type="button"
+                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                :disabled="!entry.actorId"
+                                @click.stop="focusSummaryActor(entry)">
+                                <span class="combat-replay-wvw-analysis-top-actor-name">
+                                    <img
+                                        v-if="entry.icon"
+                                        :src="entry.icon"
+                                        :alt="entry.name"
+                                        style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                    {{entry.name}}
+                                </span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="killSummary.takeaways.length > 0" class="mt-1">
+                    <div class="combat-replay-wvw-analysis-label">Key Takeaways</div>
+                    <div style="display: grid; gap: 0.25rem;">
+                        <div
+                            v-for="(line, index) in killSummary.takeaways"
+                            :key="'kill-summary-takeaway-' + index"
+                            class="combat-replay-wvw-analysis-detail">
+                            {{line}}
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="row">
                 <div class="col-lg-4 mb-2">
                     <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
@@ -1558,7 +1726,35 @@
                 return this.getEventAnalysis();
             },
             killAnalysis: function () {
-                return this.eventAnalysis && this.eventAnalysis.kills ? this.eventAnalysis.kills : { events: [] };
+                return this.eventAnalysis && this.eventAnalysis.kills ? this.eventAnalysis.kills : { combinedSummary: null, squadSummary: null, enemySummary: null, events: [] };
+            },
+            killSummary: function () {
+                const summaries = {
+                    combined: this.killAnalysis.combinedSummary,
+                    squad: this.killAnalysis.squadSummary,
+                    enemy: this.killAnalysis.enemySummary,
+                };
+                return summaries[this.summaryView] || {
+                    squadKills: 0,
+                    enemyKills: 0,
+                    conditionImpactedKills: 0,
+                    mysticRebukeKills: 0,
+                    conditionMajorityKills: 0,
+                    mysticRebukeHeavyKills: 0,
+                    totalDamage: 0,
+                    totalStrikeDamage: 0,
+                    totalConditionDamage: 0,
+                    totalBurningDamage: 0,
+                    totalMysticRebukeDamage: 0,
+                    totalBarrierDamage: 0,
+                    averageKillTimeSeconds: 0,
+                    averageMysticRebukeDamage: 0,
+                    finishContributors: [],
+                    mysticRebukeContributors: [],
+                    conditionContributors: [],
+                    topConditions: [],
+                    takeaways: [],
+                };
             },
             events: function () {
                 return this.killAnalysis.events || [];
@@ -1582,6 +1778,11 @@
             focusContributor: function (contributor) {
                 if (contributor && contributor.actorId) {
                     this.selectReplayActor(contributor.actorId);
+                }
+            },
+            focusSummaryActor: function (entry) {
+                if (entry && entry.actorId) {
+                    this.selectReplayActor(entry.actorId);
                 }
             },
             formatStrikeDamage: function (event) {

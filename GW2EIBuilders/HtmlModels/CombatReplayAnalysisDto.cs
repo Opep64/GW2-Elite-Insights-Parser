@@ -190,7 +190,9 @@ internal class CombatReplayEventAnalysisDto
 
 internal class CombatReplayDownAnalysisDto
 {
-    public CombatReplayDownSummaryDto Summary { get; set; } = new();
+    public CombatReplayDownSummaryDto CombinedSummary { get; set; } = new();
+    public CombatReplayDownSummaryDto SquadSummary { get; set; } = new();
+    public CombatReplayDownSummaryDto EnemySummary { get; set; } = new();
     public List<CombatReplayDownEventDto> Events { get; set; } = [];
 }
 
@@ -207,6 +209,7 @@ internal class CombatReplayDownSummaryDto
     public int BurningDowns { get; set; }
     public int ConditionMajorityDowns { get; set; }
     public int MysticRebukeHeavyDowns { get; set; }
+    public double TotalDamage { get; set; }
     public double TotalStrikeDamage { get; set; }
     public double TotalConditionDamage { get; set; }
     public double TotalBurningDamage { get; set; }
@@ -223,7 +226,34 @@ internal class CombatReplayDownSummaryDto
 
 internal class CombatReplayKillAnalysisDto
 {
+    public CombatReplayKillSummaryDto CombinedSummary { get; set; } = new();
+    public CombatReplayKillSummaryDto SquadSummary { get; set; } = new();
+    public CombatReplayKillSummaryDto EnemySummary { get; set; } = new();
     public List<CombatReplayKillEventDto> Events { get; set; } = [];
+}
+
+internal class CombatReplayKillSummaryDto
+{
+    public int SquadKills { get; set; }
+    public int EnemyKills { get; set; }
+    public int ConditionImpactedKills { get; set; }
+    public int MysticRebukeKills { get; set; }
+    public int BurningKills { get; set; }
+    public int ConditionMajorityKills { get; set; }
+    public int MysticRebukeHeavyKills { get; set; }
+    public double TotalDamage { get; set; }
+    public double TotalStrikeDamage { get; set; }
+    public double TotalConditionDamage { get; set; }
+    public double TotalBurningDamage { get; set; }
+    public double TotalMysticRebukeDamage { get; set; }
+    public double TotalBarrierDamage { get; set; }
+    public double AverageKillTimeSeconds { get; set; }
+    public double AverageMysticRebukeDamage { get; set; }
+    public List<CombatReplayEventActorSummaryDto> FinishContributors { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> MysticRebukeContributors { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> ConditionContributors { get; set; } = [];
+    public List<CombatReplayEventSummaryEntryDto> TopConditions { get; set; } = [];
+    public List<string> Takeaways { get; set; } = [];
 }
 
 internal class CombatReplayRecoveredAnalysisDto
@@ -1811,7 +1841,9 @@ internal static class CombatReplayAnalysisBuilder
         events.Sort((left, right) => left.Time.CompareTo(right.Time));
         return new CombatReplayDownAnalysisDto
         {
-            Summary = BuildDownSummary(events),
+            CombinedSummary = BuildDownSummary(events),
+            SquadSummary = BuildDownSummary([.. events.Where(evt => !evt.IsEnemy)]),
+            EnemySummary = BuildDownSummary([.. events.Where(evt => evt.IsEnemy)]),
             Events = events,
         };
     }
@@ -1894,6 +1926,7 @@ internal static class CombatReplayAnalysisBuilder
             BurningDowns = events.Count(evt => evt.ConditionDamageBreakdown.Any(entry => entry.BuffId == Burning && entry.Amount > 0)),
             ConditionMajorityDowns = events.Count(evt => evt.ConditionDamageTaken > evt.StrikeDamageTaken),
             MysticRebukeHeavyDowns = events.Count(evt => evt.StrikeDamageTaken > 0 && evt.MysticRebukeDamageTaken >= evt.StrikeDamageTaken * 0.10),
+            TotalDamage = Math.Round(events.Sum(evt => (double)evt.TotalDamageTaken), 1),
             TotalStrikeDamage = Math.Round(events.Sum(evt => (double)evt.StrikeDamageTaken), 1),
             TotalConditionDamage = Math.Round(events.Sum(evt => (double)evt.ConditionDamageTaken), 1),
             TotalMysticRebukeDamage = Math.Round(events.Sum(evt => (double)evt.MysticRebukeDamageTaken), 1),
@@ -1962,6 +1995,9 @@ internal static class CombatReplayAnalysisBuilder
         events.Sort((left, right) => left.Time.CompareTo(right.Time));
         return new CombatReplayKillAnalysisDto
         {
+            CombinedSummary = BuildKillSummary(events),
+            SquadSummary = BuildKillSummary([.. events.Where(evt => !evt.IsEnemy)]),
+            EnemySummary = BuildKillSummary([.. events.Where(evt => evt.IsEnemy)]),
             Events = events,
         };
     }
@@ -2026,9 +2062,73 @@ internal static class CombatReplayAnalysisBuilder
             HitCount = summary.HitCount,
             ContributorCount = summary.ContributorCount,
             Conditions = [.. summary.Conditions],
+            ConditionDamageBreakdown = [.. summary.ConditionDamageBreakdown],
             Contributors = [.. summary.Contributors],
             DamageTimeline = [.. summary.DamageTimeline],
         };
+    }
+
+    private static CombatReplayKillSummaryDto BuildKillSummary(IReadOnlyList<CombatReplayKillEventDto> events)
+    {
+        var summary = new CombatReplayKillSummaryDto
+        {
+            SquadKills = events.Count(evt => !evt.IsEnemy),
+            EnemyKills = events.Count(evt => evt.IsEnemy),
+            ConditionImpactedKills = events.Count(evt => evt.ConditionDamageTaken > 0),
+            MysticRebukeKills = events.Count(evt => evt.MysticRebukeDamageTaken > 0),
+            BurningKills = events.Count(evt => evt.ConditionDamageBreakdown.Any(entry => entry.BuffId == Burning && entry.Amount > 0)),
+            ConditionMajorityKills = events.Count(evt => evt.ConditionDamageTaken > evt.StrikeDamageTaken),
+            MysticRebukeHeavyKills = events.Count(evt => evt.StrikeDamageTaken > 0 && evt.MysticRebukeDamageTaken >= evt.StrikeDamageTaken * 0.10),
+            TotalDamage = Math.Round(events.Sum(evt => (double)evt.TotalDamageTaken), 1),
+            TotalStrikeDamage = Math.Round(events.Sum(evt => (double)evt.StrikeDamageTaken), 1),
+            TotalConditionDamage = Math.Round(events.Sum(evt => (double)evt.ConditionDamageTaken), 1),
+            TotalMysticRebukeDamage = Math.Round(events.Sum(evt => (double)evt.MysticRebukeDamageTaken), 1),
+            TotalBarrierDamage = Math.Round(events.Sum(evt => (double)evt.BarrierDamageTaken), 1),
+        };
+        summary.TotalBurningDamage = Math.Round(events.Sum(evt =>
+            evt.ConditionDamageBreakdown
+                .Where(entry => entry.BuffId == Burning)
+                .Sum(entry => (double)entry.Amount)), 1);
+        summary.AverageKillTimeSeconds = events.Count > 0
+            ? Math.Round(events.Average(evt => (evt.Time - evt.WindowStart) / 1000.0), 1)
+            : 0.0;
+        summary.AverageMysticRebukeDamage = summary.MysticRebukeKills > 0
+            ? Math.Round(summary.TotalMysticRebukeDamage / summary.MysticRebukeKills, 1)
+            : 0.0;
+        summary.FinishContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.Contributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    contributor.Amount,
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.MysticRebukeContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.Contributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    GetContributionAmount(contributor, "Mystic Rebuke"),
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.ConditionContributors = BuildTopActorSummaries(events.SelectMany(evt =>
+            evt.Contributors
+                .Where(contributor => contributor.ActorId != null)
+                .Select(contributor => (
+                    contributor.ActorId,
+                    contributor.Name,
+                    contributor.Icon,
+                    GetContributionAmount(contributor, "Condition"),
+                    evt.Time))
+                .Where(entry => entry.Item4 > 0.0)));
+        summary.TopConditions = BuildTopSummaryEntries(events.SelectMany(evt =>
+            evt.ConditionDamageBreakdown.Select(entry => (entry.Name, entry.Icon, entry.Amount, GetEventSummaryKey(evt)))));
+        summary.Takeaways = BuildKillSummaryTakeaways(summary);
+        return summary;
     }
 
     private static CombatReplayRecoveredAnalysisDto BuildRecoveredAnalysis(
@@ -3355,6 +3455,39 @@ internal static class CombatReplayAnalysisBuilder
         if (summary.ConditionMajorityDowns > 0)
         {
             takeaways.Add($"Conditions outweighed strike damage in {summary.ConditionMajorityDowns} down windows.");
+        }
+
+        return takeaways.Take(4).ToList();
+    }
+
+    private static List<string> BuildKillSummaryTakeaways(CombatReplayKillSummaryDto summary)
+    {
+        var takeaways = new List<string>();
+        int totalKills = summary.SquadKills + summary.EnemyKills;
+        if (totalKills == 0)
+        {
+            return takeaways;
+        }
+
+        takeaways.Add($"Average down-to-kill time was {FormatOneDecimal(summary.AverageKillTimeSeconds)}s across {totalKills} kill windows.");
+
+        if (summary.MysticRebukeKills > 0)
+        {
+            takeaways.Add($"Mystic Rebuke appeared in {summary.MysticRebukeKills} kill windows for {FormatWholeNumber((long)Math.Round(summary.TotalMysticRebukeDamage))} total damage.");
+        }
+
+        if (summary.ConditionImpactedKills > 0)
+        {
+            CombatReplayEventSummaryEntryDto? topCondition = summary.TopConditions.FirstOrDefault();
+            string topConditionText = topCondition != null
+                ? $" Top kill condition: {topCondition.Name} ({FormatWholeNumber((long)Math.Round(topCondition.Amount))})."
+                : "";
+            takeaways.Add($"Condition damage appeared in {summary.ConditionImpactedKills} kill windows, with Burning contributing {FormatWholeNumber((long)Math.Round(summary.TotalBurningDamage))}.{topConditionText}");
+        }
+
+        if (summary.ConditionMajorityKills > 0)
+        {
+            takeaways.Add($"Conditions outweighed strike damage in {summary.ConditionMajorityKills} kill windows.");
         }
 
         return takeaways.Take(4).ToList();
