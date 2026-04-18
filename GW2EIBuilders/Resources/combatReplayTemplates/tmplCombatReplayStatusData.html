@@ -830,6 +830,9 @@
                 playerSearchQuery: "",
                 playerPanelMode: "evaluation",
                 playerEvaluationDetailModal: null,
+                showPlayerEvaluationCompare: false,
+                comparisonSelectedPlayerIds: [],
+                maxPlayerComparisonCount: 6,
             };
         },
         template: `
@@ -884,6 +887,14 @@
                             Live
                         </button>
                     </div>
+                </div>
+                <div class="combat-replay-player-analysis-actions">
+                    <button
+                        type="button"
+                        class="combat-replay-player-analysis-compare-button"
+                        @click="openPlayerEvaluationCompare">
+                        Compare Evaluations
+                    </button>
                 </div>
             </div>
             <template v-if="selectedPlayer">
@@ -1044,6 +1055,67 @@
                 </div>
                 </template>
             </template>
+            <div v-if="showPlayerEvaluationCompare" class="wvw-summary-modal-backdrop" @click.self="closePlayerEvaluationCompare">
+                <div class="wvw-summary-modal combat-replay-player-compare-modal" role="dialog" aria-modal="true" aria-label="Compare player evaluations">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close player evaluation comparison" @click="closePlayerEvaluationCompare">&times;</button>
+                    <div class="wvw-summary-modal-title">Compare Player Evaluations</div>
+                    <div class="wvw-summary-modal-subtitle">
+                        <span>Toggle squad members on or off to compare their evaluation panels side by side. Up to {{maxPlayerComparisonCount}} players can be shown at once.</span>
+                    </div>
+                    <div class="combat-replay-player-compare-toggles">
+                        <button
+                            v-for="player in comparisonPlayers"
+                            :key="'player-compare-toggle-' + player.uniqueID"
+                            type="button"
+                            class="combat-replay-player-compare-toggle"
+                            :class="{active: isComparisonPlayerSelected(player.uniqueID)}"
+                            :disabled="!isComparisonPlayerSelected(player.uniqueID) && comparisonSelectedPlayerIds.length >= maxPlayerComparisonCount"
+                            @click="toggleComparisonPlayer(player.uniqueID)">
+                            <img :src="player.icon" :alt="player.profession || player.name" class="combat-replay-player-compare-toggle-icon">
+                            <span class="combat-replay-player-compare-toggle-name">{{player.name}}</span>
+                        </button>
+                    </div>
+                    <div v-if="comparisonSelectedPlayers.length === 0" class="combat-replay-wvw-analysis-helper combat-replay-player-compare-empty">
+                        Toggle players on above to compare their evaluations.
+                    </div>
+                    <div v-else class="combat-replay-player-compare-grid">
+                        <div v-for="player in comparisonSelectedPlayers" :key="'player-compare-column-' + player.uniqueID" class="combat-replay-player-compare-column">
+                            <div class="combat-replay-player-compare-header">
+                                <img :src="player.icon" :alt="player.profession || player.name" class="combat-replay-player-compare-header-icon">
+                                <div class="combat-replay-player-compare-header-text">
+                                    <div class="combat-replay-player-compare-header-name">{{player.name}}</div>
+                                    <div class="combat-replay-player-compare-header-subtitle">{{player.profession || 'Player'}}</div>
+                                </div>
+                            </div>
+                            <div v-if="!player.evaluation" class="combat-replay-wvw-analysis-helper">
+                                Evaluation details are unavailable for this player in the current log.
+                            </div>
+                            <div v-else class="combat-replay-player-evaluation combat-replay-player-compare-evaluation">
+                                <div class="combat-replay-player-evaluation-summary">
+                                    <div class="combat-replay-player-evaluation-profile">{{player.evaluation.contributionProfile}}</div>
+                                    <div class="combat-replay-player-evaluation-text">{{player.evaluation.keyContributionSummary}}</div>
+                                </div>
+                                <div v-if="player.evaluation.roleMix && player.evaluation.roleMix.length > 0" class="combat-replay-player-evaluation-role-mix">
+                                    <div v-for="role in player.evaluation.roleMix" :key="'player-compare-role-' + player.uniqueID + '-' + role.label" class="combat-replay-player-evaluation-role">
+                                        <span class="combat-replay-player-evaluation-role-label">{{role.label}}</span>
+                                        <span class="combat-replay-player-evaluation-role-value">{{formatPercent(role.percent)}}</span>
+                                    </div>
+                                </div>
+                                <div v-if="player.evaluation.areas && player.evaluation.areas.length > 0" class="combat-replay-wvw-analysis-grid combat-replay-player-compare-area-grid">
+                                    <div
+                                        v-for="area in player.evaluation.areas"
+                                        :key="'player-compare-area-' + player.uniqueID + '-' + area.label"
+                                        class="combat-replay-wvw-analysis-metric">
+                                        <div class="combat-replay-wvw-analysis-label">{{area.label}}</div>
+                                        <div class="combat-replay-wvw-analysis-value">{{area.value}}</div>
+                                        <div class="combat-replay-wvw-analysis-detail">{{area.detail}}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
         `,
         computed: {
@@ -1061,6 +1133,26 @@
             },
             availablePlayers: function () {
                 return [...logData.players].sort((left, right) => left.name.localeCompare(right.name));
+            },
+            comparisonPlayers: function () {
+                return this.availablePlayers;
+            },
+            comparisonSelectedPlayers: function () {
+                return this.comparisonSelectedPlayerIds
+                    .map(uniqueId => {
+                        const player = this.getPlayerByUniqueId(uniqueId);
+                        if (!player) {
+                            return null;
+                        }
+                        const evaluation = this.crAnalysis && this.crAnalysis.playerEvaluations
+                            ? this.crAnalysis.playerEvaluations[uniqueId] || null
+                            : null;
+                        return {
+                            ...player,
+                            evaluation: evaluation,
+                        };
+                    })
+                    .filter(player => !!player);
             },
             filteredPlayers: function () {
                 const query = this.normalizeSearchValue(this.playerSearchQuery);
@@ -1204,6 +1296,27 @@
                 this.playerSearchOpen = false;
                 this.closePlayerEvaluationAreaDetail();
                 this.selectReplayActor(player.uniqueID);
+            },
+            openPlayerEvaluationCompare: function () {
+                this.closePlayerEvaluationAreaDetail();
+                this.showPlayerEvaluationCompare = true;
+                this.comparisonSelectedPlayerIds = this.selectedPlayer ? [this.selectedPlayer.uniqueID] : [];
+            },
+            closePlayerEvaluationCompare: function () {
+                this.showPlayerEvaluationCompare = false;
+            },
+            isComparisonPlayerSelected: function (uniqueId) {
+                return this.comparisonSelectedPlayerIds.includes(uniqueId);
+            },
+            toggleComparisonPlayer: function (uniqueId) {
+                if (this.isComparisonPlayerSelected(uniqueId)) {
+                    this.comparisonSelectedPlayerIds = this.comparisonSelectedPlayerIds.filter(id => id !== uniqueId);
+                    return;
+                }
+                if (this.comparisonSelectedPlayerIds.length >= this.maxPlayerComparisonCount) {
+                    return;
+                }
+                this.comparisonSelectedPlayerIds = [...this.comparisonSelectedPlayerIds, uniqueId];
             },
             openPlayerEvaluationAreaDetail: function (area) {
                 if (!area || !area.isInteractive || !area.detailSections || area.detailSections.length === 0) {
