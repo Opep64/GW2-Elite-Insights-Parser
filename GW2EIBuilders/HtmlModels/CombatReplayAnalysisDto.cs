@@ -2,10 +2,12 @@ using System.Numerics;
 using System.Globalization;
 using GW2EIEvtcParser;
 using GW2EIEvtcParser.EIData;
+using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.LogLogic;
 using GW2EIEvtcParser.ParsedData;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using Segment = GW2EIEvtcParser.EIData.GenericSegment<double>;
 
 namespace GW2EIBuilders.HtmlModels;
 
@@ -18,6 +20,7 @@ internal class CombatReplayAnalysisDto
     public CombatReplayTeamAnalysisDto Enemy { get; set; } = new();
     public CombatReplayThreatBoonAnalysisDto ThreatBoons { get; set; } = new();
     public CombatReplayPositioningAnalysisDto Positioning { get; set; } = new();
+    public CombatReplayEventAnalysisDto Events { get; set; } = new();
     public Dictionary<int, CombatReplayPlayerEvaluationDto> PlayerEvaluations { get; set; } = [];
 }
 
@@ -177,6 +180,98 @@ internal class CombatReplayPositioningPlayerTimelineDto
     public double[] RunningLateralRiskRate { get; set; } = [];
 }
 
+internal class CombatReplayEventAnalysisDto
+{
+    public CombatReplayBarrierSaveAnalysisDto BarrierSaves { get; set; } = new();
+    public CombatReplayConditionConversionAnalysisDto ConditionConversions { get; set; } = new();
+}
+
+internal class CombatReplayBarrierSaveAnalysisDto
+{
+    public bool Available { get; set; }
+    public int TotalEvents { get; set; }
+    public List<CombatReplayEventActorSummaryDto> SavedPlayers { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> Providers { get; set; } = [];
+    public List<CombatReplayBarrierSaveEventDto> Events { get; set; } = [];
+}
+
+internal class CombatReplayConditionConversionAnalysisDto
+{
+    public int TotalEvents { get; set; }
+    public int ConvertedEvents { get; set; }
+    public double TotalBurningPressure { get; set; }
+    public double TotalPressure { get; set; }
+    public List<CombatReplayEventActorSummaryDto> Providers { get; set; } = [];
+    public List<CombatReplayConditionConversionEventDto> Events { get; set; } = [];
+}
+
+internal class CombatReplayEventActorSummaryDto
+{
+    public int? ActorId { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public int Count { get; set; }
+    public double Amount { get; set; }
+}
+
+internal class CombatReplayEventContributionDto
+{
+    public int? ActorId { get; set; }
+    public long? BuffId { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public double Amount { get; set; }
+    public double Percent { get; set; }
+    public List<CombatReplayEventContributionDto> Details { get; set; } = [];
+}
+
+internal class CombatReplayEventTimelineEntryDto
+{
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public string Label { get; set; } = "";
+    public string Value { get; set; } = "";
+    public string Secondary { get; set; } = "";
+}
+
+internal class CombatReplayBarrierSaveEventDto
+{
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public int SavedPlayerId { get; set; }
+    public string SavedPlayerName { get; set; } = "";
+    public string SavedPlayerIcon { get; set; } = "";
+    public int TotalBarrier { get; set; }
+    public int BarrierAbsorbed { get; set; }
+    public double LowestHealthPercent { get; set; }
+    public int ApproxHealthStart { get; set; }
+    public int ApproxBarrierStart { get; set; }
+    public double HealthPercentStart { get; set; }
+    public double BarrierPercentStart { get; set; }
+    public string ProviderSummary { get; set; } = "";
+    public List<CombatReplayEventContributionDto> Providers { get; set; } = [];
+    public List<CombatReplayEventTimelineEntryDto> IncomingDamage { get; set; } = [];
+}
+
+internal class CombatReplayConditionConversionEventDto
+{
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public int TargetId { get; set; }
+    public string TargetName { get; set; } = "";
+    public string TargetIcon { get; set; } = "";
+    public string Outcome { get; set; } = "";
+    public long? ConversionTime { get; set; }
+    public string ConversionTimeLabel { get; set; } = "";
+    public double TotalPressure { get; set; }
+    public double BurningPressure { get; set; }
+    public string TopConditionName { get; set; } = "";
+    public string TopConditionIcon { get; set; } = "";
+    public string TopContributorSummary { get; set; } = "";
+    public List<CombatReplayEventContributionDto> Conditions { get; set; } = [];
+    public List<CombatReplayEventContributionDto> Providers { get; set; } = [];
+}
+
 internal class CombatReplayPlayerEvaluationDto
 {
     public string ContributionProfile { get; set; } = "";
@@ -272,6 +367,9 @@ internal static class CombatReplayAnalysisBuilder
 {
     private const int LookbackWindow = 3000;
     private const int BucketSize = 1000;
+    private const int SaveEventMergeWindow = 500;
+    private const int SaveEventLookaheadWindow = 1500;
+    private const double MeaningfulContributionThreshold = 0.10;
     private const float RangeThreshold = 1200.0f;
     private static readonly PositioningCriteria PositioningSettings = new(
         DesiredCommanderDistance: 240.0f,
@@ -325,6 +423,15 @@ internal static class CombatReplayAnalysisBuilder
         Blind,
         Chilled,
     ];
+    private static readonly IReadOnlyList<long> ConditionConversionDisplayBuffIds =
+    [
+        Burning,
+        Poison,
+        Bleeding,
+        Torment,
+        Confusion,
+        Vulnerability,
+    ];
 
     private readonly record struct DamageRecord(long Time, int TargetUniqueId, int AttackerUniqueId, int Damage, bool HasDowned, bool HasKilled);
     private readonly record struct HealingRecord(long Time, int AttackerUniqueId, int Healing);
@@ -332,6 +439,19 @@ internal static class CombatReplayAnalysisBuilder
     private readonly record struct CleanseRecord(long Time, int AttackerUniqueId);
     private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId);
     private readonly record struct EvaluationWindow(long Start, long End);
+    private readonly record struct BarrierSaveCandidate(
+        long StartTime,
+        long EndTime,
+        SingleActor SavedPlayer,
+        int TotalBarrier,
+        int BarrierAbsorbed,
+        int ApproxHealthStart,
+        int ApproxBarrierStart,
+        double HealthPercentStart,
+        double BarrierPercentStart,
+        double LowestHealthPercent,
+        IReadOnlyList<CombatReplayEventContributionDto> Providers,
+        IReadOnlyList<CombatReplayEventTimelineEntryDto> IncomingDamage);
     private readonly record struct TeamActorContext(
         IReadOnlyList<SingleActor> Attackers,
         IReadOnlyList<SingleActor> Targets,
@@ -387,6 +507,7 @@ internal static class CombatReplayAnalysisBuilder
             Enemy = enemyAnalysis,
             ThreatBoons = threatAnalysis,
             Positioning = positioningAnalysis,
+            Events = BuildEventAnalysis(log, squadPlayers, hostileTargets),
             PlayerEvaluations = BuildPlayerEvaluations(log, squadPlayers, hostileTargets, squadAnalysis, enemyAnalysis, positioningAnalysis, times),
         };
     }
@@ -1526,6 +1647,545 @@ internal static class CombatReplayAnalysisBuilder
         return string.Join(", ", parts);
     }
 
+    private static CombatReplayEventAnalysisDto BuildEventAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostileTargets)
+    {
+        return new CombatReplayEventAnalysisDto
+        {
+            BarrierSaves = BuildBarrierSaveAnalysis(log, squadPlayers),
+            ConditionConversions = BuildConditionConversionAnalysis(log, hostileTargets),
+        };
+    }
+
+    private static CombatReplayBarrierSaveAnalysisDto BuildBarrierSaveAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers)
+    {
+        var result = new CombatReplayBarrierSaveAnalysisDto
+        {
+            Available = log.CombatData.HasEXTBarrier,
+        };
+        if (!log.CombatData.HasEXTBarrier)
+        {
+            return result;
+        }
+
+        var candidateEvents = new List<BarrierSaveCandidate>();
+        foreach (SingleActor player in squadPlayers)
+        {
+            candidateEvents.AddRange(BuildBarrierSaveCandidates(log, player));
+        }
+
+        List<CombatReplayBarrierSaveEventDto> events =
+        [
+            .. candidateEvents
+                .OrderBy(candidate => candidate.StartTime)
+                .Select(candidate => new CombatReplayBarrierSaveEventDto
+                {
+                    Time = candidate.StartTime,
+                    TimeLabel = FormatTime(candidate.StartTime),
+                    SavedPlayerId = candidate.SavedPlayer.UniqueID,
+                    SavedPlayerName = candidate.SavedPlayer.Character,
+                    SavedPlayerIcon = candidate.SavedPlayer.GetIcon(),
+                    TotalBarrier = candidate.TotalBarrier,
+                    BarrierAbsorbed = candidate.BarrierAbsorbed,
+                    LowestHealthPercent = candidate.LowestHealthPercent,
+                    ApproxHealthStart = candidate.ApproxHealthStart,
+                    ApproxBarrierStart = candidate.ApproxBarrierStart,
+                    HealthPercentStart = candidate.HealthPercentStart,
+                    BarrierPercentStart = candidate.BarrierPercentStart,
+                    ProviderSummary = BuildCompactContributorSummary(candidate.Providers),
+                    Providers = [.. candidate.Providers],
+                    IncomingDamage = [.. candidate.IncomingDamage],
+                })
+        ];
+        result.Events = events;
+        result.TotalEvents = events.Count;
+        result.SavedPlayers = [.. events
+            .GroupBy(evt => evt.SavedPlayerId)
+            .Select(group => new CombatReplayEventActorSummaryDto
+            {
+                ActorId = group.Key,
+                Name = group.First().SavedPlayerName,
+                Icon = group.First().SavedPlayerIcon,
+                Count = group.Count(),
+                Amount = group.Sum(evt => evt.BarrierAbsorbed),
+            })
+            .OrderByDescending(entry => entry.Count)
+            .ThenByDescending(entry => entry.Amount)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)];
+        result.Providers = BuildTopActorSummaries(events.SelectMany(
+            evt => evt.Providers.Select(provider => (provider.ActorId, provider.Name, provider.Icon, provider.Amount, evt.Time))));
+        return result;
+    }
+
+    private static IReadOnlyList<BarrierSaveCandidate> BuildBarrierSaveCandidates(
+        ParsedEvtcLog log,
+        SingleActor player)
+    {
+        IReadOnlyList<EXTBarrierEvent> incomingBarrierEvents = player.EXTBarrier.GetIncomingBarrierEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd);
+        if (incomingBarrierEvents.Count == 0)
+        {
+            return [];
+        }
+
+        var candidates = new List<BarrierSaveCandidate>();
+        int index = 0;
+        while (index < incomingBarrierEvents.Count)
+        {
+            EXTBarrierEvent firstEvent = incomingBarrierEvents[index];
+            long clusterStart = firstEvent.Time;
+            long clusterEnd = clusterStart;
+            var clusterEvents = new List<EXTBarrierEvent> { firstEvent };
+            int nextIndex = index + 1;
+            while (nextIndex < incomingBarrierEvents.Count && incomingBarrierEvents[nextIndex].Time - clusterEnd <= SaveEventMergeWindow)
+            {
+                EXTBarrierEvent nextEvent = incomingBarrierEvents[nextIndex];
+                clusterEvents.Add(nextEvent);
+                clusterEnd = nextEvent.Time;
+                nextIndex++;
+            }
+
+            BarrierSaveCandidate? candidate = TryBuildBarrierSaveCandidate(log, player, clusterStart, clusterEnd, clusterEvents);
+            if (candidate != null)
+            {
+                candidates.Add(candidate.Value);
+            }
+            index = nextIndex;
+        }
+
+        return candidates;
+    }
+
+    private static BarrierSaveCandidate? TryBuildBarrierSaveCandidate(
+        ParsedEvtcLog log,
+        SingleActor player,
+        long clusterStart,
+        long clusterEnd,
+        IReadOnlyList<EXTBarrierEvent> clusterEvents)
+    {
+        long lookaheadEnd = Math.Min(log.LogData.LogEnd, clusterEnd + SaveEventLookaheadWindow);
+        long snapshotTime = Math.Max(log.LogData.LogStart, clusterStart - 1);
+        IReadOnlyList<HealthDamageEvent> incomingDamageEvents = player.GetDamageTakenEvents(null, log, clusterStart, lookaheadEnd)
+            .Where(damageEvent => damageEvent.HasHit && (damageEvent.HealthDamage > 0 || damageEvent.ShieldDamage > 0))
+            .OrderBy(damageEvent => damageEvent.Time)
+            .ToList();
+        if (!incomingDamageEvents.Any())
+        {
+            return null;
+        }
+        if (player.IsDowned(log, clusterStart, lookaheadEnd))
+        {
+            return null;
+        }
+
+        int clusterBarrier = clusterEvents.Sum(barrierEvent => barrierEvent.BarrierGiven);
+        if (clusterBarrier <= 0)
+        {
+            return null;
+        }
+
+        double healthPercentStart = GetSafePercent(player.GetCurrentHealthPercent(log, snapshotTime));
+        double barrierPercentStart = GetSafePercent(player.GetCurrentBarrierPercent(log, snapshotTime));
+        int approxHealthStart = GetApproximateCurrentHealth(player, log, snapshotTime);
+        int approxBarrierStart = GetApproximateCurrentBarrier(player, log, snapshotTime);
+        if (approxHealthStart <= 0)
+        {
+            return null;
+        }
+
+        int barrierAbsorbed = incomingDamageEvents.Sum(damageEvent => damageEvent.ShieldDamage);
+        if (barrierAbsorbed <= 0)
+        {
+            return null;
+        }
+
+        int cumulativeThreat = incomingDamageEvents.Sum(damageEvent => damageEvent.HealthDamage + damageEvent.ShieldDamage);
+        int lethalWithoutCluster = approxHealthStart + approxBarrierStart;
+        int lethalWithCluster = approxHealthStart + approxBarrierStart + clusterBarrier;
+        if (cumulativeThreat <= lethalWithoutCluster || cumulativeThreat > lethalWithCluster)
+        {
+            return null;
+        }
+
+        double lowestHealthPercent = GetLowestHealthPercent(player, log, clusterStart, lookaheadEnd, healthPercentStart);
+        List<CombatReplayEventContributionDto> providers = BuildMeaningfulBarrierProviders(log, clusterEvents);
+        if (providers.Count == 0)
+        {
+            return null;
+        }
+
+        return new BarrierSaveCandidate(
+            StartTime: clusterStart,
+            EndTime: lookaheadEnd,
+            SavedPlayer: player,
+            TotalBarrier: clusterBarrier,
+            BarrierAbsorbed: barrierAbsorbed,
+            ApproxHealthStart: approxHealthStart,
+            ApproxBarrierStart: approxBarrierStart,
+            HealthPercentStart: healthPercentStart,
+            BarrierPercentStart: barrierPercentStart,
+            LowestHealthPercent: lowestHealthPercent,
+            Providers: providers,
+            IncomingDamage: BuildIncomingDamageTimeline(log, incomingDamageEvents));
+    }
+
+    private static CombatReplayConditionConversionAnalysisDto BuildConditionConversionAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> hostileTargets)
+    {
+        var result = new CombatReplayConditionConversionAnalysisDto();
+        var events = new List<CombatReplayConditionConversionEventDto>();
+        foreach (SingleActor target in hostileTargets)
+        {
+            IReadOnlyList<DownEvent> downEvents = log.CombatData.GetDownEvents(target.AgentItem);
+            foreach (DownEvent downEvent in downEvents.OrderBy(evt => evt.Time))
+            {
+                CombatReplayConditionConversionEventDto? conversionEvent = BuildConditionConversionEvent(log, target, downEvent);
+                if (conversionEvent != null)
+                {
+                    events.Add(conversionEvent);
+                }
+            }
+        }
+
+        events.Sort((left, right) => left.Time.CompareTo(right.Time));
+        result.Events = events;
+        result.TotalEvents = events.Count;
+        result.ConvertedEvents = events.Count(evt => evt.Outcome == "Converted");
+        result.TotalBurningPressure = Math.Round(events.Sum(evt => evt.BurningPressure), 1);
+        result.TotalPressure = Math.Round(events.Sum(evt => evt.TotalPressure), 1);
+        result.Providers = BuildTopActorSummaries(events.SelectMany(
+            evt => evt.Providers.Select(provider => (provider.ActorId, provider.Name, provider.Icon, provider.Amount, evt.Time))));
+        return result;
+    }
+
+    private static CombatReplayConditionConversionEventDto? BuildConditionConversionEvent(
+        ParsedEvtcLog log,
+        SingleActor target,
+        DownEvent downEvent)
+    {
+        long windowStart = Math.Max(log.LogData.LogStart, downEvent.Time - LookbackWindow);
+        var buffBreakdowns = new List<CombatReplayEventContributionDto>(ConditionConversionDisplayBuffIds.Count);
+        var providerTotals = new Dictionary<SingleActor, double>();
+        var providerConditionTotals = new Dictionary<SingleActor, Dictionary<long, double>>();
+        IReadOnlyDictionary<long, BuffVolumeByActorStatistics> activeBuffVolumes = target.GetActiveBuffVolumesDictionary(log, windowStart, downEvent.Time);
+        foreach (long buffId in ConditionConversionDisplayBuffIds)
+        {
+            if (!log.Buffs.BuffsByIDs.TryGetValue(buffId, out Buff? buff))
+            {
+                continue;
+            }
+
+            if (!activeBuffVolumes.TryGetValue(buffId, out BuffVolumeByActorStatistics? buffStats))
+            {
+                continue;
+            }
+
+            double totalAmount = Math.Round(buffStats.IncomingBy.Values.Sum(), 1);
+            if (totalAmount <= 0.0)
+            {
+                continue;
+            }
+
+            foreach ((SingleActor provider, double amount) in buffStats.IncomingBy)
+            {
+                if (amount <= 0.0)
+                {
+                    continue;
+                }
+                providerTotals[provider] = providerTotals.TryGetValue(provider, out double existingAmount) ? existingAmount + amount : amount;
+                if (!providerConditionTotals.TryGetValue(provider, out Dictionary<long, double>? conditionTotals))
+                {
+                    conditionTotals = [];
+                    providerConditionTotals[provider] = conditionTotals;
+                }
+                conditionTotals[buffId] = conditionTotals.TryGetValue(buffId, out double existingConditionAmount) ? existingConditionAmount + amount : amount;
+            }
+
+            buffBreakdowns.Add(new CombatReplayEventContributionDto
+            {
+                BuffId = buffId,
+                Name = buff.Name,
+                Icon = buff.Link,
+                Amount = totalAmount,
+            });
+        }
+
+        double totalPressure = Math.Round(buffBreakdowns.Sum(entry => entry.Amount), 1);
+        if (totalPressure <= 0.0)
+        {
+            return null;
+        }
+
+        foreach (CombatReplayEventContributionDto entry in buffBreakdowns)
+        {
+            entry.Percent = Math.Round(entry.Amount * 100.0 / totalPressure, 1);
+        }
+
+        List<CombatReplayEventContributionDto> providers = BuildMeaningfulConditionProviders(log, providerTotals, providerConditionTotals, totalPressure);
+        CombatReplayEventContributionDto? burningBreakdown = buffBreakdowns.FirstOrDefault(entry => entry.BuffId == Burning);
+        CombatReplayEventContributionDto topCondition = buffBreakdowns
+            .OrderByDescending(entry => entry.Amount)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .First();
+        string outcome = "Down only";
+        long? conversionTime = null;
+        DeadEvent? nextDead = log.CombatData.GetDeadEvents(target.AgentItem).FirstOrDefault(evt => evt.Time >= downEvent.Time);
+        AliveEvent? nextAlive = log.CombatData.GetAliveEvents(target.AgentItem).FirstOrDefault(evt => evt.Time >= downEvent.Time);
+        if (nextDead != null && (nextAlive == null || nextDead.Time <= nextAlive.Time))
+        {
+            outcome = "Converted";
+            conversionTime = nextDead.Time;
+        }
+        else if (nextAlive != null)
+        {
+            outcome = "Recovered";
+        }
+
+        return new CombatReplayConditionConversionEventDto
+        {
+            Time = downEvent.Time,
+            TimeLabel = FormatTime(downEvent.Time),
+            TargetId = target.UniqueID,
+            TargetName = target.Character,
+            TargetIcon = target.GetIcon(),
+            Outcome = outcome,
+            ConversionTime = conversionTime,
+            ConversionTimeLabel = conversionTime.HasValue ? FormatTime(conversionTime.Value) : "",
+            TotalPressure = totalPressure,
+            BurningPressure = Math.Round(burningBreakdown?.Amount ?? 0.0, 1),
+            TopConditionName = topCondition.Name,
+            TopConditionIcon = topCondition.Icon,
+            TopContributorSummary = BuildCompactContributorSummary(providers),
+            Conditions = buffBreakdowns,
+            Providers = providers,
+        };
+    }
+
+    private static List<CombatReplayEventContributionDto> BuildMeaningfulBarrierProviders(
+        ParsedEvtcLog log,
+        IReadOnlyList<EXTBarrierEvent> clusterEvents)
+    {
+        double totalBarrier = clusterEvents.Sum(barrierEvent => barrierEvent.BarrierGiven);
+        Dictionary<AgentItem, double> providerTotals = clusterEvents
+            .GroupBy(barrierEvent => barrierEvent.CreditedFrom)
+            .ToDictionary(group => group.Key, group => (double)group.Sum(barrierEvent => barrierEvent.BarrierGiven));
+        return BuildMeaningfulActorContributionList(log, providerTotals, totalBarrier);
+    }
+
+    private static List<CombatReplayEventContributionDto> BuildMeaningfulConditionProviders(
+        ParsedEvtcLog log,
+        IReadOnlyDictionary<SingleActor, double> providerTotals,
+        IReadOnlyDictionary<SingleActor, Dictionary<long, double>> providerConditionTotals,
+        double totalPressure)
+    {
+        var actorTotals = providerTotals.ToDictionary(pair => pair.Key.AgentItem, pair => pair.Value);
+        List<CombatReplayEventContributionDto> providers = BuildMeaningfulActorContributionList(log, actorTotals, totalPressure);
+        Dictionary<int, SingleActor> actorsById = providerTotals.Keys.ToDictionary(actor => actor.UniqueID, actor => actor);
+        foreach (CombatReplayEventContributionDto provider in providers)
+        {
+            if (provider.ActorId == null || !actorsById.TryGetValue(provider.ActorId.Value, out SingleActor? actor))
+            {
+                continue;
+            }
+            if (!providerConditionTotals.TryGetValue(actor, out Dictionary<long, double>? conditionTotals))
+            {
+                continue;
+            }
+
+            provider.Details = [.. ConditionConversionDisplayBuffIds
+                .Where(buffId => conditionTotals.TryGetValue(buffId, out double amount) && amount > 0.0)
+                .Select(buffId =>
+                {
+                    Buff buff = log.Buffs.BuffsByIDs[buffId];
+                    double amount = Math.Round(conditionTotals[buffId], 1);
+                    return new CombatReplayEventContributionDto
+                    {
+                        BuffId = buffId,
+                        Name = buff.Name,
+                        Icon = buff.Link,
+                        Amount = amount,
+                        Percent = provider.Amount > 0.0 ? Math.Round(amount * 100.0 / provider.Amount, 1) : 0.0,
+                    };
+                })];
+        }
+        return providers;
+    }
+
+    private static List<CombatReplayEventContributionDto> BuildMeaningfulActorContributionList(
+        ParsedEvtcLog log,
+        IReadOnlyDictionary<AgentItem, double> providerTotals,
+        double totalAmount)
+    {
+        if (totalAmount <= 0.0 || providerTotals.Count == 0)
+        {
+            return [];
+        }
+
+        List<(AgentItem Agent, double Amount)> orderedProviders = [.. providerTotals
+            .Where(pair => pair.Value > 0.0)
+            .OrderByDescending(pair => pair.Value)
+            .ThenBy(pair => GetActorName(log, pair.Key), StringComparer.OrdinalIgnoreCase)
+            .Select(pair => (pair.Key, pair.Value))];
+        if (orderedProviders.Count == 0)
+        {
+            return [];
+        }
+
+        List<(AgentItem Agent, double Amount)> meaningfulProviders = [.. orderedProviders.Where(pair => pair.Amount / totalAmount >= MeaningfulContributionThreshold)];
+        if (meaningfulProviders.Count == 0)
+        {
+            meaningfulProviders.Add(orderedProviders[0]);
+        }
+
+        var result = new List<CombatReplayEventContributionDto>(meaningfulProviders.Count + 1);
+        foreach ((AgentItem agent, double amount) in meaningfulProviders)
+        {
+            SingleActor? actor = FindActor(log, agent);
+            result.Add(new CombatReplayEventContributionDto
+            {
+                ActorId = actor?.UniqueID,
+                Name = actor?.Character ?? GetActorName(log, agent),
+                Icon = actor?.GetIcon() ?? "",
+                Amount = Math.Round(amount, 1),
+                Percent = Math.Round(amount * 100.0 / totalAmount, 1),
+            });
+        }
+
+        double remainingAmount = Math.Round(totalAmount - meaningfulProviders.Sum(pair => pair.Amount), 1);
+        if (remainingAmount > 0.0)
+        {
+            result.Add(new CombatReplayEventContributionDto
+            {
+                Name = "Other",
+                Amount = remainingAmount,
+                Percent = Math.Round(remainingAmount * 100.0 / totalAmount, 1),
+            });
+        }
+        return result;
+    }
+
+    private static List<CombatReplayEventTimelineEntryDto> BuildIncomingDamageTimeline(
+        ParsedEvtcLog log,
+        IReadOnlyList<HealthDamageEvent> damageEvents)
+    {
+        return [.. damageEvents.Select(damageEvent =>
+        {
+            string value = damageEvent.ShieldDamage > 0
+                ? $"{FormatWholeNumber(damageEvent.HealthDamage)} health, {FormatWholeNumber(damageEvent.ShieldDamage)} barrier"
+                : $"{FormatWholeNumber(damageEvent.HealthDamage)} health";
+            string secondary = "";
+            if (!damageEvent.CreditedFrom.IsUnknown)
+            {
+                secondary = GetActorName(log, damageEvent.CreditedFrom);
+            }
+            return new CombatReplayEventTimelineEntryDto
+            {
+                Time = damageEvent.Time,
+                TimeLabel = FormatTime(damageEvent.Time),
+                Label = damageEvent.Skill.Name,
+                Value = value,
+                Secondary = secondary,
+            };
+        })];
+    }
+
+    private static List<CombatReplayEventActorSummaryDto> BuildTopActorSummaries(
+        IEnumerable<(int? ActorId, string Name, string Icon, double Amount, long EventTime)> contributions)
+    {
+        return [.. contributions
+            .Where(entry => entry.ActorId != null)
+            .GroupBy(entry => entry.ActorId)
+            .Select(group => new CombatReplayEventActorSummaryDto
+            {
+                ActorId = group.Key,
+                Name = group.First().Name,
+                Icon = group.First().Icon,
+                Count = group.Count(),
+                Amount = Math.Round(group.Sum(entry => entry.Amount), 1),
+            })
+            .OrderByDescending(entry => entry.Amount)
+            .ThenByDescending(entry => entry.Count)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(5)];
+    }
+
+    private static string BuildCompactContributorSummary(IReadOnlyList<CombatReplayEventContributionDto> contributions)
+    {
+        List<CombatReplayEventContributionDto> displayContributions =
+        [
+            .. contributions.Where(entry =>
+                !string.IsNullOrWhiteSpace(entry.Name) &&
+                !string.Equals(entry.Name, "Other", StringComparison.OrdinalIgnoreCase))
+        ];
+        if (displayContributions.Count == 0)
+        {
+            return "No contributors";
+        }
+        CombatReplayEventContributionDto topContributor = displayContributions[0];
+        return displayContributions.Count == 1
+            ? topContributor.Name
+            : $"{topContributor.Name} +{displayContributions.Count - 1}";
+    }
+
+    private static SingleActor? FindActor(ParsedEvtcLog log, AgentItem agent)
+    {
+        try
+        {
+            return log.FindActor(agent);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string GetActorName(ParsedEvtcLog log, AgentItem agent)
+    {
+        return FindActor(log, agent)?.Character ?? agent.Name;
+    }
+
+    private static double GetLowestHealthPercent(
+        SingleActor actor,
+        ParsedEvtcLog log,
+        long start,
+        long end,
+        double defaultPercent)
+    {
+        double minimumPercent = defaultPercent;
+        foreach (Segment healthSegment in actor.GetHealthUpdates(log))
+        {
+            if (healthSegment.Start < start || healthSegment.Start > end)
+            {
+                continue;
+            }
+            minimumPercent = Math.Min(minimumPercent, healthSegment.Value);
+        }
+        return Math.Round(minimumPercent, 1);
+    }
+
+    private static int GetApproximateCurrentHealth(SingleActor actor, ParsedEvtcLog log, long time)
+    {
+        double currentHealthPercent = GetSafePercent(actor.GetCurrentHealthPercent(log, time));
+        int maxHealth = actor.GetHealth(log.CombatData);
+        return maxHealth > 0 ? (int)Math.Round(maxHealth * currentHealthPercent / 100.0, 0) : -1;
+    }
+
+    private static int GetApproximateCurrentBarrier(SingleActor actor, ParsedEvtcLog log, long time)
+    {
+        double currentBarrierPercent = GetSafePercent(actor.GetCurrentBarrierPercent(log, time));
+        int maxHealth = actor.GetHealth(log.CombatData);
+        return maxHealth > 0 ? (int)Math.Round(maxHealth * currentBarrierPercent / 100.0, 0) : 0;
+    }
+
+    private static double GetSafePercent(double value)
+    {
+        return value >= 0.0 ? Math.Round(value, 1) : 0.0;
+    }
+
     private static double ComputeBoonSupportByWindow(
         ParsedEvtcLog log,
         SingleActor provider,
@@ -2002,6 +2662,11 @@ internal static class CombatReplayAnalysisBuilder
     private static string FormatOneDecimal(double value)
     {
         return Math.Round(value, 1).ToString("0.0", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatTime(long time)
+    {
+        return $"{(time / 1000.0).ToString("0.000", CultureInfo.InvariantCulture)}s";
     }
 
     private static long[] BuildTimes(long fightEnd, int pollingRate)
