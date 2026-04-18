@@ -182,8 +182,24 @@ internal class CombatReplayPositioningPlayerTimelineDto
 
 internal class CombatReplayEventAnalysisDto
 {
-    public CombatReplayBarrierSaveAnalysisDto BarrierSaves { get; set; } = new();
-    public CombatReplayConditionConversionAnalysisDto ConditionConversions { get; set; } = new();
+    public CombatReplayDownAnalysisDto Downs { get; set; } = new();
+}
+
+internal class CombatReplayDownAnalysisDto
+{
+    public List<CombatReplayDownEventDto> Events { get; set; } = [];
+}
+
+internal class CombatReplayDownEventDto
+{
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public int ActorId { get; set; }
+    public string ActorName { get; set; } = "";
+    public string ActorIcon { get; set; } = "";
+    public string Side { get; set; } = "";
+    public bool IsEnemy { get; set; }
+    public string Outcome { get; set; } = "";
 }
 
 internal class CombatReplayBarrierSaveAnalysisDto
@@ -1659,9 +1675,63 @@ internal static class CombatReplayAnalysisBuilder
     {
         return new CombatReplayEventAnalysisDto
         {
-            BarrierSaves = BuildBarrierSaveAnalysis(log, squadPlayers),
-            ConditionConversions = BuildConditionConversionAnalysis(log, hostileTargets),
+            Downs = BuildDownAnalysis(log, squadPlayers, hostileTargets),
         };
+    }
+
+    private static CombatReplayDownAnalysisDto BuildDownAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostileTargets)
+    {
+        var events = new List<CombatReplayDownEventDto>();
+        events.AddRange(BuildDownEvents(log, squadPlayers, "Squad", false));
+        events.AddRange(BuildDownEvents(log, hostileTargets, "Enemy", true));
+        events.Sort((left, right) => left.Time.CompareTo(right.Time));
+        return new CombatReplayDownAnalysisDto
+        {
+            Events = events,
+        };
+    }
+
+    private static IEnumerable<CombatReplayDownEventDto> BuildDownEvents(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> actors,
+        string side,
+        bool isEnemy)
+    {
+        foreach (SingleActor actor in actors)
+        {
+            foreach (DownEvent downEvent in log.CombatData.GetDownEvents(actor.AgentItem).OrderBy(evt => evt.Time))
+            {
+                yield return new CombatReplayDownEventDto
+                {
+                    Time = downEvent.Time,
+                    TimeLabel = FormatTime(downEvent.Time),
+                    ActorId = actor.UniqueID,
+                    ActorName = actor.Character,
+                    ActorIcon = actor.GetIcon(),
+                    Side = side,
+                    IsEnemy = isEnemy,
+                    Outcome = GetDownOutcome(log, actor.AgentItem, downEvent.Time),
+                };
+            }
+        }
+    }
+
+    private static string GetDownOutcome(ParsedEvtcLog log, AgentItem agent, long downTime)
+    {
+        DeadEvent? nextDead = log.CombatData.GetDeadEvents(agent).FirstOrDefault(evt => evt.Time >= downTime);
+        AliveEvent? nextAlive = log.CombatData.GetAliveEvents(agent).FirstOrDefault(evt => evt.Time >= downTime);
+        if (nextDead != null && (nextAlive == null || nextDead.Time <= nextAlive.Time))
+        {
+            return "Killed";
+        }
+        if (nextAlive != null)
+        {
+            return "Recovered";
+        }
+        return "Unresolved";
     }
 
     private static CombatReplayBarrierSaveAnalysisDto BuildBarrierSaveAnalysis(

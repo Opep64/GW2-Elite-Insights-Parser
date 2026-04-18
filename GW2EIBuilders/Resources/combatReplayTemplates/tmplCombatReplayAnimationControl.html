@@ -19,6 +19,24 @@
                     class="replay"></canvas>
                 <canvas :width="canvasSize.x + 'px'" :height="canvasSize.y + 'px'" :id="htmlElementIDs.pickCanvasID"
                     class="replay"></canvas>
+                <div v-if="hoveredPlayerIndex !== null" class="combat-replay-hover-player-card" :style="hoverActorCardStyle">
+                    <combat-replay-player-stats-component
+                        :time="animationStatus.time"
+                        :buffs="true"
+                        :rotation="true"
+                        :playerindex="hoveredPlayerIndex"
+                        :buffstoshow="hoverBuffsToShow"
+                        :compact="false">
+                    </combat-replay-player-stats-component>
+                </div>
+                <div v-else-if="hoveredTargetIndex !== null" class="combat-replay-hover-player-card" :style="hoverActorCardStyle">
+                    <combat-replay-target-stats-component
+                        :time="animationStatus.time"
+                        :targetindex="hoveredTargetIndex"
+                        :buffstoshow="hoverTargetBuffsToShow"
+                        :analysis="false">
+                    </combat-replay-target-stats-component>
+                </div>
             </div>
             <div class="animation-control">
                 <div class="d-flex justify-content-center mb-1">
@@ -65,9 +83,12 @@
         mixins: [encounterPhaseComponent],
         data: function () {
             return {
+                animationStatus: reactiveAnimationData,
                 selectedSpeed: 1,
                 backwards: false,
                 sliderDelimiter: sliderDelimiter,
+                hoverBuffsToShow: ["Boons", "Conditions", "Encounter Specifics", "Shared", "Consumables", "Others"],
+                hoverTargetBuffsToShow: ["Boons", "Conditions", "Encounter Specifics", "Shared", "Others"],
             };
         },
         watch: {
@@ -148,6 +169,52 @@
                     pickCanvasID: "picking-canvas",
                     timeRangeID: "timeRange",
                     timeRangeDisplayID: "timeRangeDisplay",
+                };
+            },
+            hoveredPlayerIndex: function () {
+                if (this.animationStatus.hoveredActorKind !== "player" || this.animationStatus.hoveredActorID == null) {
+                    return null;
+                }
+                const player = logData.players.find(entry => entry && entry.uniqueID === this.animationStatus.hoveredActorID);
+                return player ? player.id : null;
+            },
+            hoveredTargetIndex: function () {
+                if (this.animationStatus.hoveredActorKind !== "target" || this.animationStatus.hoveredActorID == null) {
+                    return null;
+                }
+                const target = logData.targets.find(entry => entry && entry.uniqueID === this.animationStatus.hoveredActorID);
+                return target ? target.id : null;
+            },
+            hoverActorCardStyle: function () {
+                if (this.hoveredPlayerIndex === null && this.hoveredTargetIndex === null) {
+                    return null;
+                }
+                const cardWidth = this.hoveredTargetIndex !== null ? 380 : 430;
+                const horizontalOffset = 18;
+                const verticalOffset = 18;
+                const minMargin = 8;
+                let left = this.animationStatus.hoveredActorX + horizontalOffset;
+                let top = this.animationStatus.hoveredActorY + verticalOffset;
+                if (left + cardWidth > this.canvasSize.x - minMargin) {
+                    left = Math.max(minMargin, this.animationStatus.hoveredActorX - cardWidth - horizontalOffset);
+                }
+                const estimatedHeight = this.hoveredTargetIndex !== null ? 220 : 156;
+                if (top + estimatedHeight > this.canvasSize.y - minMargin) {
+                    top = Math.max(minMargin, this.animationStatus.hoveredActorY - estimatedHeight - verticalOffset);
+                }
+                return {
+                    position: 'absolute',
+                    left: left + 'px',
+                    top: top + 'px',
+                    width: cardWidth + 'px',
+                    maxWidth: 'calc(100% - 16px)',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    background: 'rgba(23, 26, 31, 0.97)',
+                    border: '1px solid rgba(214, 220, 228, 0.25)',
+                    boxShadow: '0 10px 24px rgba(0, 0, 0, 0.35)',
+                    pointerEvents: 'none',
+                    zIndex: 4,
                 };
             }
         },

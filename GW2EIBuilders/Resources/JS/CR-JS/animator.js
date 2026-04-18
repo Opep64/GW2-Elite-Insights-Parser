@@ -90,6 +90,10 @@ var animator = null;
 const reactiveAnimationData = {
     time: getDefaultCombatReplayTime(),
     selectedActorID: null,
+    hoveredActorKind: null,
+    hoveredActorID: null,
+    hoveredActorX: 0,
+    hoveredActorY: 0,
     animated: false,
     range: {
         min: 0,
@@ -293,6 +297,13 @@ class Animator {
         this.mouseDown = null;
         this.dragged = false;
         this.scale = 1.0;
+        this.hoveredActor = null;
+        this.hoveredActorLabel = "";
+        this.hoveredActorScreenPosition = null;
+        this.hoverDelay = 250;
+        this.hoverTimer = null;
+        this.pendingHoveredActor = null;
+        this.pendingHoveredActorScreenPosition = null;
         // options
         if (options) {
             if (options.inchToPixel) {
@@ -365,6 +376,8 @@ class Animator {
         this.mainContext.scale(resolutionMultiplier, resolutionMultiplier);
         this.bgContext.scale(resolutionMultiplier, resolutionMultiplier);
         this.pickContext.scale(resolutionMultiplier, resolutionMultiplier);
+        // Fresh canvas elements need a full background redraw after the DOM is reattached.
+        this.needBGUpdate = true;
         this._initMouseEvents();
         this._initTouchEvents();
     }
@@ -669,6 +682,52 @@ class Animator {
             animateCanvas(noUpdateTime);
         }
     }
+
+    focusActorAtScale(actorId, unitsAtScale) {
+        if (!this.mainCanvas || !this.bgCanvas) {
+            return;
+        }
+        const actor = this.getActorData(actorId);
+        if (!actor) {
+            return;
+        }
+        this.selectedActor = actor;
+        this.reactiveDataStatus.selectedActorID = actorId;
+        this._reselectIfEnglobed();
+        const selectedActor = this.selectedActor;
+        const pos = selectedActor ? selectedActor.getPosition() : null;
+        if (pos === null) {
+            if (this.animation === null) {
+                animateCanvas(noUpdateTime);
+            }
+            return;
+        }
+
+        const targetScale = unitsAtScale > 0 ? 50 / (InchToPixel * unitsAtScale) : 1.0;
+        const canvas = this.mainCanvas;
+        const ctx = this.mainContext;
+        const bgCtx = this.bgContext;
+        this.lastX = canvas.width / 2;
+        this.lastY = canvas.height / 2;
+        this.mouseDown = null;
+        this.dragged = false;
+        this.coneControl.enabled = true;
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(resolutionMultiplier, resolutionMultiplier);
+        bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+        bgCtx.scale(resolutionMultiplier, resolutionMultiplier);
+        ctx.scale(targetScale, targetScale);
+        bgCtx.scale(targetScale, targetScale);
+
+        const translateScale = 0.5 / resolutionMultiplier / targetScale;
+        ctx.translate(-pos.x + canvas.width * translateScale, -pos.y + canvas.height * translateScale);
+        bgCtx.translate(-pos.x + canvas.width * translateScale, -pos.y + canvas.height * translateScale);
+        this.needBGUpdate = true;
+        if (this.animation === null) {
+            animateCanvas(noUpdateTime);
+        }
+    }
     
     _reselectIfEnglobed() {     
         if (this.selectedActor && this.selectedActor.parentID >= 0) {
@@ -810,12 +869,190 @@ class Animator {
         }
     }
 
+    _getActorLabel(actor) {
+        if (!actor) {
+            return "";
+        }
+        if (actor.name && actor.name.length > 0) {
+            return actor.name;
+        }
+        const actorId = actor.id;
+        const collections = [logData.players, logData.targets, logData.enemies];
+        for (let i = 0; i < collections.length; i++) {
+            const collection = collections[i];
+            if (!collection) {
+                continue;
+            }
+            const match = collection.find(entry => entry && entry.uniqueID === actorId);
+            if (match && match.name) {
+                return match.name;
+            }
+        }
+        return "";
+    }
+
+    _isPlayerActor(actor) {
+        if (!actor) {
+            return false;
+        }
+        return !!(logData.players && logData.players.find(entry => entry && entry.uniqueID === actor.id));
+    }
+
+    _isTargetActor(actor) {
+        if (!actor) {
+            return false;
+        }
+        return !!(logData.targets && logData.targets.find(entry => entry && entry.uniqueID === actor.id));
+    }
+
+    _applyHoveredActor(actor, screenX, screenY) {
+        const nextLabel = this._getActorLabel(actor);
+        const sameActor = this.hoveredActor === actor;
+        const sameLabel = this.hoveredActorLabel === nextLabel;
+        const samePosition = this.hoveredActorScreenPosition !== null
+            && this.hoveredActorScreenPosition.x === screenX
+            && this.hoveredActorScreenPosition.y === screenY;
+        if (sameActor && sameLabel && samePosition) {
+            return;
+        }
+        this.hoveredActor = actor;
+        this.hoveredActorLabel = nextLabel;
+        this.hoveredActorScreenPosition = actor && nextLabel ? { x: screenX, y: screenY } : null;
+        const isPlayer = actor && this._isPlayerActor(actor);
+        const isTarget = actor && this._isTargetActor(actor);
+        this.reactiveDataStatus.hoveredActorKind = isPlayer ? "player" : (isTarget ? "target" : null);
+        this.reactiveDataStatus.hoveredActorID = actor && (isPlayer || isTarget) ? actor.id : null;
+        this.reactiveDataStatus.hoveredActorX = actor ? screenX : 0;
+        this.reactiveDataStatus.hoveredActorY = actor ? screenY : 0;
+        if (this.animation === null) {
+            animateCanvas(noUpdateTime);
+        }
+    }
+
+    _scheduleHoveredActor(actor, screenX, screenY) {
+        if (!actor) {
+            this._clearHoveredActor();
+            return;
+        }
+        if (this.hoveredActor !== null && this.hoveredActor !== actor) {
+            this._applyHoveredActor(null, 0, 0);
+        }
+        if (this.hoveredActor === actor) {
+            this._applyHoveredActor(actor, screenX, screenY);
+            return;
+        }
+        if (this.pendingHoveredActor === actor && this.hoverTimer !== null) {
+            this.pendingHoveredActorScreenPosition = { x: screenX, y: screenY };
+            return;
+        }
+        if (this.hoverTimer !== null) {
+            clearTimeout(this.hoverTimer);
+            this.hoverTimer = null;
+        }
+        this.pendingHoveredActor = actor;
+        this.pendingHoveredActorScreenPosition = { x: screenX, y: screenY };
+        this.hoverTimer = window.setTimeout(() => {
+            this.hoverTimer = null;
+            const pendingActor = this.pendingHoveredActor;
+            const pendingPosition = this.pendingHoveredActorScreenPosition;
+            this.pendingHoveredActor = null;
+            this.pendingHoveredActorScreenPosition = null;
+            if (!pendingActor) {
+                return;
+            }
+            this._applyHoveredActor(pendingActor, pendingPosition ? pendingPosition.x : screenX, pendingPosition ? pendingPosition.y : screenY);
+        }, this.hoverDelay);
+    }
+
+    _clearHoveredActor() {
+        if (this.hoverTimer !== null) {
+            clearTimeout(this.hoverTimer);
+            this.hoverTimer = null;
+        }
+        this.pendingHoveredActor = null;
+        this.pendingHoveredActorScreenPosition = null;
+        if (this.hoveredActor === null && this.hoveredActorLabel.length === 0 && this.hoveredActorScreenPosition === null) {
+            return;
+        }
+        this.hoveredActor = null;
+        this.hoveredActorLabel = "";
+        this.hoveredActorScreenPosition = null;
+        this.reactiveDataStatus.hoveredActorKind = null;
+        this.reactiveDataStatus.hoveredActorID = null;
+        this.reactiveDataStatus.hoveredActorX = 0;
+        this.reactiveDataStatus.hoveredActorY = 0;
+        if (this.animation === null) {
+            animateCanvas(noUpdateTime);
+        }
+    }
+
+    _pickActorAtScreenPoint(screenX, screenY) {
+        if (!this.pickContext) {
+            return null;
+        }
+        this._drawPickCanvas();
+        const pickedColor = this.pickContext.getImageData(
+            Math.round(screenX * resolutionMultiplier),
+            Math.round(screenY * resolutionMultiplier),
+            1,
+            1
+        ).data;
+        uint32ToUint8[0] = pickedColor[0];
+        uint32ToUint8[1] = pickedColor[1];
+        uint32ToUint8[2] = pickedColor[2];
+        uint32ToUint8[3] = 0;
+        return this.getActorData(uint32[0]);
+    }
+
+    _drawHoveredActorLabel() {
+        if (!this.hoveredActor || !this.hoveredActorLabel || !this.hoveredActor.canDraw() || !this.hoveredActorScreenPosition) {
+            return;
+        }
+        if (this._isPlayerActor(this.hoveredActor) || this._isTargetActor(this.hoveredActor)) {
+            return;
+        }
+        const ctx = this.mainContext;
+        const canvas = this.mainCanvas;
+        const paddingX = 10 * resolutionMultiplier;
+        const paddingY = 6 * resolutionMultiplier;
+        const fontSize = 13 * resolutionMultiplier;
+        const lineHeight = fontSize + paddingY * 2;
+        const margin = 14 * resolutionMultiplier;
+        const screenX = this.hoveredActorScreenPosition.x * resolutionMultiplier;
+        const screenY = this.hoveredActorScreenPosition.y * resolutionMultiplier;
+        const maxWidth = Math.max(120 * resolutionMultiplier, canvas.width - margin * 2);
+        const preferredX = screenX + margin;
+        const preferredY = screenY - margin;
+
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.font = "600 " + fontSize + "px Arial";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+
+        const measuredWidth = ctx.measureText(this.hoveredActorLabel).width;
+        const boxWidth = Math.min(measuredWidth + paddingX * 2, maxWidth);
+        const maxX = canvas.width - margin - boxWidth;
+        const minY = margin + lineHeight;
+        const boxX = Math.max(margin, Math.min(maxX, preferredX));
+        const boxY = Math.max(minY, preferredY);
+
+        ctx.fillStyle = "rgba(15, 18, 23, 0.92)";
+        ctx.strokeStyle = "rgba(220, 226, 235, 0.28)";
+        ctx.lineWidth = resolutionMultiplier;
+        ctx.fillRect(boxX, boxY - lineHeight, boxWidth, lineHeight);
+        ctx.strokeRect(boxX, boxY - lineHeight, boxWidth, lineHeight);
+
+        ctx.fillStyle = "#F4F6F9";
+        ctx.fillText(this.hoveredActorLabel, boxX + paddingX, boxY - lineHeight / 2);
+        ctx.restore();
+    }
+
     _initMouseEvents() {
         var _this = this;
         var canvas = this.mainCanvas;
         var ctx = this.mainContext;
         var bgCtx = this.bgContext;
-        var pickCtx = this.pickContext;
 
         canvas.addEventListener('mousedown', function (evt) {
             evt.preventDefault();
@@ -842,23 +1079,21 @@ class Animator {
                 if (_this.animation === null) {
                     animateCanvas(noUpdateTime);
                 }
+                _this._clearHoveredActor();
+            } else {
+                const hoveredActor = _this._pickActorAtScreenPoint(_this.lastX, _this.lastY);
+                _this._scheduleHoveredActor(hoveredActor, _this.lastX, _this.lastY);
             }
+        }, false);
+
+        canvas.addEventListener('mouseleave', function () {
+            _this._clearHoveredActor();
         }, false);
 
         document.body.addEventListener('mouseup', function (evt) {
             if (_this.mouseDown && Date.now() - _this.mouseDown.time < 150) {
-                _this._drawPickCanvas();
-                var downPt = {
-                    x: Math.round(_this.lastX * resolutionMultiplier),
-                    y: Math.round(_this.lastY * resolutionMultiplier)
-                };
-                var pickedColor = pickCtx.getImageData(downPt.x, downPt.y, 1, 1).data;
-                uint32ToUint8[0] = pickedColor[0];
-                uint32ToUint8[1] = pickedColor[1];
-                uint32ToUint8[2] = pickedColor[2];
-                uint32ToUint8[3] = 0;
-                var actorID = uint32[0];
-                _this.selectActor(actorID, true);
+                const pickedActor = _this._pickActorAtScreenPoint(_this.lastX, _this.lastY);
+                _this.selectActor(pickedActor ? pickedActor.id : 0, true);
             }
             _this.mouseDown = null;
         }, false);
@@ -1192,7 +1427,8 @@ class Animator {
                 // Screen space actors
                 this.screenSpaceActorData.draw(standardDraw);
             }
-            ctx.restore()
+            ctx.restore();
+            this._drawHoveredActorLabel();
         }
         //ctx.restore();  
     }

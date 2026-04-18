@@ -20,6 +20,7 @@ class IconDrawable {
         this.angles = params.angles;
         this.start = params.start;
         this.end = params.end;
+        this.name = params.name || "";
         this.img = new Image();
         this.img.src = _buildFallBackURL(params.img);
         this.img.onload = function () {

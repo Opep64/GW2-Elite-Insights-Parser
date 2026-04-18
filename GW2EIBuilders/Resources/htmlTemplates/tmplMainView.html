@@ -153,7 +153,7 @@
             showHealingSummary: function(playerIndex) {
                 var component = this;
                 this.selectPlayer(playerIndex);
-                this.$root.mode = 2;
+                this.$root.mode = 3;
                 this.$root.$nextTick(function() {
                     if (component.$root.$refs.healingExtensionView && component.$root.$refs.healingExtensionView.showPlayerHealingSummary) {
                         component.$root.$refs.healingExtensionView.showPlayerHealingSummary(playerIndex);

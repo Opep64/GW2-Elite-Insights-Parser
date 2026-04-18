@@ -10,23 +10,12 @@
             <li class="nav-item">
                 <a class="nav-link" :class="{active: mode === 2}" @click="mode = 2">Mechanics</a>
             </li>
-            <li class="nav-item">
-                <a class="nav-link" :class="{active: mode === 3}" @click="mode = 3">Analysis</a>
-            </li>
         </ul>
         <div class="squad-details">
             <keep-alive>
                 <combat-replay-players-stats-component v-if="mode === 0" :key="'players-cr-details'" :time="time" :selectedplayerid="selectedactorid"></combat-replay-players-stats-component>
                 <combat-replay-targets-stats-component v-if="mode === 1" :key="'targets-cr-details'" :time="time" :selectedtargetid="selectedactorid"></combat-replay-targets-stats-component>
                 <combat-replay-mechanics-list-component v-if="mode === 2" :key="'mechanics-cr-details'" :selectedplayerid="selectedactorid"></combat-replay-mechanics-list-component>
-                <combat-replay-overview-panel-component
-                    v-if="mode === 3"
-                    :key="'overview-cr-details'"
-                    :time="time"
-                    :selectedactorid="selectedactorid"
-                    :targetless="targetless"
-                    :hasanalysis="hasAnalysis">
-                </combat-replay-overview-panel-component>
             </keep-alive>
         </div>
     </div>
@@ -107,6 +96,10 @@
                 if (!animator || uniqueId == null) {
                     return;
                 }
+                if (this.$root && this.$root.mode === 2 && animator.focusActorAtScale) {
+                    animator.focusActorAtScale(uniqueId, 179.7);
+                    return;
+                }
                 animator.selectActor(uniqueId);
             },
             isPlayerActor: function (actor) {
@@ -146,7 +139,7 @@
         `,
     });
 
-    Vue.component("combat-replay-overview-panel-component", {
+    Vue.component("combat-replay-analysis-panel-component", {
         props: ["time", "selectedactorid", "targetless", "hasanalysis"],
         template: `
         <div class="d-flex flex-column">
@@ -839,34 +832,96 @@
         props: ["time", "selectedactorid"],
         data: function () {
             return {
-                eventMode: "barrier",
+                eventMode: "downs",
             };
         },
         template: `
         <div v-if="eventAnalysis" class="combat-replay-wvw-analysis-panel">
             <ul class="nav nav-pills d-flex flex-row justify-content-center mb-2 scale85 combat-replay-wvw-team-subtabs">
                 <li class="nav-item">
-                    <a class="nav-link" :class="{active: eventMode === 'barrier'}" @click="eventMode = 'barrier'">Barrier Saves</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" :class="{active: eventMode === 'conditions'}" @click="eventMode = 'conditions'">Condition Conversions</a>
+                    <a class="nav-link" :class="{active: eventMode === 'downs'}" @click="eventMode = 'downs'">Downs</a>
                 </li>
             </ul>
-            <combat-replay-barrier-saves-component
-                v-if="eventMode === 'barrier'"
+            <combat-replay-downs-component
+                v-if="eventMode === 'downs'"
                 :time="time"
                 :selectedactorid="selectedactorid">
-            </combat-replay-barrier-saves-component>
-            <combat-replay-condition-conversions-component
-                v-else
-                :time="time"
-                :selectedactorid="selectedactorid">
-            </combat-replay-condition-conversions-component>
+            </combat-replay-downs-component>
         </div>
         `,
         computed: {
             eventAnalysis: function () {
                 return this.getEventAnalysis();
+            },
+        },
+    });
+
+    Vue.component("combat-replay-downs-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time", "selectedactorid"],
+        template: `
+        <div class="combat-replay-wvw-analysis-panel">
+            <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
+                <div class="combat-replay-wvw-analysis-card-title">Downs</div>
+                <div style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;">
+                    <div v-if="events.length === 0" class="combat-replay-wvw-analysis-helper">No down events were found in this log.</div>
+                    <div v-else class="combat-replay-wvw-analysis-bursts">
+                        <button
+                            v-for="event in events"
+                            :key="'down-event-' + event.time + '-' + event.actorId + '-' + event.side"
+                            type="button"
+                            class="combat-replay-wvw-analysis-burst-entry"
+                            @click="openEvent(event)">
+                            <span class="combat-replay-wvw-analysis-burst-time">{{event.timeLabel}}</span>
+                            <span class="combat-replay-wvw-analysis-burst-detail">
+                                <span class="combat-replay-wvw-analysis-pill" :class="getSideClass(event)">{{event.side}}</span>
+                            </span>
+                            <span class="combat-replay-wvw-analysis-burst-detail">
+                                <img
+                                    v-if="event.actorIcon"
+                                    :src="event.actorIcon"
+                                    :alt="event.actorName"
+                                    style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem; flex: 0 0 auto;">
+                                {{event.actorName}}
+                            </span>
+                            <span class="combat-replay-wvw-analysis-burst-detail">
+                                <span class="combat-replay-wvw-analysis-pill" :class="getOutcomeClass(event.outcome)">{{event.outcome}}</span>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `,
+        computed: {
+            eventAnalysis: function () {
+                return this.getEventAnalysis();
+            },
+            downAnalysis: function () {
+                return this.eventAnalysis && this.eventAnalysis.downs ? this.eventAnalysis.downs : { events: [] };
+            },
+            events: function () {
+                return this.downAnalysis.events || [];
+            },
+        },
+        methods: {
+            openEvent: function (event) {
+                this.jumpToBurst(event.time);
+                this.selectReplayActor(event.actorId);
+            },
+            getOutcomeClass: function (outcome) {
+                if (outcome === "Recovered") {
+                    return "combat-replay-wvw-analysis-pill-success";
+                }
+                if (outcome === "Killed") {
+                    return "combat-replay-wvw-analysis-pill-weak";
+                }
+                return "combat-replay-wvw-analysis-pill-muted";
+            },
+            getSideClass: function (event) {
+                return event && event.isEnemy
+                    ? "combat-replay-wvw-analysis-pill-weak"
+                    : "combat-replay-wvw-analysis-pill-muted";
             },
         },
     });
@@ -2472,11 +2527,6 @@
                 targetless: logData.targetless,
                 mode: 0,
             };
-        },
-        computed: {
-            hasAnalysis: function () {
-                return !!(crData && crData.analysis);
-            },
         },
     });
 </script>

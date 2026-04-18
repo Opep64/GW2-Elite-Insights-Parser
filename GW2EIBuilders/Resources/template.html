@@ -69,7 +69,7 @@
             </div>
         </div>
     </div>
-    <div v-cloak id="content" :class="{'ei-container-small':mode !== 1, 'ei-container-big':mode === 1}">
+    <div v-cloak id="content" :class="{'ei-container-small':mode !== 1 && mode !== 2, 'ei-container-big':mode === 1 || mode === 2}">
         <div class="d-flex flex-row justify-content-center align-items-center mt-2 ">
             <div v-if="!!errorMessages" class="d-flex flex-column justify-content-center align-items-center">
                 <img v-for="message in errorMessages" class="mb-1 icon" :src="UIIcons.ExclamationMark" :data-original-title="message" />
@@ -94,8 +94,11 @@
                         <li v-if="cr" class="nav-item">
                             <a class="nav-link" @click="mode = 1" :class="{active: mode === 1 }">Combat Replay</a>
                         </li>                      
+                        <li v-if="cr" class="nav-item">
+                            <a class="nav-link" @click="mode = 2" :class="{active: mode === 2 }">Analysis</a>
+                        </li>
                         <li v-if="healingExtShow" class="nav-item">
-                            <a class="nav-link" @click="mode = 2" :class="{active: mode === 2 }">Healing Statistics</a>
+                            <a class="nav-link" @click="mode = 3" :class="{active: mode === 3 }">Healing Statistics</a>
                         </li>
                     </ul>
                 </div>
@@ -104,10 +107,10 @@
         <div>
             <keep-alive>
                 <main-view-component v-if="mode === 0" ref="mainView" :key="'main-view'" :light="light"></main-view-component>
-                <combat-replay-ui-component v-if="mode === 1" :mode="mode" :key="'combat-replay'" :light="light"></combat-replay-ui-component>
-                <healing-extension-view-component v-if="mode === 2" ref="healingExtensionView" :mode="mode" :key="'healing-extension'" :light="light"></healing-extension-view-component>            
+                <combat-replay-ui-component v-if="mode === 1 || mode === 2" :mode="mode" :analysisview="mode === 2" :key="'combat-replay-workspace'" :light="light"></combat-replay-ui-component>
+                <healing-extension-view-component v-if="mode === 3" ref="healingExtensionView" :mode="mode" :key="'healing-extension'" :light="light"></healing-extension-view-component>
             </keep-alive>
-            <div v-show="mode === 2 && !healingExt" class="mt-3 mb-3">
+            <div v-show="mode === 3 && !healingExt" class="mt-3 mb-3">
                 <h2 class="text-center">
                     The <a href="https://github.com/Krappa322/arcdps_healing_stats/releases">healing
                         stats addon</a> is now officially supported by Elite Insights. Make sure to download and enable its

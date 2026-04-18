@@ -442,7 +442,7 @@
                 <div class="wvw-summary-side-panel wvw-summary-moments-panel">
                     <div class="wvw-summary-side-panel-title">Fight Turning Points</div>
                     <div class="wvw-summary-side-panel-subtitle">
-                        <span v-if="combatReplayAvailable">Click a moment to jump Combat Replay to that point in the fight.</span>
+                        <span v-if="combatReplayAvailable">Click a moment to jump Analysis to that point in the fight, centered on the squad commander.</span>
                         <span v-else>Combat Replay is unavailable for this log, so moments cannot be jumped to.</span>
                     </div>
                     <div v-if="hasMoments()" class="wvw-summary-moments-body">
@@ -457,9 +457,9 @@
                                 ]"
                                 :tabindex="combatReplayAvailable ? 0 : -1"
                                 role="button"
-                                @click="jumpToCombatReplay(moment)"
-                                @keydown.enter.prevent="jumpToCombatReplay(moment)"
-                                @keydown.space.prevent="jumpToCombatReplay(moment)">
+                                @click="jumpToAnalysisMoment(moment)"
+                                @keydown.enter.prevent="jumpToAnalysisMoment(moment)"
+                                @keydown.space.prevent="jumpToAnalysisMoment(moment)">
                                 <div class="wvw-summary-moment-side">
                                     <div class="wvw-summary-moment-odds" :title="getMomentWinOddsTitle(moment)">
                                         <div class="wvw-summary-moment-odds-ring" :style="getMomentWinOddsStyle(moment)">
@@ -501,7 +501,7 @@
                                     @mouseleave="clearHoveredMomentIndex()"
                                     @focus="setHoveredMomentIndex(marker.index)"
                                     @blur="clearHoveredMomentIndex()"
-                                    @click="jumpToCombatReplay(marker.moment)">
+                                    @click="jumpToAnalysisMoment(marker.moment)">
                                 </button>
                                 <div
                                     :key="'moment-bubble-' + marker.index"
@@ -1165,6 +1165,38 @@
                         animator.updateTime(entry.time);
                         animator.updateTextInput();
                         component.closeDownDetailPopup();
+                    }, 0);
+                });
+            },
+            getAnalysisCommanderId: function() {
+                const analysis = typeof crData !== "undefined" && crData && crData.analysis ? crData.analysis : null;
+                const positioning = analysis && analysis.positioning ? analysis.positioning : null;
+                return positioning && positioning.hasCommander && positioning.commanderId > 0
+                    ? positioning.commanderId
+                    : null;
+            },
+            jumpToAnalysisMoment: function(moment) {
+                if (!moment || !this.combatReplayAvailable) {
+                    return;
+                }
+                const commanderId = this.getAnalysisCommanderId();
+                this.$root.mode = 2;
+                this.$root.$nextTick(function() {
+                    window.scrollTo(0, 0);
+                    setTimeout(function() {
+                        if (!animator) {
+                            return;
+                        }
+                        animator.stopAnimate(true);
+                        animator.updateTime(moment.time);
+                        if (commanderId != null && commanderId > 0) {
+                            if (typeof animator.focusActorAtScale === "function") {
+                                animator.focusActorAtScale(commanderId, 179.7);
+                            } else {
+                                animator.selectActor(commanderId);
+                            }
+                        }
+                        animator.updateTextInput();
                     }, 0);
                 });
             },
