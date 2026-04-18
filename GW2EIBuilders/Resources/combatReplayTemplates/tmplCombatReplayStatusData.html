@@ -911,6 +911,9 @@
                                     <span class="combat-replay-wvw-analysis-burst-detail">
                                         <span class="combat-replay-wvw-analysis-pill" :class="getOutcomeClass(event.outcome)">{{event.outcome}}</span>
                                     </span>
+                                    <span v-if="event.ccImpacted" class="combat-replay-wvw-analysis-burst-detail">
+                                        <span class="combat-replay-wvw-analysis-pill combat-replay-wvw-analysis-pill-weak">CC</span>
+                                    </span>
                                 </button>
                             </div>
                         </div>
@@ -967,6 +970,11 @@
                                         <div class="combat-replay-wvw-analysis-label">Contributors</div>
                                         <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.contributorCount)}}</div>
                                     </div>
+                                    <div class="combat-replay-wvw-analysis-metric">
+                                        <div class="combat-replay-wvw-analysis-label">CC impacted</div>
+                                        <div class="combat-replay-wvw-analysis-value">{{selectedEvent.ccImpacted ? 'Yes' : 'No'}}</div>
+                                                <div v-if="selectedEvent.ccImpacted" class="combat-replay-wvw-analysis-detail">{{formatCount(selectedEvent.ccImpactCount)}} CC sources, {{formatCount(selectedEvent.hardCcImpactCount)}} hard CC</div>
+                                    </div>
                                 </div>
                                 <div class="mt-2">
                                     <div class="combat-replay-wvw-analysis-label">
@@ -996,6 +1004,25 @@
                                                 {{condition.name}}
                                             </span>
                                             <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(condition.amount)}} stacks</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <div class="combat-replay-wvw-analysis-label">CC impact during window</div>
+                                    <div v-if="!selectedEvent.isEnemy" class="combat-replay-wvw-analysis-detail mb-1">
+                                        Soft CC duration excludes any overlap with Resistance.
+                                    </div>
+                                    <div v-if="selectedEvent.crowdControlEffects.length === 0" class="combat-replay-wvw-analysis-helper" style="padding: 0.5rem 0;">No hard CC or tracked condition CC was found in the down window.</div>
+                                    <div v-else class="combat-replay-wvw-analysis-bursts">
+                                        <div
+                                            v-for="entry in selectedEvent.crowdControlEffects"
+                                            :key="'selected-down-cc-' + selectedEvent.actorId + '-' + entry.label + '-' + entry.time"
+                                            class="combat-replay-wvw-analysis-burst-entry"
+                                            style="cursor: default;">
+                                            <span class="combat-replay-wvw-analysis-burst-time">{{entry.timeLabel}}</span>
+                                            <span class="combat-replay-wvw-analysis-burst-detail">{{entry.label}}</span>
+                                            <span class="combat-replay-wvw-analysis-burst-detail">{{entry.value}}</span>
+                                            <span class="combat-replay-wvw-analysis-burst-detail" v-if="entry.secondary">{{entry.secondary}}</span>
                                         </div>
                                     </div>
                                 </div>

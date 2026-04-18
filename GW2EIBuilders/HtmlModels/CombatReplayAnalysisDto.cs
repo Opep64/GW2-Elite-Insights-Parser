@@ -225,7 +225,11 @@ internal class CombatReplayDownEventDto
     public int BarrierDamageTaken { get; set; }
     public int HitCount { get; set; }
     public int ContributorCount { get; set; }
+    public bool CcImpacted { get; set; }
+    public int CcImpactCount { get; set; }
+    public int HardCcImpactCount { get; set; }
     public List<CombatReplayEventContributionDto> Conditions { get; set; } = [];
+    public List<CombatReplayEventTimelineEntryDto> CrowdControlEffects { get; set; } = [];
     public List<CombatReplayEventContributionDto> Contributors { get; set; } = [];
     public List<CombatReplayEventTimelineEntryDto> DamageTimeline { get; set; } = [];
 }
@@ -1796,6 +1800,7 @@ internal static class CombatReplayAnalysisBuilder
         long windowStart = Math.Max(log.LogData.LogStart, downEvent.Time - LookbackWindow);
         long conditionSnapshotTime = Math.Max(log.LogData.LogStart, downEvent.Time - 1);
         DamageWindowSummary summary = BuildDamageWindowSummary(log, actor, windowStart, downEvent.Time, conditionSnapshotTime);
+        (List<CombatReplayEventTimelineEntryDto> crowdControlEffects, int hardCcImpactCount) = BuildDownCrowdControlEffects(log, actor, windowStart, downEvent.Time, isEnemy);
 
         return new CombatReplayDownEventDto
         {
@@ -1822,7 +1827,11 @@ internal static class CombatReplayAnalysisBuilder
             BarrierDamageTaken = summary.BarrierDamageTaken,
             HitCount = summary.HitCount,
             ContributorCount = summary.ContributorCount,
+            CcImpacted = crowdControlEffects.Count > 0,
+            CcImpactCount = crowdControlEffects.Count,
+            HardCcImpactCount = hardCcImpactCount,
             Conditions = [.. summary.Conditions],
+            CrowdControlEffects = crowdControlEffects,
             Contributors = [.. summary.Contributors],
             DamageTimeline = [.. summary.DamageTimeline],
         };
@@ -2184,6 +2193,129 @@ internal static class CombatReplayAnalysisBuilder
             Conditions: conditions,
             Contributors: contributors,
             DamageTimeline: BuildDownDamageTimeline(log, damageEvents));
+    }
+
+    private static (List<CombatReplayEventTimelineEntryDto> Effects, int HardCcCount) BuildDownCrowdControlEffects(
+        ParsedEvtcLog log,
+        SingleActor actor,
+        long start,
+        long end,
+        bool isEnemy)
+    {
+        var crowdControlEffects = new List<CombatReplayEventTimelineEntryDto>();
+        int hardCcCount = 0;
+        List<Segment> resistanceSegments = isEnemy
+            ? []
+            : [.. actor.GetBuffStatus(log, Resistance, start, end).Where(segment => segment.Value > 0)];
+
+        List<CombatReplayEventTimelineEntryDto> hardCrowdControlEffects = [.. actor.GetIncomingCrowdControlEvents(null, log, start, end)
+            .GroupBy(crowdControlEvent => crowdControlEvent.SkillID)
+            .Select(group =>
+            {
+                CrowdControlEvent firstEvent = group.First();
+                int count = group.Count();
+                double totalDuration = Math.Round(group.Sum(crowdControlEvent => crowdControlEvent.Duration) / 1000.0, 1);
+                return new CombatReplayEventTimelineEntryDto
+                {
+                    Time = firstEvent.Time,
+                    TimeLabel = FormatTime(firstEvent.Time),
+                    Label = firstEvent.Skill.Name,
+                    Value = BuildPluralizedLabel(count, "hard CC event", "hard CC events"),
+                    Secondary = $"{FormatOneDecimal(totalDuration)}s total control",
+                };
+            })];
+        hardCcCount = hardCrowdControlEffects.Count;
+        crowdControlEffects.AddRange(hardCrowdControlEffects);
+
+        foreach (long buffId in ControlConditionBuffIds)
+        {
+            if (!log.Buffs.BuffsByIDs.TryGetValue(buffId, out Buff? buff))
+            {
+                continue;
+            }
+
+            IReadOnlyList<Segment> segments = actor.GetBuffStatus(log, buffId, start, end);
+            List<Segment> activeSegments = [.. segments.Where(segment => segment.Value > 0)];
+            if (activeSegments.Count == 0)
+            {
+                continue;
+            }
+
+            double maxStacks = Math.Round(activeSegments.Max(segment => segment.Value), 1);
+            long activeMilliseconds = activeSegments
+                .Sum(segment => Math.Max(0, Math.Min(segment.End, end) - Math.Max(segment.Start, start)));
+            long resistedMilliseconds = resistanceSegments.Count == 0
+                ? 0
+                : SumSegmentOverlap(activeSegments, resistanceSegments, start, end);
+            long effectiveMilliseconds = Math.Max(0, activeMilliseconds - resistedMilliseconds);
+            if (!isEnemy && effectiveMilliseconds == 0)
+            {
+                continue;
+            }
+
+            double effectiveSeconds = Math.Round(effectiveMilliseconds / 1000.0, 1);
+            double resistedSeconds = Math.Round(resistedMilliseconds / 1000.0, 1);
+            crowdControlEffects.Add(new CombatReplayEventTimelineEntryDto
+            {
+                Time = activeSegments[0].Start,
+                TimeLabel = FormatTime(activeSegments[0].Start),
+                Label = buff.Name,
+                Value = maxStacks > 1.0
+                    ? $"Up to {FormatOneDecimal(maxStacks)} stacks"
+                    : "Present in window",
+                Secondary = isEnemy
+                    ? $"{FormatOneDecimal(effectiveSeconds)}s active"
+                    : resistedMilliseconds > 0
+                        ? $"{FormatOneDecimal(effectiveSeconds)}s effective ({FormatOneDecimal(resistedSeconds)}s resisted)"
+                        : $"{FormatOneDecimal(effectiveSeconds)}s effective",
+            });
+        }
+
+        crowdControlEffects.Sort((left, right) => left.Time.CompareTo(right.Time));
+        return (crowdControlEffects, hardCcCount);
+    }
+
+    private static long SumSegmentOverlap(
+        IReadOnlyList<Segment> primarySegments,
+        IReadOnlyList<Segment> overlapSegments,
+        long start,
+        long end)
+    {
+        long overlap = 0;
+        int overlapIndex = 0;
+        foreach (Segment primarySegment in primarySegments)
+        {
+            long primaryStart = Math.Max(primarySegment.Start, start);
+            long primaryEnd = Math.Min(primarySegment.End, end);
+            if (primaryEnd <= primaryStart)
+            {
+                continue;
+            }
+
+            while (overlapIndex < overlapSegments.Count && overlapSegments[overlapIndex].End <= primaryStart)
+            {
+                overlapIndex++;
+            }
+
+            int currentOverlapIndex = overlapIndex;
+            while (currentOverlapIndex < overlapSegments.Count)
+            {
+                Segment overlapSegment = overlapSegments[currentOverlapIndex];
+                if (overlapSegment.Start >= primaryEnd)
+                {
+                    break;
+                }
+
+                long overlapStart = Math.Max(primaryStart, Math.Max(overlapSegment.Start, start));
+                long overlapEnd = Math.Min(primaryEnd, Math.Min(overlapSegment.End, end));
+                if (overlapEnd > overlapStart)
+                {
+                    overlap += overlapEnd - overlapStart;
+                }
+                currentOverlapIndex++;
+            }
+        }
+        return overlap;
     }
 
     private static List<CombatReplayEventContributionDto> BuildRecoverySupportContributors(
