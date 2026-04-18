@@ -54,11 +54,7 @@
             <div v-if="activeSummaryTab === 'overview' && summary.squadGrade" class="wvw-summary-grade-panel">
                 <div class="wvw-summary-grade-header">
                     <div class="wvw-summary-grade-copy">
-                        <div class="wvw-summary-side-panel-title">Squad Skill Estimate</div>
-                    </div>
-                    <div class="wvw-summary-grade-badge" :class="getGradeToneClass(summary.squadGrade.score)">
-                        <span class="wvw-summary-grade-letter">{{summary.squadGrade.grade}}</span>
-                        <span class="wvw-summary-grade-score">{{integerWithSpaces(summary.squadGrade.score)}}</span>
+                        <div class="wvw-summary-side-panel-title">Squad Skill</div>
                     </div>
                 </div>
                 <div class="wvw-summary-grade-grid">
@@ -66,10 +62,6 @@
                         class="wvw-summary-grade-card">
                         <div class="wvw-summary-grade-card-header">
                             <div class="wvw-summary-grade-card-title">{{subGrade.label}}</div>
-                            <div class="wvw-summary-grade-card-badge" :class="getGradeToneClass(subGrade.score)">
-                                <span>{{subGrade.grade}}</span>
-                                <span>{{integerWithSpaces(subGrade.score)}}</span>
-                            </div>
                         </div>
                         <div class="wvw-summary-grade-card-detail">{{subGrade.detail}}</div>
                     </div>
@@ -78,11 +70,7 @@
             <div v-if="activeSummaryTab === 'overview' && summary.oppositionEstimate" class="wvw-summary-grade-panel">
                 <div class="wvw-summary-grade-header">
                     <div class="wvw-summary-grade-copy">
-                        <div class="wvw-summary-side-panel-title">Opposition Skill Estimate</div>
-                    </div>
-                    <div class="wvw-summary-grade-badge" :class="getGradeToneClass(summary.oppositionEstimate.score)">
-                        <span class="wvw-summary-grade-letter">{{summary.oppositionEstimate.grade}}</span>
-                        <span class="wvw-summary-grade-score">{{integerWithSpaces(summary.oppositionEstimate.score)}}</span>
+                        <div class="wvw-summary-side-panel-title">Opposition Skill</div>
                     </div>
                 </div>
                 <div class="wvw-summary-grade-grid">
@@ -90,12 +78,77 @@
                         class="wvw-summary-grade-card">
                         <div class="wvw-summary-grade-card-header">
                             <div class="wvw-summary-grade-card-title">{{subGrade.label}}</div>
-                            <div class="wvw-summary-grade-card-badge" :class="getGradeToneClass(subGrade.score)">
-                                <span>{{subGrade.grade}}</span>
-                                <span>{{integerWithSpaces(subGrade.score)}}</span>
-                            </div>
                         </div>
                         <div class="wvw-summary-grade-card-detail">{{subGrade.detail}}</div>
+                    </div>
+                </div>
+            </div>
+            <div v-if="activeSummaryTab === 'overview' && summary.playerStandouts && summary.playerStandouts.hasEntries" class="wvw-summary-side-panel wvw-summary-standouts-panel">
+                <div class="wvw-summary-standouts-header">
+                    <div class="wvw-summary-side-panel-title">Player Standouts</div>
+                    <button type="button" class="combat-replay-overview-help-button" title="Player standouts help" aria-label="Show player standouts help" @click="showStandoutsHelp = true">?</button>
+                </div>
+                <div class="wvw-summary-side-panel-subtitle">{{summary.playerStandouts.summary}}</div>
+                <div class="wvw-summary-standouts-grid">
+                    <div v-for="category in summary.playerStandouts.categories" :key="'standout-' + category.key" class="wvw-summary-standout-card">
+                        <div class="wvw-summary-standout-card-title">{{category.label}}</div>
+                        <div class="wvw-summary-standout-card-detail">{{category.detail}}</div>
+                        <button v-for="(entry, index) in category.entries" :key="'standout-entry-' + category.key + '-' + entry.playerIndex"
+                            type="button"
+                            class="wvw-summary-standout-entry"
+                            @click="openPlayerSummary(entry.playerIndex)">
+                            <div class="wvw-summary-standout-entry-head">
+                                <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
+                                <img :src="entry.icon" :alt="entry.profession" class="icon"
+                                    :data-original-title="entry.profession">
+                                <span class="wvw-summary-top-player-name" :data-original-title="entry.account ? (entry.name + ' - ' + entry.account) : entry.name">{{entry.name}}</span>
+                            </div>
+                            <div class="wvw-summary-standout-entry-meta">
+                                <span class="wvw-summary-standout-role">{{entry.roleLabel}}</span>
+                                <span class="wvw-summary-standout-text">{{entry.whyLine}}</span>
+                                <div v-if="entry.evidenceTags && entry.evidenceTags.length > 0" class="wvw-summary-standout-tags">
+                                    <span v-for="(tag, tagIndex) in entry.evidenceTags" :key="'standout-tag-' + category.key + '-' + entry.playerIndex + '-' + tagIndex" class="wvw-summary-standout-tag">{{tag}}</span>
+                                </div>
+                            </div>
+                        </button>
+                        <div v-if="category.entries.length === 0" class="wvw-summary-side-panel-empty">
+                            No standout players were identified for this category.
+                        </div>
+                    </div>
+                </div>
+                <div v-if="showStandoutsHelp" class="wvw-summary-modal-backdrop" @click.self="showStandoutsHelp = false">
+                    <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Player standouts help">
+                        <button type="button" class="wvw-summary-modal-close" aria-label="Close player standouts help" @click="showStandoutsHelp = false">&times;</button>
+                        <div class="wvw-summary-modal-title">Player Standouts Help</div>
+                        <div class="wvw-summary-modal-subtitle">
+                            Player standouts recognize who mattered most in the fight's key moments. These are timed, fight-context highlights, not raw-stat leaderboards and not player grades.
+                        </div>
+                        <div class="combat-replay-overview-help-section">
+                            <div class="combat-replay-overview-help-heading">Categories</div>
+                            <ul class="combat-replay-overview-help-list">
+                                <li><strong>Fight Impact</strong>: the most influential overall timed contribution across the fight's high-leverage windows</li>
+                                <li><strong>Offensive Impact</strong>: burst pressure, focus fire, and damage that mattered during successful pressure windows</li>
+                                <li><strong>Control Impact</strong>: boon strips and effective crowd control timed around conversions and swings</li>
+                                <li><strong>Support Impact</strong>: healing, cleanses, and rez contribution during pressure and stabilization windows</li>
+                                <li><strong>Hybrid Impact</strong>: meaningful combined value across multiple roles in the same fight</li>
+                            </ul>
+                        </div>
+                        <div class="combat-replay-overview-help-section">
+                            <div class="combat-replay-overview-help-heading">Entry Breakdown</div>
+                            <ul class="combat-replay-overview-help-list">
+                                <li><strong>Role label</strong> is inferred from what the player actually contributed in this fight, rather than from profession expectations</li>
+                                <li><strong>Why line</strong> is the short explanation for why the player stood out in that category</li>
+                                <li><strong>Evidence tags</strong> are compact clues about the types of moments the player influenced, such as key windows, bomb windows, conversion windows, or support stabilization</li>
+                            </ul>
+                        </div>
+                        <div class="combat-replay-overview-help-section">
+                            <div class="combat-replay-overview-help-heading">Important Notes</div>
+                            <ul class="combat-replay-overview-help-list">
+                                <li>Standouts are weighted toward contributions during important fight windows identified from the Moments timeline</li>
+                                <li>Players can appear in multiple categories if they both performed their role well and had broad fight impact</li>
+                                <li>Meaningless raw output is de-emphasized compared with timed contribution in the right windows</li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -526,6 +579,7 @@
                 downDetailPopup: null,
                 downsOutcomePopup: null,
                 hoveredMomentIndex: null,
+                showStandoutsHelp: false,
             };
         },
         methods: {
@@ -592,21 +646,6 @@
                     formatted = this.integerWithSpaces(this.round(parsed));
                 }
                 return row.percentage ? formatted + "%" : formatted;
-            },
-            getGradeToneClass: function(score) {
-                if (score >= 74) {
-                    return "wvw-summary-grade-tone-strong";
-                }
-                if (score >= 58) {
-                    return "wvw-summary-grade-tone-good";
-                }
-                if (score >= 42) {
-                    return "wvw-summary-grade-tone-even";
-                }
-                if (score >= 30) {
-                    return "wvw-summary-grade-tone-weak";
-                }
-                return "wvw-summary-grade-tone-danger";
             },
             getMomentToneClass: function(moment) {
                 if (!moment || !moment.tone) {

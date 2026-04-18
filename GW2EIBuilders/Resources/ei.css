@@ -1444,6 +1444,119 @@ h6.actor-shorten-cr-compact {
     white-space: nowrap;
 }
 
+.wvw-summary-standouts-panel {
+    padding-top: 0.75rem;
+}
+
+.wvw-summary-standouts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+}
+
+.wvw-summary-standouts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 0.75rem;
+}
+
+.wvw-summary-standout-card {
+    border: 1px solid rgba(124, 130, 136, 0.35);
+    border-radius: 0.4rem;
+    background: rgba(0, 0, 0, 0.12);
+    padding: 0.65rem 0.7rem;
+}
+
+.wvw-summary-standout-card-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.wvw-summary-standout-card-detail {
+    margin-top: 0.18rem;
+    margin-bottom: 0.55rem;
+    font-size: 0.76rem;
+    opacity: 0.82;
+    line-height: 1.35;
+}
+
+.wvw-summary-standout-entry {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.32rem;
+    border: 1px solid rgba(124, 130, 136, 0.3);
+    border-radius: 0.32rem;
+    background: rgba(0, 0, 0, 0.1);
+    color: inherit;
+    padding: 0.42rem 0.5rem;
+    margin-bottom: 0.38rem;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+}
+
+.wvw-summary-standout-entry:last-child {
+    margin-bottom: 0;
+}
+
+.wvw-summary-standout-entry:hover,
+.wvw-summary-standout-entry:focus {
+    background: rgba(96, 124, 152, 0.18);
+    outline: none;
+}
+
+.wvw-summary-standout-entry-head {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+}
+
+.wvw-summary-standout-entry-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.14rem;
+    padding-left: 2.35rem;
+    min-width: 0;
+}
+
+.wvw-summary-standout-role {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    opacity: 0.78;
+}
+
+.wvw-summary-standout-text {
+    font-size: 0.76rem;
+    line-height: 1.35;
+    opacity: 0.88;
+}
+
+.wvw-summary-standout-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.24rem;
+    margin-top: 0.08rem;
+}
+
+.wvw-summary-standout-tag {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(124, 130, 136, 0.32);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    padding: 0.12rem 0.42rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.1;
+    opacity: 0.82;
+    white-space: nowrap;
+}
+
 .wvw-summary-moments-layout {
     display: flex;
     flex-direction: column;
