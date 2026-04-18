@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Globalization;
 using GW2EIEvtcParser;
 using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.LogLogic;
@@ -17,6 +18,7 @@ internal class CombatReplayAnalysisDto
     public CombatReplayTeamAnalysisDto Enemy { get; set; } = new();
     public CombatReplayThreatBoonAnalysisDto ThreatBoons { get; set; } = new();
     public CombatReplayPositioningAnalysisDto Positioning { get; set; } = new();
+    public Dictionary<int, CombatReplayPlayerEvaluationDto> PlayerEvaluations { get; set; } = [];
 }
 
 internal class CombatReplayTeamAnalysisDto
@@ -62,6 +64,7 @@ internal class CombatReplayAnalysisAttackerTimelineDto
 {
     public long[] Damage { get; set; } = [];
     public long[] Healing { get; set; } = [];
+    public long[] Barrier { get; set; } = [];
     public int[] Cleanses { get; set; } = [];
     public int[] Strips { get; set; } = [];
     public double[] TopTargetContribution { get; set; } = [];
@@ -174,6 +177,97 @@ internal class CombatReplayPositioningPlayerTimelineDto
     public double[] RunningLateralRiskRate { get; set; } = [];
 }
 
+internal class CombatReplayPlayerEvaluationDto
+{
+    public string ContributionProfile { get; set; } = "";
+    public string KeyContributionSummary { get; set; } = "";
+    public List<CombatReplayPlayerRoleMixEntryDto> RoleMix { get; set; } = [];
+    public List<CombatReplayPlayerEvaluationAreaDto> Areas { get; set; } = [];
+}
+
+internal class CombatReplayPlayerRoleMixEntryDto
+{
+    public string Label { get; set; } = "";
+    public double Percent { get; set; }
+}
+
+internal class CombatReplayPlayerEvaluationAreaDto
+{
+    public string Label { get; set; } = "";
+    public string Value { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public bool IsInteractive { get; set; }
+    public string DrilldownTitle { get; set; } = "";
+    public string DrilldownSubtitle { get; set; } = "";
+    public List<CombatReplayPlayerEvaluationDetailSectionDto> DetailSections { get; set; } = [];
+}
+
+internal class CombatReplayPlayerEvaluationDetailSectionDto
+{
+    public string Label { get; set; } = "";
+    public List<CombatReplayPlayerEvaluationDetailEntryDto> Entries { get; set; } = [];
+}
+
+internal class CombatReplayPlayerEvaluationDetailEntryDto
+{
+    public string Label { get; set; } = "";
+    public string Value { get; set; } = "";
+    public string Secondary { get; set; } = "";
+}
+
+internal class CombatReplayPlayerEvaluationAggregate
+{
+    public int PlayerId { get; set; }
+    public long DamageTotal { get; set; }
+    public double AverageTopTargetContribution { get; set; }
+    public double OffensiveConditionPressure { get; set; }
+    public double ControlConditionPressure { get; set; }
+    public int StripsTotal { get; set; }
+    public long HealingTotal { get; set; }
+    public long BarrierTotal { get; set; }
+    public int CleansesTotal { get; set; }
+    public int ResurrectsTotal { get; set; }
+    public double OffensiveBoonSupport { get; set; }
+    public double DefensiveBoonSupport { get; set; }
+    public double DefensiveConditionPressure { get; set; }
+    public int EffectiveCrowdControlCount { get; set; }
+    public double EffectiveCrowdControlDuration { get; set; }
+    public int BurstContributionWindows { get; set; }
+    public int ConversionContributionWindows { get; set; }
+    public int ControlContributionWindows { get; set; }
+    public int DefensiveSupportWindows { get; set; }
+    public bool HasPositioningData { get; set; }
+    public int PositioningSamples { get; set; }
+    public double InPositionRate { get; set; }
+    public double TooFarRate { get; set; }
+    public double OverextendedRate { get; set; }
+    public double LateralRiskRate { get; set; }
+    public List<CombatReplayPlayerEvaluationDetailEntryDto> EffectiveCrowdControlSources { get; set; } = [];
+    public List<CombatReplayPlayerEvaluationDetailEntryDto> ControlConditionSources { get; set; } = [];
+}
+
+internal class CombatReplayPlayerEvaluationMaximums
+{
+    public long DamageTotal { get; set; }
+    public double AverageTopTargetContribution { get; set; }
+    public double OffensiveConditionPressure { get; set; }
+    public double ControlConditionPressure { get; set; }
+    public int StripsTotal { get; set; }
+    public long HealingTotal { get; set; }
+    public long BarrierTotal { get; set; }
+    public int CleansesTotal { get; set; }
+    public int ResurrectsTotal { get; set; }
+    public double OffensiveBoonSupport { get; set; }
+    public double DefensiveBoonSupport { get; set; }
+    public double DefensiveConditionPressure { get; set; }
+    public int EffectiveCrowdControlCount { get; set; }
+    public double EffectiveCrowdControlDuration { get; set; }
+    public int BurstContributionWindows { get; set; }
+    public int ConversionContributionWindows { get; set; }
+    public int ControlContributionWindows { get; set; }
+    public int DefensiveSupportWindows { get; set; }
+}
+
 internal static class CombatReplayAnalysisBuilder
 {
     private const int LookbackWindow = 3000;
@@ -188,11 +282,56 @@ internal static class CombatReplayAnalysisBuilder
         MingledEnemyThreshold: 5,
         EnemyCountThreshold: 5,
         OverextendedPlayerThreshold: 5);
+    private static readonly IReadOnlyList<long> OffensiveConditionBuffIds =
+    [
+        Vulnerability,
+        Burning,
+        Poison,
+        Bleeding,
+        Torment,
+        Confusion,
+    ];
+    private static readonly IReadOnlyList<long> ControlConditionBuffIds =
+    [
+        Chilled,
+        Crippled,
+        Immobile,
+        Fear,
+        Taunt,
+    ];
+    private static readonly IReadOnlyList<long> OffensiveSupportBoonIds =
+    [
+        Might,
+        Fury,
+        Quickness,
+        Swiftness,
+        Superspeed,
+    ];
+    private static readonly IReadOnlyList<long> DefensiveSupportBoonIds =
+    [
+        Stability,
+        Protection,
+        Resolution,
+        Resistance,
+        Aegis,
+        Regeneration,
+        Vigor,
+        Swiftness,
+        Superspeed,
+    ];
+    private static readonly IReadOnlyList<long> DefensiveConditionBuffIds =
+    [
+        Weakness,
+        Blind,
+        Chilled,
+    ];
 
     private readonly record struct DamageRecord(long Time, int TargetUniqueId, int AttackerUniqueId, int Damage, bool HasDowned, bool HasKilled);
     private readonly record struct HealingRecord(long Time, int AttackerUniqueId, int Healing);
+    private readonly record struct BarrierRecord(long Time, int AttackerUniqueId, int Barrier);
     private readonly record struct CleanseRecord(long Time, int AttackerUniqueId);
     private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId);
+    private readonly record struct EvaluationWindow(long Start, long End);
     private readonly record struct TeamActorContext(
         IReadOnlyList<SingleActor> Attackers,
         IReadOnlyList<SingleActor> Targets,
@@ -234,7 +373,10 @@ internal static class CombatReplayAnalysisBuilder
             squadPlayers,
             "Enemy Team");
         var squadAnalysis = BuildTeamAnalysis(log, squadContext, boonIDs, times, snapshotCount);
+        var enemyAnalysis = BuildTeamAnalysis(log, enemyContext, boonIDs, times, snapshotCount);
         Player? commander = log.PlayerList.FirstOrDefault(player => !player.IsFakeActor && player.IsCommander(log));
+        var threatAnalysis = BuildThreatBoonAnalysis(log, squadPlayers, times, pollingRate, squadAnalysis);
+        var positioningAnalysis = BuildPositioningAnalysis(log, squadPlayers, hostileTargets, commander, times);
 
         return new CombatReplayAnalysisDto
         {
@@ -242,9 +384,10 @@ internal static class CombatReplayAnalysisBuilder
             HasHealingData = log.CombatData.HasEXTHealing,
             Times = times,
             Squad = squadAnalysis,
-            Enemy = BuildTeamAnalysis(log, enemyContext, boonIDs, times, snapshotCount),
-            ThreatBoons = BuildThreatBoonAnalysis(log, squadPlayers, times, pollingRate, squadAnalysis),
-            Positioning = BuildPositioningAnalysis(log, squadPlayers, hostileTargets, commander, times),
+            Enemy = enemyAnalysis,
+            ThreatBoons = threatAnalysis,
+            Positioning = positioningAnalysis,
+            PlayerEvaluations = BuildPlayerEvaluations(log, squadPlayers, hostileTargets, squadAnalysis, enemyAnalysis, positioningAnalysis, times),
         };
     }
 
@@ -293,6 +436,7 @@ internal static class CombatReplayAnalysisBuilder
                 {
                     Damage = new long[snapshotCount],
                     Healing = new long[snapshotCount],
+                    Barrier = new long[snapshotCount],
                     Cleanses = new int[snapshotCount],
                     Strips = new int[snapshotCount],
                     TopTargetContribution = new double[snapshotCount],
@@ -314,6 +458,7 @@ internal static class CombatReplayAnalysisBuilder
 
         var damageRecords = BuildDamageRecords(log, context);
         var healingRecords = BuildHealingRecords(log, context);
+        var barrierRecords = BuildBarrierRecords(log, context);
         var cleanseRecords = BuildCleanseRecords(log, context);
         var stripRecords = BuildStripRecords(log, context, boonIDs);
 
@@ -322,6 +467,8 @@ internal static class CombatReplayAnalysisBuilder
         var cumulativeDamageIndex = 0;
         var healingIndexStart = 0;
         var healingIndexEnd = 0;
+        var barrierIndexStart = 0;
+        var barrierIndexEnd = 0;
         var cleanseIndexStart = 0;
         var cleanseIndexEnd = 0;
         var stripIndexStart = 0;
@@ -362,6 +509,14 @@ internal static class CombatReplayAnalysisBuilder
             while (healingIndexEnd < healingRecords.Count && healingRecords[healingIndexEnd].Time <= time)
             {
                 healingIndexEnd++;
+            }
+            while (barrierIndexStart < barrierRecords.Count && barrierRecords[barrierIndexStart].Time < windowStart)
+            {
+                barrierIndexStart++;
+            }
+            while (barrierIndexEnd < barrierRecords.Count && barrierRecords[barrierIndexEnd].Time <= time)
+            {
+                barrierIndexEnd++;
             }
             while (cleanseIndexStart < cleanseRecords.Count && cleanseRecords[cleanseIndexStart].Time < windowStart)
             {
@@ -436,12 +591,18 @@ internal static class CombatReplayAnalysisBuilder
             var stripBuckets = new int[3];
             var stripCount = 0;
             var healingByAttacker = new Dictionary<int, long>();
+            var barrierByAttacker = new Dictionary<int, long>();
             var cleanseByAttacker = new Dictionary<int, int>();
 
             for (var index = healingIndexStart; index < healingIndexEnd; index++)
             {
                 var healing = healingRecords[index];
                 healingByAttacker[healing.AttackerUniqueId] = healingByAttacker.GetValueOrDefault(healing.AttackerUniqueId) + healing.Healing;
+            }
+            for (var index = barrierIndexStart; index < barrierIndexEnd; index++)
+            {
+                var barrier = barrierRecords[index];
+                barrierByAttacker[barrier.AttackerUniqueId] = barrierByAttacker.GetValueOrDefault(barrier.AttackerUniqueId) + barrier.Barrier;
             }
             for (var index = cleanseIndexStart; index < cleanseIndexEnd; index++)
             {
@@ -520,6 +681,7 @@ internal static class CombatReplayAnalysisBuilder
                 var timeline = result.Attackers[attacker.UniqueID];
                 timeline.Damage[snapshotIndex] = damageByAttacker.GetValueOrDefault(attacker.UniqueID);
                 timeline.Healing[snapshotIndex] = healingByAttacker.GetValueOrDefault(attacker.UniqueID);
+                timeline.Barrier[snapshotIndex] = barrierByAttacker.GetValueOrDefault(attacker.UniqueID);
                 timeline.Cleanses[snapshotIndex] = cleanseByAttacker.GetValueOrDefault(attacker.UniqueID);
                 timeline.Strips[snapshotIndex] = stripByAttacker.GetValueOrDefault(attacker.UniqueID);
                 timeline.TargetsHit[snapshotIndex] = attackerTargetsHit.TryGetValue(attacker.UniqueID, out var hitTargets) ? hitTargets.Count : 0;
@@ -1050,6 +1212,798 @@ internal static class CombatReplayAnalysisBuilder
         return times[candidateIndex] < times[currentBestIndex];
     }
 
+    private static Dictionary<int, CombatReplayPlayerEvaluationDto> BuildPlayerEvaluations(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostileTargets,
+        CombatReplayTeamAnalysisDto squadAnalysis,
+        CombatReplayTeamAnalysisDto enemyAnalysis,
+        CombatReplayPositioningAnalysisDto positioningAnalysis,
+        IReadOnlyList<long> times)
+    {
+        var aggregates = new List<CombatReplayPlayerEvaluationAggregate>(squadPlayers.Count);
+        foreach (SingleActor player in squadPlayers)
+        {
+            aggregates.Add(BuildPlayerEvaluationAggregate(log, player, squadPlayers, hostileTargets, squadAnalysis, enemyAnalysis, positioningAnalysis, times));
+        }
+
+        CombatReplayPlayerEvaluationMaximums maximums = new()
+        {
+            DamageTotal = aggregates.Max(aggregate => aggregate.DamageTotal),
+            AverageTopTargetContribution = aggregates.Max(aggregate => aggregate.AverageTopTargetContribution),
+            OffensiveConditionPressure = aggregates.Max(aggregate => aggregate.OffensiveConditionPressure),
+            ControlConditionPressure = aggregates.Max(aggregate => aggregate.ControlConditionPressure),
+            StripsTotal = aggregates.Max(aggregate => aggregate.StripsTotal),
+            HealingTotal = aggregates.Max(aggregate => aggregate.HealingTotal),
+            BarrierTotal = aggregates.Max(aggregate => aggregate.BarrierTotal),
+            CleansesTotal = aggregates.Max(aggregate => aggregate.CleansesTotal),
+            ResurrectsTotal = aggregates.Max(aggregate => aggregate.ResurrectsTotal),
+            OffensiveBoonSupport = aggregates.Max(aggregate => aggregate.OffensiveBoonSupport),
+            DefensiveBoonSupport = aggregates.Max(aggregate => aggregate.DefensiveBoonSupport),
+            DefensiveConditionPressure = aggregates.Max(aggregate => aggregate.DefensiveConditionPressure),
+            EffectiveCrowdControlCount = aggregates.Max(aggregate => aggregate.EffectiveCrowdControlCount),
+            EffectiveCrowdControlDuration = aggregates.Max(aggregate => aggregate.EffectiveCrowdControlDuration),
+            BurstContributionWindows = aggregates.Max(aggregate => aggregate.BurstContributionWindows),
+            ConversionContributionWindows = aggregates.Max(aggregate => aggregate.ConversionContributionWindows),
+            ControlContributionWindows = aggregates.Max(aggregate => aggregate.ControlContributionWindows),
+            DefensiveSupportWindows = aggregates.Max(aggregate => aggregate.DefensiveSupportWindows),
+        };
+
+        return aggregates.ToDictionary(
+            aggregate => aggregate.PlayerId,
+            aggregate => BuildPlayerEvaluationDto(aggregate, maximums, log.CombatData.HasEXTHealing, log.CombatData.HasEXTBarrier));
+    }
+
+    private static CombatReplayPlayerEvaluationAggregate BuildPlayerEvaluationAggregate(
+        ParsedEvtcLog log,
+        SingleActor player,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostileTargets,
+        CombatReplayTeamAnalysisDto squadAnalysis,
+        CombatReplayTeamAnalysisDto enemyAnalysis,
+        CombatReplayPositioningAnalysisDto positioningAnalysis,
+        IReadOnlyList<long> times)
+    {
+        CombatReplayAnalysisAttackerTimelineDto? attackerTimeline = squadAnalysis.Attackers.GetValueOrDefault(player.UniqueID);
+        CombatReplayPositioningPlayerTimelineDto? positioningTimeline = positioningAnalysis.Players.GetValueOrDefault(player.UniqueID);
+        SupportStatistics supportStats = player.GetToAllySupportStats(log, 0, log.LogData.LogEnd);
+        List<EvaluationWindow> burstWindows = BuildBurstWindows(squadAnalysis, times);
+        List<EvaluationWindow> conversionWindows = BuildConversionWindows(squadAnalysis, times, log.LogData.LogEnd);
+        List<EvaluationWindow> defensiveResponseWindows = BuildBurstWindows(enemyAnalysis, times);
+        List<EvaluationWindow> offensiveConditionWindows = MergeEvaluationWindows([.. burstWindows, .. conversionWindows]);
+        long wholeFightDamageToPlayers = 0;
+        foreach (SingleActor target in hostileTargets)
+        {
+            wholeFightDamageToPlayers += player.GetDamageStats(target, log, 0, log.LogData.LogEnd).Damage;
+        }
+
+        long wholeFightHealing = log.CombatData.HasEXTHealing
+            ? player.EXTHealing.GetOutgoingHealStats(null, log, 0, log.LogData.LogEnd).Healing
+            : 0;
+        long wholeFightBarrier = log.CombatData.HasEXTBarrier
+            ? player.EXTBarrier.GetOutgoingBarrierStats(null, log, 0, log.LogData.LogEnd).Barrier
+            : 0;
+
+        List<CrowdControlEvent> effectiveCrowdControlEvents = GetEffectiveCrowdControlEvents(log, player, hostileTargets);
+        int effectiveCount = effectiveCrowdControlEvents.Count;
+        double effectiveDuration = Math.Round(effectiveCrowdControlEvents.Sum(crowdControlEvent => crowdControlEvent.Duration) / 1000.0, 1);
+        Dictionary<EvaluationWindow, double> burstOffensiveConditionContribution = ComputeConditionContributionByWindow(log, player, hostileTargets, burstWindows, OffensiveConditionBuffIds);
+        Dictionary<EvaluationWindow, double> conversionOffensiveConditionContribution = ComputeConditionContributionByWindow(log, player, hostileTargets, conversionWindows, OffensiveConditionBuffIds);
+        Dictionary<EvaluationWindow, double> offensiveConditionContribution = ComputeConditionContributionByWindow(log, player, hostileTargets, offensiveConditionWindows, OffensiveConditionBuffIds);
+        Dictionary<EvaluationWindow, double> controlConditionContribution = ComputeConditionContributionByWindow(log, player, hostileTargets, conversionWindows, ControlConditionBuffIds);
+        Dictionary<EvaluationWindow, double> defensiveConditionContribution = ComputeConditionContributionByWindow(log, player, hostileTargets, defensiveResponseWindows, DefensiveConditionBuffIds);
+        Dictionary<long, double> controlConditionSourceContribution = ComputeConditionContributionByBuff(log, player, hostileTargets, conversionWindows, ControlConditionBuffIds);
+        double offensiveBoonSupport = ComputeBoonSupportByWindow(log, player, squadPlayers, offensiveConditionWindows, OffensiveSupportBoonIds);
+        double defensiveBoonSupport = ComputeBoonSupportByWindow(log, player, squadPlayers, defensiveResponseWindows, DefensiveSupportBoonIds);
+
+        return new CombatReplayPlayerEvaluationAggregate
+        {
+            PlayerId = player.UniqueID,
+            DamageTotal = wholeFightDamageToPlayers,
+            AverageTopTargetContribution = ComputeAverageContribution(attackerTimeline?.TopTargetContribution, attackerTimeline?.Damage),
+            OffensiveConditionPressure = Math.Round(offensiveConditionContribution.Values.Sum(), 1),
+            ControlConditionPressure = Math.Round(controlConditionContribution.Values.Sum(), 1),
+            StripsTotal = supportStats.BoonStripCount,
+            HealingTotal = wholeFightHealing,
+            BarrierTotal = wholeFightBarrier,
+            CleansesTotal = supportStats.ConditionCleanseCount,
+            ResurrectsTotal = supportStats.ResurrectCount,
+            OffensiveBoonSupport = offensiveBoonSupport,
+            DefensiveBoonSupport = defensiveBoonSupport,
+            DefensiveConditionPressure = Math.Round(defensiveConditionContribution.Values.Sum(), 1),
+            EffectiveCrowdControlCount = effectiveCount,
+            EffectiveCrowdControlDuration = effectiveDuration,
+            BurstContributionWindows = CountBurstContributionWindows(attackerTimeline, burstWindows, times, burstOffensiveConditionContribution),
+            ConversionContributionWindows = CountOffensiveConversionWindows(attackerTimeline, conversionWindows, times, conversionOffensiveConditionContribution),
+            ControlContributionWindows = CountControlContributionWindows(attackerTimeline, conversionWindows, times, effectiveCrowdControlEvents, controlConditionContribution),
+            DefensiveSupportWindows = CountDefensiveSupportWindows(attackerTimeline, defensiveResponseWindows, times, defensiveConditionContribution),
+            HasPositioningData = positioningTimeline != null && positioningTimeline.Eligible.Any(sample => sample),
+            PositioningSamples = CountEligibleSamples(positioningTimeline),
+            InPositionRate = ComputeEligibleRate(positioningTimeline, timeline => timeline.InPosition),
+            TooFarRate = ComputeEligibleRate(positioningTimeline, timeline => timeline.TooFar),
+            OverextendedRate = ComputeEligibleRate(positioningTimeline, timeline => timeline.Overextended),
+            LateralRiskRate = ComputeEligibleRate(positioningTimeline, timeline => timeline.LateralRisk),
+            EffectiveCrowdControlSources = BuildEffectiveCrowdControlSourceEntries(effectiveCrowdControlEvents),
+            ControlConditionSources = BuildConditionSourceEntries(log, controlConditionSourceContribution),
+        };
+    }
+
+    private static CombatReplayPlayerEvaluationDto BuildPlayerEvaluationDto(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        double offenseScore = ComputeWeightedScore(
+            (NormalizeValue(aggregate.DamageTotal, maximums.DamageTotal), 0.45),
+            (NormalizeValue(aggregate.AverageTopTargetContribution, maximums.AverageTopTargetContribution), 0.20),
+            (NormalizeValue(aggregate.OffensiveConditionPressure, maximums.OffensiveConditionPressure), maximums.OffensiveConditionPressure > 0.0 ? 0.12 : 0.0),
+            (NormalizeValue(aggregate.BurstContributionWindows, maximums.BurstContributionWindows), 0.13),
+            (NormalizeValue(aggregate.ConversionContributionWindows, maximums.ConversionContributionWindows), 0.10));
+
+        double controlScore = ComputeWeightedScore(
+            (NormalizeValue(aggregate.StripsTotal, maximums.StripsTotal), 0.32),
+            (NormalizeValue(aggregate.EffectiveCrowdControlCount, maximums.EffectiveCrowdControlCount), 0.26),
+            (NormalizeValue(aggregate.EffectiveCrowdControlDuration, maximums.EffectiveCrowdControlDuration), 0.16),
+            (NormalizeValue(aggregate.ControlConditionPressure, maximums.ControlConditionPressure), maximums.ControlConditionPressure > 0.0 ? 0.14 : 0.0),
+            (NormalizeValue(aggregate.ControlContributionWindows, maximums.ControlContributionWindows), 0.12));
+
+        double supportScore = ComputeWeightedScore(
+            (hasHealingData ? NormalizeValue(aggregate.HealingTotal, maximums.HealingTotal) : 0.0, hasHealingData ? 0.22 : 0.0),
+            (hasBarrierData ? NormalizeValue(aggregate.BarrierTotal, maximums.BarrierTotal) : 0.0, hasBarrierData ? 0.14 : 0.0),
+            (NormalizeValue(aggregate.CleansesTotal, maximums.CleansesTotal), hasHealingData || hasBarrierData ? 0.16 : 0.28),
+            (NormalizeValue(aggregate.OffensiveBoonSupport, maximums.OffensiveBoonSupport), maximums.OffensiveBoonSupport > 0.0 ? 0.08 : 0.0),
+            (NormalizeValue(aggregate.DefensiveBoonSupport, maximums.DefensiveBoonSupport), maximums.DefensiveBoonSupport > 0.0 ? 0.12 : 0.0),
+            (NormalizeValue(aggregate.DefensiveConditionPressure, maximums.DefensiveConditionPressure), maximums.DefensiveConditionPressure > 0.0 ? 0.10 : 0.0),
+            (NormalizeValue(aggregate.DefensiveSupportWindows, maximums.DefensiveSupportWindows), hasHealingData || hasBarrierData ? 0.10 : 0.20),
+            (NormalizeValue(aggregate.ResurrectsTotal, maximums.ResurrectsTotal), hasHealingData || hasBarrierData ? 0.08 : 0.16));
+
+        double positioningScore = aggregate.HasPositioningData
+            ? Math.Clamp(
+                aggregate.InPositionRate * 0.55 +
+                (100.0 - aggregate.TooFarRate) * 0.15 +
+                (100.0 - aggregate.OverextendedRate) * 0.15 +
+                (100.0 - aggregate.LateralRiskRate) * 0.15,
+                0.0,
+                100.0)
+            : 0.0;
+
+        List<(string Label, double Score)> rankedRoles =
+        [
+            ("Offense", offenseScore),
+            ("Control", controlScore),
+            ("Support", supportScore),
+        ];
+        rankedRoles = [.. rankedRoles.OrderByDescending(role => role.Score)];
+        double roleScoreTotal = rankedRoles.Sum(role => role.Score);
+        string contributionProfile = rankedRoles[1].Score >= rankedRoles[0].Score * 0.6
+            ? $"{rankedRoles[0].Label} + {rankedRoles[1].Label}"
+            : rankedRoles[0].Label;
+        List<CombatReplayPlayerEvaluationDetailSectionDto> controlTimingDetailSections = BuildControlTimingDetailSections(aggregate);
+
+        return new CombatReplayPlayerEvaluationDto
+        {
+            ContributionProfile = contributionProfile,
+            KeyContributionSummary = BuildPlayerContributionSummary(aggregate, rankedRoles[0].Label, rankedRoles[1].Label),
+            RoleMix =
+            [
+                new CombatReplayPlayerRoleMixEntryDto
+                {
+                    Label = "Offense",
+                    Percent = roleScoreTotal > 0.0 ? Math.Round(offenseScore * 100.0 / roleScoreTotal, 1) : 0.0,
+                },
+                new CombatReplayPlayerRoleMixEntryDto
+                {
+                    Label = "Control",
+                    Percent = roleScoreTotal > 0.0 ? Math.Round(controlScore * 100.0 / roleScoreTotal, 1) : 0.0,
+                },
+                new CombatReplayPlayerRoleMixEntryDto
+                {
+                    Label = "Support",
+                    Percent = roleScoreTotal > 0.0 ? Math.Round(supportScore * 100.0 / roleScoreTotal, 1) : 0.0,
+                },
+            ],
+            Areas =
+            [
+                new CombatReplayPlayerEvaluationAreaDto
+                {
+                    Label = "Offensive Presence",
+                    Value = BuildPluralizedLabel(aggregate.BurstContributionWindows, "burst window", "burst windows"),
+                    Detail = $"{FormatWholeNumber(aggregate.DamageTotal)} whole-fight damage to enemy players, {FormatOneDecimal(aggregate.AverageTopTargetContribution)}% average top-target contribution, {FormatWholeNumber((long)Math.Round(aggregate.OffensiveConditionPressure))} offensive condition pressure in key windows, impact in {BuildPluralizedLabel(aggregate.ConversionContributionWindows, "conversion window", "conversion windows")}",
+                },
+                new CombatReplayPlayerEvaluationAreaDto
+                {
+                    Label = "Control Timing",
+                    Value = BuildPluralizedLabel(aggregate.ControlContributionWindows, "control window", "control windows"),
+                    Detail = $"{FormatWholeNumber(aggregate.StripsTotal)} strips, {FormatWholeNumber(aggregate.EffectiveCrowdControlCount)} effective CC, {FormatOneDecimal(aggregate.EffectiveCrowdControlDuration)}s total control, {FormatWholeNumber((long)Math.Round(aggregate.ControlConditionPressure))} control condition pressure",
+                    IsInteractive = controlTimingDetailSections.Count > 0,
+                    DrilldownTitle = "Control Timing Detail",
+                    DrilldownSubtitle = "Shows the effective crowd control skills and control-condition types that fed this player's Control Timing result when that source data is available.",
+                    DetailSections = controlTimingDetailSections,
+                },
+                new CombatReplayPlayerEvaluationAreaDto
+                {
+                    Label = "Support Under Pressure",
+                    Value = BuildPluralizedLabel(aggregate.DefensiveSupportWindows, "response window", "response windows"),
+                    Detail = BuildSupportDetail(aggregate, hasHealingData, hasBarrierData),
+                },
+                new CombatReplayPlayerEvaluationAreaDto
+                {
+                    Label = "Positioning Context",
+                    Value = aggregate.HasPositioningData ? $"{FormatOneDecimal(aggregate.InPositionRate)}% in position" : "No positioning samples",
+                    Detail = aggregate.HasPositioningData
+                        ? $"{FormatOneDecimal(aggregate.TooFarRate)}% too far, {FormatOneDecimal(aggregate.OverextendedRate)}% overextended, {FormatOneDecimal(aggregate.LateralRiskRate)}% left/right exposed"
+                        : "Commander-relative positioning could not be evaluated for this player.",
+                },
+            ],
+        };
+    }
+
+    private static List<CombatReplayPlayerEvaluationDetailSectionDto> BuildControlTimingDetailSections(CombatReplayPlayerEvaluationAggregate aggregate)
+    {
+        var sections = new List<CombatReplayPlayerEvaluationDetailSectionDto>();
+        if (aggregate.EffectiveCrowdControlSources.Count > 0)
+        {
+            sections.Add(new CombatReplayPlayerEvaluationDetailSectionDto
+            {
+                Label = "Effective Crowd Control Sources",
+                Entries = aggregate.EffectiveCrowdControlSources,
+            });
+        }
+        if (aggregate.ControlConditionSources.Count > 0)
+        {
+            sections.Add(new CombatReplayPlayerEvaluationDetailSectionDto
+            {
+                Label = "Control Condition Sources",
+                Entries = aggregate.ControlConditionSources,
+            });
+        }
+        return sections;
+    }
+
+    private static string BuildPlayerContributionSummary(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        string primaryRole,
+        string secondaryRole)
+    {
+        return primaryRole switch
+        {
+            "Offense" when aggregate.ConversionContributionWindows > 0 => $"Most active in {BuildPluralizedLabel(aggregate.ConversionContributionWindows, "conversion window", "conversion windows")}, with pressure that carried into finishes.",
+            "Offense" => $"Most active in {BuildPluralizedLabel(Math.Max(aggregate.BurstContributionWindows, 1), "burst window", "burst windows")}, with steady pressure on focused targets.",
+            "Control" when aggregate.ControlContributionWindows > 0 && aggregate.ControlConditionPressure > 0
+                => $"Most visible through timed strips, crowd control, and control conditions in {BuildPluralizedLabel(aggregate.ControlContributionWindows, "control window", "control windows")}.",
+            "Control" when aggregate.ControlContributionWindows > 0 && aggregate.EffectiveCrowdControlCount > 0
+                => $"Most visible through timed strips and effective crowd control in {BuildPluralizedLabel(aggregate.ControlContributionWindows, "control window", "control windows")}.",
+            "Control" when aggregate.ControlContributionWindows > 0
+                => $"Most visible through timed strips in {BuildPluralizedLabel(aggregate.ControlContributionWindows, "control window", "control windows")}.",
+            "Control" => "Most visible through smaller control contributions across the fight's key exchanges.",
+            "Support" when aggregate.DefensiveBoonSupport > 0 && aggregate.DefensiveConditionPressure > 0
+                => $"Most visible in {BuildPluralizedLabel(Math.Max(aggregate.DefensiveSupportWindows, 1), "defensive response window", "defensive response windows")}, with defensive boon support and defensive conditions helping the squad recover pressure.",
+            "Support" when aggregate.DefensiveBoonSupport > 0
+                => $"Most visible in {BuildPluralizedLabel(Math.Max(aggregate.DefensiveSupportWindows, 1), "defensive response window", "defensive response windows")}, with defensive boon support helping the squad recover pressure.",
+            "Support" when aggregate.DefensiveConditionPressure > 0
+                => $"Most visible in {BuildPluralizedLabel(Math.Max(aggregate.DefensiveSupportWindows, 1), "defensive response window", "defensive response windows")}, with defensive conditions helping the squad absorb pressure.",
+            "Support" => $"Most visible in {BuildPluralizedLabel(Math.Max(aggregate.DefensiveSupportWindows, 1), "defensive response window", "defensive response windows")}, helping the squad recover pressure.",
+            _ when !string.IsNullOrEmpty(secondaryRole) => $"Observed contribution profile leans {primaryRole.ToLowerInvariant()} with {secondaryRole.ToLowerInvariant()} support around the fight's key exchanges.",
+            _ => $"Observed contribution profile leans {primaryRole.ToLowerInvariant()} around the fight's key exchanges.",
+        };
+    }
+
+    private static string BuildSupportDetail(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        var parts = new List<string>();
+        if (hasHealingData)
+        {
+            parts.Add($"{FormatWholeNumber(aggregate.HealingTotal)} healing");
+        }
+        else
+        {
+            parts.Add("healing unavailable in this log");
+        }
+
+        if (hasBarrierData)
+        {
+            parts.Add($"{FormatWholeNumber(aggregate.BarrierTotal)} barrier");
+        }
+
+        parts.Add($"{FormatWholeNumber(aggregate.CleansesTotal)} cleanses");
+        if (aggregate.OffensiveBoonSupport > 0)
+        {
+            parts.Add($"{FormatWholeNumber((long)Math.Round(aggregate.OffensiveBoonSupport))} offensive boon-seconds");
+        }
+        if (aggregate.DefensiveBoonSupport > 0)
+        {
+            parts.Add($"{FormatWholeNumber((long)Math.Round(aggregate.DefensiveBoonSupport))} defensive boon-seconds");
+        }
+        if (aggregate.DefensiveConditionPressure > 0)
+        {
+            parts.Add($"{FormatWholeNumber((long)Math.Round(aggregate.DefensiveConditionPressure))} defensive condition pressure");
+        }
+        parts.Add($"{FormatWholeNumber(aggregate.ResurrectsTotal)} rez");
+        return string.Join(", ", parts);
+    }
+
+    private static double ComputeBoonSupportByWindow(
+        ParsedEvtcLog log,
+        SingleActor provider,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<EvaluationWindow> windows,
+        IReadOnlyList<long> trackedBoonIds)
+    {
+        double total = 0.0;
+        foreach (EvaluationWindow window in windows)
+        {
+            foreach (SingleActor recipient in squadPlayers)
+            {
+                if (recipient.UniqueID == provider.UniqueID)
+                {
+                    continue;
+                }
+
+                foreach (long boonId in trackedBoonIds)
+                {
+                    if (!log.Buffs.BuffsByIDs.TryGetValue(boonId, out Buff? buff))
+                    {
+                        continue;
+                    }
+
+                    foreach (AbstractBuffApplyEvent applyEvent in recipient.GetBuffApplyEventsOnByID(log, window.Start, window.End, boonId, provider))
+                    {
+                        switch (applyEvent)
+                        {
+                            case BuffApplyEvent buffApplyEvent when buffApplyEvent.AppliedDuration < int.MaxValue:
+                                total += buffApplyEvent.AppliedDuration / 1000.0;
+                                break;
+                            case BuffExtensionEvent buffExtensionEvent:
+                                total += buffExtensionEvent.ExtendedDuration / 1000.0;
+                                break;
+                        }
+                    }
+                }
+            }
+        }
+
+        return Math.Round(total, 1);
+    }
+
+    private static List<CrowdControlEvent> GetEffectiveCrowdControlEvents(
+        ParsedEvtcLog log,
+        SingleActor actor,
+        IReadOnlyList<SingleActor> hostileTargets)
+    {
+        var effectiveEvents = new List<CrowdControlEvent>();
+
+        foreach (SingleActor target in hostileTargets)
+        {
+            foreach (CrowdControlEvent crowdControlEvent in actor.GetJustOutgoingActorCrowdControlEvents(target, log, log.LogData.LogStart, log.LogData.LogEnd))
+            {
+                if (!IsCrowdControlEffective(log, target, crowdControlEvent))
+                {
+                    continue;
+                }
+
+                effectiveEvents.Add(crowdControlEvent);
+            }
+        }
+
+        return effectiveEvents;
+    }
+
+    private static bool IsCrowdControlEffective(ParsedEvtcLog log, SingleActor target, CrowdControlEvent crowdControlEvent)
+    {
+        long stabilityCheckTime = Math.Max(log.LogData.LogStart, crowdControlEvent.Time - ParserHelper.ServerDelayConstant);
+        return !target.HasBuff(log, Stability, stabilityCheckTime);
+    }
+
+    private static List<EvaluationWindow> BuildBurstWindows(CombatReplayTeamAnalysisDto analysis, IReadOnlyList<long> times)
+    {
+        var windows = new List<EvaluationWindow>();
+        if (times.Count == 0)
+        {
+            return windows;
+        }
+
+        int limit = Math.Min(times.Count, Math.Min(analysis.BurstStrength.Length, analysis.StripSynced.Length));
+        int windowStart = -1;
+        for (int index = 0; index < limit; index++)
+        {
+            bool qualified = analysis.BurstStrength[index] == "strong" && analysis.StripSynced[index];
+            if (qualified && windowStart < 0)
+            {
+                windowStart = index;
+            }
+            else if (!qualified && windowStart >= 0)
+            {
+                windows.Add(CreateEvaluationWindow(windowStart, index - 1, times, times[^1]));
+                windowStart = -1;
+            }
+        }
+
+        if (windowStart >= 0)
+        {
+            windows.Add(CreateEvaluationWindow(windowStart, limit - 1, times, times[^1]));
+        }
+
+        return windows;
+    }
+
+    private static List<EvaluationWindow> BuildConversionWindows(
+        CombatReplayTeamAnalysisDto squadAnalysis,
+        IReadOnlyList<long> times,
+        long fightEnd)
+    {
+        var rawWindows = new List<EvaluationWindow>();
+        if (times.Count == 0)
+        {
+            return rawWindows;
+        }
+
+        int previousDownsTotal = 0;
+        int previousKillsTotal = 0;
+        int limit = Math.Min(times.Count, Math.Min(squadAnalysis.DownsTotal.Length, squadAnalysis.KillsTotal.Length));
+        for (int index = 0; index < limit; index++)
+        {
+            bool conversionAdvanced = squadAnalysis.DownsTotal[index] > previousDownsTotal || squadAnalysis.KillsTotal[index] > previousKillsTotal;
+            if (conversionAdvanced)
+            {
+                long anchorTime = times[index];
+                rawWindows.Add(new EvaluationWindow(
+                    Math.Max(0, anchorTime - LookbackWindow),
+                    Math.Min(fightEnd, anchorTime + BucketSize)));
+            }
+            previousDownsTotal = squadAnalysis.DownsTotal[index];
+            previousKillsTotal = squadAnalysis.KillsTotal[index];
+        }
+
+        return MergeEvaluationWindows(rawWindows);
+    }
+
+    private static EvaluationWindow CreateEvaluationWindow(int startIndex, int endIndex, IReadOnlyList<long> times, long fightEnd)
+    {
+        long startTime = Math.Max(0, times[startIndex] - LookbackWindow);
+        long endTime = Math.Min(fightEnd, times[endIndex] + BucketSize);
+        return new EvaluationWindow(startTime, endTime);
+    }
+
+    private static List<EvaluationWindow> MergeEvaluationWindows(List<EvaluationWindow> windows)
+    {
+        if (windows.Count == 0)
+        {
+            return windows;
+        }
+
+        List<EvaluationWindow> mergedWindows = [windows[0]];
+        foreach (EvaluationWindow window in windows.OrderBy(window => window.Start).Skip(1))
+        {
+            EvaluationWindow previous = mergedWindows[^1];
+            if (window.Start <= previous.End + BucketSize)
+            {
+                mergedWindows[^1] = new EvaluationWindow(previous.Start, Math.Max(previous.End, window.End));
+            }
+            else
+            {
+                mergedWindows.Add(window);
+            }
+        }
+
+        return mergedWindows;
+    }
+
+    private static int CountBurstContributionWindows(
+        CombatReplayAnalysisAttackerTimelineDto? attackerTimeline,
+        IReadOnlyList<EvaluationWindow> burstWindows,
+        IReadOnlyList<long> times,
+        IReadOnlyDictionary<EvaluationWindow, double> conditionContribution)
+    {
+        return burstWindows.Count(window =>
+            HasTimelineContribution(times, window, attackerTimeline?.Damage, attackerTimeline?.Strips) ||
+            conditionContribution.ContainsKey(window));
+    }
+
+    private static int CountOffensiveConversionWindows(
+        CombatReplayAnalysisAttackerTimelineDto? attackerTimeline,
+        IReadOnlyList<EvaluationWindow> conversionWindows,
+        IReadOnlyList<long> times,
+        IReadOnlyDictionary<EvaluationWindow, double> conditionContribution)
+    {
+        return conversionWindows.Count(window =>
+            HasTimelineContribution(times, window, attackerTimeline?.Damage) ||
+            conditionContribution.ContainsKey(window));
+    }
+
+    private static int CountControlContributionWindows(
+        CombatReplayAnalysisAttackerTimelineDto? attackerTimeline,
+        IReadOnlyList<EvaluationWindow> conversionWindows,
+        IReadOnlyList<long> times,
+        IReadOnlyList<CrowdControlEvent> effectiveCrowdControlEvents,
+        IReadOnlyDictionary<EvaluationWindow, double> conditionContribution)
+    {
+        return conversionWindows.Count(window =>
+            HasTimelineContribution(times, window, attackerTimeline?.Strips) ||
+            effectiveCrowdControlEvents.Any(crowdControlEvent => crowdControlEvent.Time >= window.Start && crowdControlEvent.Time <= window.End) ||
+            conditionContribution.ContainsKey(window));
+    }
+
+    private static int CountDefensiveSupportWindows(
+        CombatReplayAnalysisAttackerTimelineDto? attackerTimeline,
+        IReadOnlyList<EvaluationWindow> defensiveResponseWindows,
+        IReadOnlyList<long> times,
+        IReadOnlyDictionary<EvaluationWindow, double> conditionContribution)
+    {
+        return defensiveResponseWindows.Count(window =>
+            HasTimelineContribution(times, window, attackerTimeline?.Healing, attackerTimeline?.Barrier, attackerTimeline?.Cleanses) ||
+            conditionContribution.ContainsKey(window));
+    }
+
+    private static int CountTimelineContributionWindows(
+        IReadOnlyList<EvaluationWindow> windows,
+        IReadOnlyList<long> times,
+        params Array?[] series)
+    {
+        return windows.Count(window => series.Any(values => HasTimelineContribution(times, window, values)));
+    }
+
+    private static Dictionary<EvaluationWindow, double> ComputeConditionContributionByWindow(
+        ParsedEvtcLog log,
+        SingleActor provider,
+        IReadOnlyList<SingleActor> recipients,
+        IReadOnlyList<EvaluationWindow> windows,
+        IReadOnlyList<long> buffIds)
+    {
+        var result = new Dictionary<EvaluationWindow, double>();
+        foreach (EvaluationWindow window in windows)
+        {
+            double windowTotal = 0.0;
+            foreach (SingleActor recipient in recipients)
+            {
+                IReadOnlyDictionary<long, BuffVolumeByActorStatistics> activeBuffVolumes = recipient.GetActiveBuffVolumesDictionary(log, window.Start, window.End);
+                foreach (long buffId in buffIds)
+                {
+                    if (activeBuffVolumes.TryGetValue(buffId, out BuffVolumeByActorStatistics? stats) &&
+                        stats.IncomingBy.TryGetValue(provider, out double amount))
+                    {
+                        windowTotal += amount;
+                    }
+                }
+            }
+
+            if (windowTotal > 0.0)
+            {
+                result[window] = Math.Round(windowTotal, 1);
+            }
+        }
+
+        return result;
+    }
+
+    private static Dictionary<long, double> ComputeConditionContributionByBuff(
+        ParsedEvtcLog log,
+        SingleActor provider,
+        IReadOnlyList<SingleActor> recipients,
+        IReadOnlyList<EvaluationWindow> windows,
+        IReadOnlyList<long> buffIds)
+    {
+        var result = buffIds.ToDictionary(buffId => buffId, _ => 0.0);
+        foreach (EvaluationWindow window in windows)
+        {
+            foreach (SingleActor recipient in recipients)
+            {
+                IReadOnlyDictionary<long, BuffVolumeByActorStatistics> activeBuffVolumes = recipient.GetActiveBuffVolumesDictionary(log, window.Start, window.End);
+                foreach (long buffId in buffIds)
+                {
+                    if (activeBuffVolumes.TryGetValue(buffId, out BuffVolumeByActorStatistics? stats) &&
+                        stats.IncomingBy.TryGetValue(provider, out double amount))
+                    {
+                        result[buffId] += amount;
+                    }
+                }
+            }
+        }
+        return result
+            .Where(pair => pair.Value > 0.0)
+            .ToDictionary(pair => pair.Key, pair => Math.Round(pair.Value, 1));
+    }
+
+    private static List<CombatReplayPlayerEvaluationDetailEntryDto> BuildEffectiveCrowdControlSourceEntries(
+        IReadOnlyList<CrowdControlEvent> effectiveCrowdControlEvents)
+    {
+        return [.. effectiveCrowdControlEvents
+            .GroupBy(crowdControlEvent => crowdControlEvent.SkillID)
+            .Select(group =>
+            {
+                CrowdControlEvent firstEvent = group.First();
+                int count = group.Count();
+                double durationSeconds = Math.Round(group.Sum(crowdControlEvent => crowdControlEvent.Duration) / 1000.0, 1);
+                return new CombatReplayPlayerEvaluationDetailEntryDto
+                {
+                    Label = firstEvent.Skill.Name,
+                    Value = BuildPluralizedLabel(count, "effective CC event", "effective CC events"),
+                    Secondary = $"{FormatOneDecimal(durationSeconds)}s total control",
+                };
+            })
+            .OrderByDescending(entry => ParseLeadingNumericValue(entry.Secondary))
+            .ThenByDescending(entry => ParseLeadingNumericValue(entry.Value))
+            .ThenBy(entry => entry.Label)];
+    }
+
+    private static List<CombatReplayPlayerEvaluationDetailEntryDto> BuildConditionSourceEntries(
+        ParsedEvtcLog log,
+        IReadOnlyDictionary<long, double> sourceContributionByBuff)
+    {
+        return [.. sourceContributionByBuff
+            .Select(pair =>
+            {
+                string label = log.Buffs.BuffsByIDs.TryGetValue(pair.Key, out Buff? buff) ? buff.Name : $"Buff {pair.Key}";
+                return new CombatReplayPlayerEvaluationDetailEntryDto
+                {
+                    Label = label,
+                    Value = $"{FormatWholeNumber((long)Math.Round(pair.Value))} pressure",
+                };
+            })
+            .OrderByDescending(entry => ParseLeadingNumericValue(entry.Value))
+            .ThenBy(entry => entry.Label)];
+    }
+
+    private static double ParseLeadingNumericValue(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return 0.0;
+        }
+        string numericPortion = new string(value.TakeWhile(character => char.IsDigit(character) || character == '.' || character == ',').ToArray()).Replace(",", "");
+        return double.TryParse(numericPortion, out double parsedValue) ? parsedValue : 0.0;
+    }
+
+    private static bool HasTimelineContribution(IReadOnlyList<long> times, EvaluationWindow window, Array? values)
+    {
+        if (values == null)
+        {
+            return false;
+        }
+
+        int limit = Math.Min(times.Count, values.Length);
+        for (int index = 0; index < limit; index++)
+        {
+            if (times[index] < window.Start || times[index] > window.End)
+            {
+                continue;
+            }
+
+            switch (values)
+            {
+                case long[] longSeries when longSeries[index] > 0:
+                    return true;
+                case int[] intSeries when intSeries[index] > 0:
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasTimelineContribution(IReadOnlyList<long> times, EvaluationWindow window, params Array?[] values)
+    {
+        return values.Any(series => HasTimelineContribution(times, window, series));
+    }
+
+    private static int CountEligibleSamples(CombatReplayPositioningPlayerTimelineDto? positioningTimeline)
+    {
+        return positioningTimeline?.Eligible.Count(sample => sample) ?? 0;
+    }
+
+    private static double ComputeEligibleRate(
+        CombatReplayPositioningPlayerTimelineDto? positioningTimeline,
+        Func<CombatReplayPositioningPlayerTimelineDto, bool[]> selector)
+    {
+        if (positioningTimeline == null)
+        {
+            return 0.0;
+        }
+
+        bool[] selectedSeries = selector(positioningTimeline);
+        int eligibleCount = 0;
+        int selectedCount = 0;
+        for (int index = 0; index < positioningTimeline.Eligible.Length && index < selectedSeries.Length; index++)
+        {
+            if (!positioningTimeline.Eligible[index])
+            {
+                continue;
+            }
+
+            eligibleCount++;
+            if (selectedSeries[index])
+            {
+                selectedCount++;
+            }
+        }
+
+        return eligibleCount > 0 ? Math.Round(selectedCount * 100.0 / eligibleCount, 1) : 0.0;
+    }
+
+    private static double ComputeAverageContribution(double[]? values, long[]? weights)
+    {
+        if (values == null || values.Length == 0)
+        {
+            return 0.0;
+        }
+
+        if (weights == null || weights.Length == 0)
+        {
+            double average = values.Where(value => value > 0.0).DefaultIfEmpty(0.0).Average();
+            return Math.Round(average, 1);
+        }
+
+        double totalWeight = 0.0;
+        double totalValue = 0.0;
+        for (int index = 0; index < values.Length && index < weights.Length; index++)
+        {
+            if (weights[index] <= 0)
+            {
+                continue;
+            }
+
+            totalWeight += weights[index];
+            totalValue += values[index] * weights[index];
+        }
+
+        return totalWeight > 0.0 ? Math.Round(totalValue / totalWeight, 1) : 0.0;
+    }
+
+    private static double NormalizeValue(long value, long maximum)
+    {
+        return maximum > 0 ? Math.Clamp(value / (double)maximum, 0.0, 1.0) : 0.0;
+    }
+
+    private static double NormalizeValue(int value, int maximum)
+    {
+        return maximum > 0 ? Math.Clamp(value / (double)maximum, 0.0, 1.0) : 0.0;
+    }
+
+    private static double NormalizeValue(double value, double maximum)
+    {
+        return maximum > 0.0 ? Math.Clamp(value / maximum, 0.0, 1.0) : 0.0;
+    }
+
+    private static double ComputeWeightedScore(params (double Value, double Weight)[] inputs)
+    {
+        double totalWeight = 0.0;
+        double totalValue = 0.0;
+        foreach ((double value, double weight) in inputs)
+        {
+            if (weight <= 0.0)
+            {
+                continue;
+            }
+            totalWeight += weight;
+            totalValue += value * weight;
+        }
+
+        return totalWeight > 0.0 ? (totalValue / totalWeight) * 100.0 : 0.0;
+    }
+
+    private static string BuildPluralizedLabel(int count, string singular, string plural)
+    {
+        return count == 1 ? $"1 {singular}" : $"{count} {plural}";
+    }
+
+    private static string FormatWholeNumber(long value)
+    {
+        return value.ToString("N0", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatWholeNumber(int value)
+    {
+        return value.ToString("N0", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatOneDecimal(double value)
+    {
+        return Math.Round(value, 1).ToString("0.0", CultureInfo.InvariantCulture);
+    }
+
     private static long[] BuildTimes(long fightEnd, int pollingRate)
     {
         var times = new List<long>();
@@ -1103,6 +2057,28 @@ internal static class CombatReplayAnalysisBuilder
                     continue;
                 }
                 result.Add(new HealingRecord(healingEvent.Time, attacker.UniqueID, healingEvent.HealingDone));
+            }
+        }
+        result.Sort((left, right) => left.Time.CompareTo(right.Time));
+        return result;
+    }
+
+    private static List<BarrierRecord> BuildBarrierRecords(ParsedEvtcLog log, TeamActorContext context)
+    {
+        var result = new List<BarrierRecord>();
+        if (!log.CombatData.HasEXTBarrier)
+        {
+            return result;
+        }
+        foreach (var attacker in context.Attackers)
+        {
+            foreach (var barrierEvent in attacker.EXTBarrier.GetOutgoingBarrierEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd))
+            {
+                if (!context.AttackerIdsByAgent.ContainsKey(barrierEvent.To.GetFinalMaster()))
+                {
+                    continue;
+                }
+                result.Add(new BarrierRecord(barrierEvent.Time, attacker.UniqueID, barrierEvent.BarrierGiven));
             }
         }
         result.Sort((left, right) => left.Time.CompareTo(right.Time));

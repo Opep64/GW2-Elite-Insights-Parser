@@ -717,6 +717,21 @@ h6.actor-shorten-cr-compact {
     background: rgba(0, 0, 0, 0.12);
 }
 
+.combat-replay-wvw-analysis-metric-button {
+    width: 100%;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.combat-replay-wvw-analysis-metric-button:hover,
+.combat-replay-wvw-analysis-metric-button:focus-visible {
+    border-color: rgba(127, 216, 170, 0.45);
+    background: rgba(127, 216, 170, 0.08);
+    outline: none;
+}
+
 .combat-replay-wvw-analysis-label {
     font-size: 0.72rem;
     text-transform: uppercase;
@@ -838,6 +853,100 @@ h6.actor-shorten-cr-compact {
     gap: 0.6rem;
 }
 
+.combat-replay-player-analysis-switch {
+    display: inline-flex;
+    align-self: flex-start;
+    gap: 0.25rem;
+    padding: 0.2rem;
+    border: 1px solid rgba(124, 130, 136, 0.28);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.14);
+}
+
+.combat-replay-player-analysis-switch-button {
+    border: 0;
+    border-radius: 999px;
+    padding: 0.28rem 0.72rem;
+    background: transparent;
+    color: rgba(211, 216, 221, 0.84);
+    font: inherit;
+    font-size: 0.77rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+.combat-replay-player-analysis-switch-button:hover,
+.combat-replay-player-analysis-switch-button:focus {
+    background: rgba(124, 130, 136, 0.18);
+    color: #f3f6f8;
+    outline: none;
+}
+
+.combat-replay-player-analysis-switch-button.active {
+    background: rgba(110, 174, 142, 0.24);
+    color: #f3f6f8;
+    box-shadow: inset 0 0 0 1px rgba(110, 174, 142, 0.26);
+}
+
+.combat-replay-player-evaluation {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.combat-replay-player-evaluation-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.combat-replay-player-evaluation-profile {
+    font-size: 0.94rem;
+    font-weight: 700;
+}
+
+.combat-replay-player-evaluation-text {
+    font-size: 0.82rem;
+    opacity: 0.88;
+}
+
+.combat-replay-player-evaluation-hint {
+    margin-top: 0.28rem;
+    font-size: 0.72rem;
+    opacity: 0.72;
+}
+
+.combat-replay-player-evaluation-role-mix {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.45rem;
+}
+
+.combat-replay-player-evaluation-role {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.55rem;
+    border: 1px solid rgba(124, 130, 136, 0.35);
+    border-radius: 0.3rem;
+    padding: 0.38rem 0.5rem;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.combat-replay-player-evaluation-role-label {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.8;
+}
+
+.combat-replay-player-evaluation-role-value {
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
 .combat-replay-player-search {
     position: relative;
     margin-bottom: 0.55rem;
@@ -875,6 +984,23 @@ h6.actor-shorten-cr-compact {
     border-radius: 0.4rem;
     background: rgba(24, 28, 31, 0.98);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.combat-replay-player-evaluation-modal {
+    max-width: 42rem;
+}
+
+.combat-replay-player-evaluation-detail-section + .combat-replay-player-evaluation-detail-section {
+    margin-top: 0.9rem;
+}
+
+.combat-replay-player-evaluation-detail-heading {
+    margin-bottom: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    opacity: 0.82;
 }
 
 .combat-replay-player-search-result {

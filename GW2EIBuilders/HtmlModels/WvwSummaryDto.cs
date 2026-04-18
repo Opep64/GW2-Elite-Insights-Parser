@@ -15,6 +15,50 @@ namespace GW2EIBuilders.HtmlModels;
 
 internal class WvwSummaryDto
 {
+    private static readonly IReadOnlyList<long> OffensiveConditionBuffIds =
+    [
+        Vulnerability,
+        Burning,
+        Poison,
+        Bleeding,
+        Torment,
+        Confusion,
+    ];
+    private static readonly IReadOnlyList<long> ControlConditionBuffIds =
+    [
+        Chilled,
+        Crippled,
+        Immobile,
+        Fear,
+        Taunt,
+    ];
+    private static readonly IReadOnlyList<long> DefensiveConditionBuffIds =
+    [
+        Weakness,
+        Blind,
+        Chilled,
+    ];
+    private static readonly IReadOnlyList<long> OffensiveSupportBoonIds =
+    [
+        Might,
+        Fury,
+        Quickness,
+        Swiftness,
+        Superspeed,
+    ];
+    private static readonly IReadOnlyList<long> DefensiveSupportBoonIds =
+    [
+        Stability,
+        Protection,
+        Resolution,
+        Resistance,
+        Aegis,
+        Regeneration,
+        Vigor,
+        Swiftness,
+        Superspeed,
+    ];
+
     public string FightTime { get; set; } = "";
     public double FightTimeSeconds { get; set; }
     public string HealStatsNotice { get; set; } = "";
@@ -579,7 +623,7 @@ internal class WvwSummaryDto
 
             foreach (WvwSummaryStandoutWindow window in windows)
             {
-                WvwSummaryPlayerWindowContribution contribution = BuildPlayerWindowContribution(log, combatReplayAnalysis, actor, hostilePlayerTargets, window);
+                WvwSummaryPlayerWindowContribution contribution = BuildPlayerWindowContribution(log, combatReplayAnalysis, actor, squadActors, hostilePlayerTargets, window);
                 AccumulatePlayerWindowContribution(aggregate, contribution, window);
             }
 
@@ -593,6 +637,7 @@ internal class WvwSummaryDto
         ParsedEvtcLog log,
         CombatReplayAnalysisDto? combatReplayAnalysis,
         SingleActor actor,
+        IReadOnlyList<SingleActor> squadActors,
         IReadOnlyList<SingleActor> hostilePlayerTargets,
         WvwSummaryStandoutWindow window)
     {
@@ -623,14 +668,24 @@ internal class WvwSummaryDto
         double barrier = log.CombatData.HasEXTBarrier
             ? actor.EXTBarrier.GetOutgoingBarrierStats(null, log, window.StartTime, window.EndTime).Barrier
             : 0.0;
+        double offensiveConditionPressure = ComputeConditionSupportForWindow(log, actor, hostilePlayerTargets, window.StartTime, window.EndTime, OffensiveConditionBuffIds);
+        double controlConditionPressure = ComputeConditionSupportForWindow(log, actor, hostilePlayerTargets, window.StartTime, window.EndTime, ControlConditionBuffIds);
+        double defensiveConditionPressure = ComputeConditionSupportForWindow(log, actor, hostilePlayerTargets, window.StartTime, window.EndTime, DefensiveConditionBuffIds);
+        double offensiveBoonSupport = ComputeBoonSupportForWindow(log, actor, squadActors, window.StartTime, window.EndTime, OffensiveSupportBoonIds);
+        double defensiveBoonSupport = ComputeBoonSupportForWindow(log, actor, squadActors, window.StartTime, window.EndTime, DefensiveSupportBoonIds);
 
         return new WvwSummaryPlayerWindowContribution
         {
             DamagePerSecond = damageToPlayers / windowDurationSeconds,
+            OffensiveConditionPressurePerSecond = offensiveConditionPressure / windowDurationSeconds,
             StripPerSecond = support.BoonStripCount / windowDurationSeconds,
+            ControlConditionPressurePerSecond = controlConditionPressure / windowDurationSeconds,
             HealingPerSecond = healing / windowDurationSeconds,
             BarrierPerSecond = barrier / windowDurationSeconds,
             CleansePerSecond = support.ConditionCleanseCount / windowDurationSeconds,
+            OffensiveBoonSupportPerSecond = offensiveBoonSupport / windowDurationSeconds,
+            DefensiveBoonSupportPerSecond = defensiveBoonSupport / windowDurationSeconds,
+            DefensiveConditionPressurePerSecond = defensiveConditionPressure / windowDurationSeconds,
             ResurrectCount = support.ResurrectCount,
             EffectiveCrowdControlPerSecond = effectiveCrowdControlCount / windowDurationSeconds,
             EffectiveCrowdControlDurationPerSecond = effectiveCrowdControlDuration / windowDurationSeconds,
@@ -652,17 +707,18 @@ internal class WvwSummaryDto
         double disciplineWeight = window.Weight * window.DisciplineWeight;
 
         bool offensiveActive = offensiveWeight > 0.0 &&
-            (contribution.DamagePerSecond > 0.0 || contribution.TopTargetContribution > 0.0 || contribution.StripPerSecond > 0.0);
+            (contribution.DamagePerSecond > 0.0 || contribution.OffensiveConditionPressurePerSecond > 0.0 || contribution.TopTargetContribution > 0.0 || contribution.StripPerSecond > 0.0);
         bool controlActive = controlWeight > 0.0 &&
-            (contribution.StripPerSecond > 0.0 || contribution.EffectiveCrowdControlPerSecond > 0.0 || contribution.EffectiveCrowdControlDurationPerSecond > 0.0);
+            (contribution.StripPerSecond > 0.0 || contribution.ControlConditionPressurePerSecond > 0.0 || contribution.EffectiveCrowdControlPerSecond > 0.0 || contribution.EffectiveCrowdControlDurationPerSecond > 0.0);
         bool supportActive = supportWeight > 0.0 &&
-            (contribution.HealingPerSecond > 0.0 || contribution.BarrierPerSecond > 0.0 || contribution.CleansePerSecond > 0.0 || contribution.ResurrectCount > 0);
+            (contribution.HealingPerSecond > 0.0 || contribution.BarrierPerSecond > 0.0 || contribution.CleansePerSecond > 0.0 || contribution.OffensiveBoonSupportPerSecond > 0.0 || contribution.DefensiveBoonSupportPerSecond > 0.0 || contribution.DefensiveConditionPressurePerSecond > 0.0 || contribution.ResurrectCount > 0);
         bool fightActive = fightWeight > 0.0 &&
-            (contribution.DamagePerSecond > 0.0 || contribution.StripPerSecond > 0.0 || contribution.EffectiveCrowdControlPerSecond > 0.0 || contribution.HealingPerSecond > 0.0 || contribution.BarrierPerSecond > 0.0 || contribution.CleansePerSecond > 0.0 || contribution.ResurrectCount > 0);
+            (contribution.DamagePerSecond > 0.0 || contribution.OffensiveConditionPressurePerSecond > 0.0 || contribution.StripPerSecond > 0.0 || contribution.ControlConditionPressurePerSecond > 0.0 || contribution.EffectiveCrowdControlPerSecond > 0.0 || contribution.HealingPerSecond > 0.0 || contribution.BarrierPerSecond > 0.0 || contribution.CleansePerSecond > 0.0 || contribution.OffensiveBoonSupportPerSecond > 0.0 || contribution.DefensiveBoonSupportPerSecond > 0.0 || contribution.DefensiveConditionPressurePerSecond > 0.0 || contribution.ResurrectCount > 0);
 
         aggregate.OffensiveDamage += offensiveWeight * contribution.DamagePerSecond;
         aggregate.OffensiveFocus += offensiveWeight * contribution.TopTargetContribution;
         aggregate.OffensiveStrips += offensiveWeight * contribution.StripPerSecond;
+        aggregate.OffensiveConditions += offensiveWeight * contribution.OffensiveConditionPressurePerSecond;
         if (offensiveActive)
         {
             aggregate.OffensiveWindowWeight += window.Weight;
@@ -672,6 +728,7 @@ internal class WvwSummaryDto
         aggregate.ControlStrips += controlWeight * contribution.StripPerSecond;
         aggregate.ControlEffectiveCrowdControl += controlWeight * contribution.EffectiveCrowdControlPerSecond;
         aggregate.ControlCrowdControlDuration += controlWeight * contribution.EffectiveCrowdControlDurationPerSecond;
+        aggregate.ControlConditions += controlWeight * contribution.ControlConditionPressurePerSecond;
         if (controlActive)
         {
             aggregate.ControlWindowWeight += window.Weight;
@@ -681,6 +738,9 @@ internal class WvwSummaryDto
         aggregate.SupportHealing += supportWeight * contribution.HealingPerSecond;
         aggregate.SupportBarrier += supportWeight * contribution.BarrierPerSecond;
         aggregate.SupportCleanses += supportWeight * contribution.CleansePerSecond;
+        aggregate.SupportOffensiveBoons += supportWeight * contribution.OffensiveBoonSupportPerSecond;
+        aggregate.SupportDefensiveBoons += supportWeight * contribution.DefensiveBoonSupportPerSecond;
+        aggregate.SupportDefensiveConditions += supportWeight * contribution.DefensiveConditionPressurePerSecond;
         aggregate.SupportResurrects += supportWeight * contribution.ResurrectCount;
         if (supportActive)
         {
@@ -688,9 +748,9 @@ internal class WvwSummaryDto
             aggregate.SupportActiveWindowCount++;
         }
 
-        aggregate.FightDamage += fightWeight * contribution.DamagePerSecond;
-        aggregate.FightControl += fightWeight * (contribution.StripPerSecond + contribution.EffectiveCrowdControlPerSecond + contribution.EffectiveCrowdControlDurationPerSecond);
-        aggregate.FightSupport += fightWeight * (contribution.HealingPerSecond + contribution.BarrierPerSecond + contribution.CleansePerSecond + contribution.ResurrectCount * 3.0);
+        aggregate.FightDamage += fightWeight * (contribution.DamagePerSecond + contribution.OffensiveConditionPressurePerSecond);
+        aggregate.FightControl += fightWeight * (contribution.StripPerSecond + contribution.ControlConditionPressurePerSecond + contribution.EffectiveCrowdControlPerSecond + contribution.EffectiveCrowdControlDurationPerSecond);
+        aggregate.FightSupport += fightWeight * (contribution.HealingPerSecond + contribution.BarrierPerSecond + contribution.CleansePerSecond + contribution.OffensiveBoonSupportPerSecond + contribution.DefensiveBoonSupportPerSecond + contribution.DefensiveConditionPressurePerSecond + contribution.ResurrectCount * 3.0);
         if (fightActive)
         {
             aggregate.FightWindowWeight += window.Weight;
@@ -786,14 +846,19 @@ internal class WvwSummaryDto
             OffensiveDamage = aggregates.Max(aggregate => aggregate.OffensiveDamage),
             OffensiveFocus = aggregates.Max(aggregate => aggregate.OffensiveFocus),
             OffensiveStrips = aggregates.Max(aggregate => aggregate.OffensiveStrips),
+            OffensiveConditions = aggregates.Max(aggregate => aggregate.OffensiveConditions),
             OffensiveWindowWeight = aggregates.Max(aggregate => aggregate.OffensiveWindowWeight),
             ControlStrips = aggregates.Max(aggregate => aggregate.ControlStrips),
             ControlEffectiveCrowdControl = aggregates.Max(aggregate => aggregate.ControlEffectiveCrowdControl),
             ControlCrowdControlDuration = aggregates.Max(aggregate => aggregate.ControlCrowdControlDuration),
+            ControlConditions = aggregates.Max(aggregate => aggregate.ControlConditions),
             ControlWindowWeight = aggregates.Max(aggregate => aggregate.ControlWindowWeight),
             SupportHealing = aggregates.Max(aggregate => aggregate.SupportHealing),
             SupportBarrier = aggregates.Max(aggregate => aggregate.SupportBarrier),
             SupportCleanses = aggregates.Max(aggregate => aggregate.SupportCleanses),
+            SupportOffensiveBoons = aggregates.Max(aggregate => aggregate.SupportOffensiveBoons),
+            SupportDefensiveBoons = aggregates.Max(aggregate => aggregate.SupportDefensiveBoons),
+            SupportDefensiveConditions = aggregates.Max(aggregate => aggregate.SupportDefensiveConditions),
             SupportResurrects = aggregates.Max(aggregate => aggregate.SupportResurrects),
             SupportWindowWeight = aggregates.Max(aggregate => aggregate.SupportWindowWeight),
             FightDamage = aggregates.Max(aggregate => aggregate.FightDamage),
@@ -810,22 +875,27 @@ internal class WvwSummaryDto
         WvwSummaryPlayerStandoutMetricMaximums maximums)
     {
         double offensiveScore = ComputeWeightedStandoutScore(
-            (NormalizeStandoutMetric(aggregate.OffensiveDamage, maximums.OffensiveDamage), 0.48, maximums.OffensiveDamage > 0.0),
-            (NormalizeStandoutMetric(aggregate.OffensiveFocus, maximums.OffensiveFocus), 0.22, maximums.OffensiveFocus > 0.0),
-            (NormalizeStandoutMetric(aggregate.OffensiveStrips, maximums.OffensiveStrips), 0.18, maximums.OffensiveStrips > 0.0),
+            (NormalizeStandoutMetric(aggregate.OffensiveDamage, maximums.OffensiveDamage), 0.40, maximums.OffensiveDamage > 0.0),
+            (NormalizeStandoutMetric(aggregate.OffensiveFocus, maximums.OffensiveFocus), 0.20, maximums.OffensiveFocus > 0.0),
+            (NormalizeStandoutMetric(aggregate.OffensiveConditions, maximums.OffensiveConditions), 0.12, maximums.OffensiveConditions > 0.0),
+            (NormalizeStandoutMetric(aggregate.OffensiveStrips, maximums.OffensiveStrips), 0.16, maximums.OffensiveStrips > 0.0),
             (NormalizeStandoutMetric(aggregate.OffensiveWindowWeight, maximums.OffensiveWindowWeight), 0.12, maximums.OffensiveWindowWeight > 0.0));
 
         double controlScore = ComputeWeightedStandoutScore(
-            (NormalizeStandoutMetric(aggregate.ControlStrips, maximums.ControlStrips), 0.42, maximums.ControlStrips > 0.0),
-            (NormalizeStandoutMetric(aggregate.ControlEffectiveCrowdControl, maximums.ControlEffectiveCrowdControl), 0.34, maximums.ControlEffectiveCrowdControl > 0.0),
+            (NormalizeStandoutMetric(aggregate.ControlStrips, maximums.ControlStrips), 0.32, maximums.ControlStrips > 0.0),
+            (NormalizeStandoutMetric(aggregate.ControlEffectiveCrowdControl, maximums.ControlEffectiveCrowdControl), 0.28, maximums.ControlEffectiveCrowdControl > 0.0),
             (NormalizeStandoutMetric(aggregate.ControlCrowdControlDuration, maximums.ControlCrowdControlDuration), 0.14, maximums.ControlCrowdControlDuration > 0.0),
+            (NormalizeStandoutMetric(aggregate.ControlConditions, maximums.ControlConditions), 0.16, maximums.ControlConditions > 0.0),
             (NormalizeStandoutMetric(aggregate.ControlWindowWeight, maximums.ControlWindowWeight), 0.10, maximums.ControlWindowWeight > 0.0));
 
         double supportScore = ComputeWeightedStandoutScore(
-            (NormalizeStandoutMetric(aggregate.SupportHealing, maximums.SupportHealing), 0.30, maximums.SupportHealing > 0.0),
+            (NormalizeStandoutMetric(aggregate.SupportHealing, maximums.SupportHealing), 0.24, maximums.SupportHealing > 0.0),
             (NormalizeStandoutMetric(aggregate.SupportBarrier, maximums.SupportBarrier), 0.14, maximums.SupportBarrier > 0.0),
-            (NormalizeStandoutMetric(aggregate.SupportCleanses, maximums.SupportCleanses), 0.24, maximums.SupportCleanses > 0.0),
-            (NormalizeStandoutMetric(aggregate.SupportResurrects, maximums.SupportResurrects), 0.22, maximums.SupportResurrects > 0.0),
+            (NormalizeStandoutMetric(aggregate.SupportCleanses, maximums.SupportCleanses), 0.18, maximums.SupportCleanses > 0.0),
+            (NormalizeStandoutMetric(aggregate.SupportOffensiveBoons, maximums.SupportOffensiveBoons), 0.08, maximums.SupportOffensiveBoons > 0.0),
+            (NormalizeStandoutMetric(aggregate.SupportDefensiveBoons, maximums.SupportDefensiveBoons), 0.12, maximums.SupportDefensiveBoons > 0.0),
+            (NormalizeStandoutMetric(aggregate.SupportDefensiveConditions, maximums.SupportDefensiveConditions), 0.10, maximums.SupportDefensiveConditions > 0.0),
+            (NormalizeStandoutMetric(aggregate.SupportResurrects, maximums.SupportResurrects), 0.14, maximums.SupportResurrects > 0.0),
             (NormalizeStandoutMetric(aggregate.SupportWindowWeight, maximums.SupportWindowWeight), 0.10, maximums.SupportWindowWeight > 0.0));
 
         double disciplineScore = ComputeWeightedStandoutScore(
@@ -879,8 +949,12 @@ internal class WvwSummaryDto
             SupportStabilizeWindowCount = aggregate.SupportStabilizeWindowCount,
             SupportPressureWindowCount = aggregate.SupportPressureWindowCount,
             HasControlCrowdControl = aggregate.ControlEffectiveCrowdControl > 0.0 || aggregate.ControlCrowdControlDuration > 0.0,
+            HasControlConditions = aggregate.ControlConditions > 0.0,
             HasHealingSupport = aggregate.SupportHealing > 0.0 || aggregate.SupportBarrier > 0.0,
             HasCleanseSupport = aggregate.SupportCleanses > 0.0,
+            HasOffensiveBoonSupport = aggregate.SupportOffensiveBoons > 0.0,
+            HasDefensiveBoonSupport = aggregate.SupportDefensiveBoons > 0.0,
+            HasDefensiveConditions = aggregate.SupportDefensiveConditions > 0.0,
             HasResurrectSupport = aggregate.SupportResurrects > 0.0,
         };
     }
@@ -914,8 +988,12 @@ internal class WvwSummaryDto
         {
             "fight" => $"{roleLabel} influence across {Math.Max(player.FightWindowCount, 1)} key windows.",
             "offense" => $"Burst pressure and focus fire in {Math.Max(GetOffenseDisplayWindowCount(player), 1)} successful windows.",
-            "control" => player.HasControlCrowdControl
+            "control" => player.HasControlConditions && player.HasControlCrowdControl
+                ? $"Timed strips, control conditions, and effective CC in {Math.Max(GetControlDisplayWindowCount(player), 1)} conversion windows."
+                : player.HasControlCrowdControl
                 ? $"Timed strips and effective CC in {Math.Max(GetControlDisplayWindowCount(player), 1)} conversion windows."
+                : player.HasControlConditions
+                ? $"Timed strips and control conditions in {Math.Max(GetControlDisplayWindowCount(player), 1)} conversion windows."
                 : $"Timed strip pressure in {Math.Max(GetControlDisplayWindowCount(player), 1)} conversion windows.",
             "support" => BuildSupportStandoutDetail(player),
             "hybrid" => $"{roleLabel} value across {Math.Max(player.FightWindowCount, 1)} high-leverage windows.",
@@ -965,6 +1043,10 @@ internal class WvwSummaryDto
                 if (player.HasControlCrowdControl)
                 {
                     tags.Add("effective CC");
+                }
+                else if (player.HasControlConditions)
+                {
+                    tags.Add("control conditions");
                 }
                 break;
             case "support":
@@ -1035,6 +1117,26 @@ internal class WvwSummaryDto
             tags.Add("rez impact");
             return;
         }
+        if (player.HasDefensiveBoonSupport && player.HasDefensiveConditions)
+        {
+            tags.Add("boons + conditions");
+            return;
+        }
+        if (player.HasDefensiveBoonSupport && player.HasCleanseSupport)
+        {
+            tags.Add("boons + cleanse");
+            return;
+        }
+        if (player.HasDefensiveBoonSupport)
+        {
+            tags.Add("defensive boons");
+            return;
+        }
+        if (player.HasOffensiveBoonSupport)
+        {
+            tags.Add("offensive boons");
+            return;
+        }
         if (player.HasHealingSupport && player.HasCleanseSupport)
         {
             tags.Add("heal + cleanse");
@@ -1048,12 +1150,37 @@ internal class WvwSummaryDto
         if (player.HasCleanseSupport)
         {
             tags.Add("cleanse impact");
+            return;
+        }
+        if (player.HasDefensiveConditions)
+        {
+            tags.Add("defensive conditions");
         }
     }
 
     private static string BuildSupportStandoutDetail(WvwSummaryPlayerStandoutScoreDto player)
     {
         int supportWindowCount = Math.Max(GetSupportDisplayWindowCount(player), 1);
+        if (player.HasDefensiveBoonSupport && player.HasHealingSupport && player.HasCleanseSupport)
+        {
+            return $"Defensive boons, healing, and cleanses across {supportWindowCount} pressure windows.";
+        }
+        if (player.HasDefensiveBoonSupport && player.HasCleanseSupport)
+        {
+            return $"Defensive boons and cleanses across {supportWindowCount} pressure windows.";
+        }
+        if (player.HasDefensiveBoonSupport && player.HasDefensiveConditions)
+        {
+            return $"Defensive boons and conditions across {supportWindowCount} pressure windows.";
+        }
+        if (player.HasDefensiveBoonSupport)
+        {
+            return $"Defensive boon support across {supportWindowCount} pressure windows.";
+        }
+        if (player.HasOffensiveBoonSupport)
+        {
+            return $"Timed boon support across {supportWindowCount} high-pressure windows.";
+        }
         if (player.HasHealingSupport && player.HasCleanseSupport && player.HasResurrectSupport)
         {
             return $"Healing, cleanses, and rez support across {supportWindowCount} pressure windows.";
@@ -1300,6 +1427,78 @@ internal class WvwSummaryDto
             FightWeight = fightWeight,
             DisciplineWeight = disciplineWeight,
         };
+    }
+
+    private static double ComputeConditionSupportForWindow(
+        ParsedEvtcLog log,
+        SingleActor provider,
+        IReadOnlyList<SingleActor> recipients,
+        long windowStart,
+        long windowEnd,
+        IReadOnlyList<long> buffIds)
+    {
+        double totalSeconds = 0.0;
+        foreach (SingleActor recipient in recipients)
+        {
+            foreach (long buffId in buffIds)
+            {
+                foreach (AbstractBuffApplyEvent applyEvent in recipient.GetBuffApplyEventsOnByID(log, windowStart, windowEnd, buffId, provider))
+                {
+                    switch (applyEvent)
+                    {
+                        case BuffApplyEvent buffApplyEvent when buffApplyEvent.AppliedDuration < int.MaxValue:
+                            totalSeconds += buffApplyEvent.AppliedDuration / 1000.0;
+                            break;
+                        case BuffExtensionEvent buffExtensionEvent:
+                            totalSeconds += buffExtensionEvent.ExtendedDuration / 1000.0;
+                            break;
+                    }
+                }
+            }
+        }
+
+        return Math.Round(totalSeconds, 1);
+    }
+
+    private static double ComputeBoonSupportForWindow(
+        ParsedEvtcLog log,
+        SingleActor provider,
+        IReadOnlyList<SingleActor> recipients,
+        long windowStart,
+        long windowEnd,
+        IReadOnlyList<long> buffIds)
+    {
+        double totalSeconds = 0.0;
+        foreach (SingleActor recipient in recipients)
+        {
+            if (recipient.UniqueID == provider.UniqueID)
+            {
+                continue;
+            }
+
+            foreach (long buffId in buffIds)
+            {
+                if (!log.Buffs.BuffsByIDs.ContainsKey(buffId))
+                {
+                    continue;
+                }
+
+                foreach (AbstractBuffApplyEvent applyEvent in recipient.GetBuffApplyEventsOnByID(log, windowStart, windowEnd, buffId, provider))
+                {
+                    switch (applyEvent)
+                    {
+                        case BuffApplyEvent buffApplyEvent when buffApplyEvent.AppliedDuration < int.MaxValue:
+                            totalSeconds += buffApplyEvent.AppliedDuration / 1000.0;
+                            break;
+                        case BuffExtensionEvent buffExtensionEvent:
+                            totalSeconds += buffExtensionEvent.ExtendedDuration / 1000.0;
+                            break;
+                    }
+                }
+            }
+        }
+
+        return Math.Round(totalSeconds, 1);
     }
 
     private static double GetAverageWindowSeriesValue(
@@ -3308,14 +3507,19 @@ internal class WvwSummaryPlayerStandoutAggregate
     public double OffensiveDamage { get; set; }
     public double OffensiveFocus { get; set; }
     public double OffensiveStrips { get; set; }
+    public double OffensiveConditions { get; set; }
     public double OffensiveWindowWeight { get; set; }
     public double ControlStrips { get; set; }
     public double ControlEffectiveCrowdControl { get; set; }
     public double ControlCrowdControlDuration { get; set; }
+    public double ControlConditions { get; set; }
     public double ControlWindowWeight { get; set; }
     public double SupportHealing { get; set; }
     public double SupportBarrier { get; set; }
     public double SupportCleanses { get; set; }
+    public double SupportOffensiveBoons { get; set; }
+    public double SupportDefensiveBoons { get; set; }
+    public double SupportDefensiveConditions { get; set; }
     public double SupportResurrects { get; set; }
     public double SupportWindowWeight { get; set; }
     public double FightDamage { get; set; }
@@ -3347,14 +3551,19 @@ internal class WvwSummaryPlayerStandoutMetricMaximums
     public double OffensiveDamage { get; set; }
     public double OffensiveFocus { get; set; }
     public double OffensiveStrips { get; set; }
+    public double OffensiveConditions { get; set; }
     public double OffensiveWindowWeight { get; set; }
     public double ControlStrips { get; set; }
     public double ControlEffectiveCrowdControl { get; set; }
     public double ControlCrowdControlDuration { get; set; }
+    public double ControlConditions { get; set; }
     public double ControlWindowWeight { get; set; }
     public double SupportHealing { get; set; }
     public double SupportBarrier { get; set; }
     public double SupportCleanses { get; set; }
+    public double SupportOffensiveBoons { get; set; }
+    public double SupportDefensiveBoons { get; set; }
+    public double SupportDefensiveConditions { get; set; }
     public double SupportResurrects { get; set; }
     public double SupportWindowWeight { get; set; }
     public double FightDamage { get; set; }
@@ -3395,18 +3604,27 @@ internal class WvwSummaryPlayerStandoutScoreDto
     public int SupportStabilizeWindowCount { get; set; }
     public int SupportPressureWindowCount { get; set; }
     public bool HasControlCrowdControl { get; set; }
+    public bool HasControlConditions { get; set; }
     public bool HasHealingSupport { get; set; }
     public bool HasCleanseSupport { get; set; }
+    public bool HasOffensiveBoonSupport { get; set; }
+    public bool HasDefensiveBoonSupport { get; set; }
+    public bool HasDefensiveConditions { get; set; }
     public bool HasResurrectSupport { get; set; }
 }
 
 internal class WvwSummaryPlayerWindowContribution
 {
     public double DamagePerSecond { get; set; }
+    public double OffensiveConditionPressurePerSecond { get; set; }
     public double StripPerSecond { get; set; }
+    public double ControlConditionPressurePerSecond { get; set; }
     public double HealingPerSecond { get; set; }
     public double BarrierPerSecond { get; set; }
     public double CleansePerSecond { get; set; }
+    public double OffensiveBoonSupportPerSecond { get; set; }
+    public double DefensiveBoonSupportPerSecond { get; set; }
+    public double DefensiveConditionPressurePerSecond { get; set; }
     public double ResurrectCount { get; set; }
     public double EffectiveCrowdControlPerSecond { get; set; }
     public double EffectiveCrowdControlDurationPerSecond { get; set; }

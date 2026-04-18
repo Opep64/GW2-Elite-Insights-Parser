@@ -828,6 +828,8 @@
             return {
                 playerSearchOpen: false,
                 playerSearchQuery: "",
+                playerPanelMode: "evaluation",
+                playerEvaluationDetailModal: null,
             };
         },
         template: `
@@ -866,9 +868,82 @@
                             </div>
                         </div>
                     </div>
+                    <div class="combat-replay-player-analysis-switch" role="tablist" aria-label="Player panel mode">
+                        <button
+                            type="button"
+                            class="combat-replay-player-analysis-switch-button"
+                            :class="{active: playerPanelMode === 'evaluation'}"
+                            @click="closePlayerEvaluationAreaDetail(); playerPanelMode = 'evaluation'">
+                            Evaluation
+                        </button>
+                        <button
+                            type="button"
+                            class="combat-replay-player-analysis-switch-button"
+                            :class="{active: playerPanelMode === 'live'}"
+                            @click="closePlayerEvaluationAreaDetail(); playerPanelMode = 'live'">
+                            Live
+                        </button>
+                    </div>
                 </div>
             </div>
             <template v-if="selectedPlayer">
+                <div v-if="playerPanelMode === 'evaluation'" class="combat-replay-wvw-analysis-card">
+                    <div class="combat-replay-wvw-analysis-card-title">Player Evaluation</div>
+                    <div v-if="!selectedPlayerEvaluation" class="combat-replay-wvw-analysis-helper">
+                        Evaluation details are unavailable for this player in the current log.
+                    </div>
+                    <div v-else class="combat-replay-player-evaluation">
+                        <div class="combat-replay-player-evaluation-summary">
+                            <div class="combat-replay-player-evaluation-profile">{{selectedPlayerEvaluation.contributionProfile}}</div>
+                            <div class="combat-replay-player-evaluation-text">{{selectedPlayerEvaluation.keyContributionSummary}}</div>
+                        </div>
+                        <div v-if="selectedPlayerEvaluation.roleMix && selectedPlayerEvaluation.roleMix.length > 0" class="combat-replay-player-evaluation-role-mix">
+                            <div v-for="role in selectedPlayerEvaluation.roleMix" :key="'player-role-mix-' + role.label" class="combat-replay-player-evaluation-role">
+                                <span class="combat-replay-player-evaluation-role-label">{{role.label}}</span>
+                                <span class="combat-replay-player-evaluation-role-value">{{formatPercent(role.percent)}}</span>
+                            </div>
+                        </div>
+                        <div v-if="selectedPlayerEvaluation.areas && selectedPlayerEvaluation.areas.length > 0" class="combat-replay-wvw-analysis-grid">
+                            <component
+                                v-for="area in selectedPlayerEvaluation.areas"
+                                :key="'player-evaluation-area-' + area.label"
+                                :is="area.isInteractive ? 'button' : 'div'"
+                                :type="area.isInteractive ? 'button' : null"
+                                class="combat-replay-wvw-analysis-metric"
+                                :class="{'combat-replay-wvw-analysis-metric-button': area.isInteractive}"
+                                @click="area.isInteractive ? openPlayerEvaluationAreaDetail(area) : null">
+                                <div class="combat-replay-wvw-analysis-label">{{area.label}}</div>
+                                <div class="combat-replay-wvw-analysis-value">{{area.value}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{area.detail}}</div>
+                                <div v-if="area.isInteractive" class="combat-replay-player-evaluation-hint">Click for detail</div>
+                            </component>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="playerEvaluationDetailModal" class="wvw-summary-modal-backdrop" @click.self="closePlayerEvaluationAreaDetail">
+                    <div class="wvw-summary-modal combat-replay-player-evaluation-modal" role="dialog" aria-modal="true" :aria-label="playerEvaluationDetailModal.title">
+                        <button type="button" class="wvw-summary-modal-close" aria-label="Close player evaluation detail" @click="closePlayerEvaluationAreaDetail">&times;</button>
+                        <div class="wvw-summary-modal-title">{{playerEvaluationDetailModal.title}}</div>
+                        <div v-if="playerEvaluationDetailModal.subtitle" class="wvw-summary-modal-subtitle">
+                            <span>{{playerEvaluationDetailModal.subtitle}}</span>
+                        </div>
+                        <div v-for="section in playerEvaluationDetailModal.sections" :key="'player-evaluation-detail-' + section.label" class="combat-replay-player-evaluation-detail-section">
+                            <div class="combat-replay-player-evaluation-detail-heading">{{section.label}}</div>
+                            <div class="wvw-summary-modal-list">
+                                <div v-for="entry in section.entries" :key="'player-evaluation-detail-entry-' + section.label + '-' + entry.label" class="wvw-summary-modal-row">
+                                    <div class="wvw-summary-modal-skill">
+                                        <span class="wvw-summary-modal-skill-name">{{entry.label}}</span>
+                                    </div>
+                                    <div class="wvw-summary-modal-values">
+                                        <span class="wvw-summary-modal-count">{{entry.value}}</span>
+                                        <span v-if="entry.secondary" class="wvw-summary-modal-secondary">{{entry.secondary}}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <template v-else>
                 <div class="combat-replay-wvw-analysis-card">
                     <div class="combat-replay-wvw-analysis-card-title">Burst Window (last 3s)</div>
                     <div class="combat-replay-wvw-analysis-grid">
@@ -905,7 +980,7 @@
                     </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-card">
-                    <div class="combat-replay-wvw-analysis-card-title">Positioning</div>
+                    <div class="combat-replay-wvw-analysis-card-title">Live Positioning</div>
                     <div v-if="!positioningAnalysis" class="combat-replay-wvw-analysis-helper">
                         Positioning analysis is unavailable for this log.
                     </div>
@@ -944,7 +1019,7 @@
                     </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-card">
-                    <div class="combat-replay-wvw-analysis-card-title">Weighted Boons</div>
+                    <div class="combat-replay-wvw-analysis-card-title">Live Weighted Boons</div>
                     <div v-if="!selectedThreatTimeline" class="combat-replay-wvw-analysis-helper">
                         No weighted boon data is available for this player.
                     </div>
@@ -967,6 +1042,7 @@
                         </div>
                     </div>
                 </div>
+                </template>
             </template>
         </div>
         `,
@@ -997,6 +1073,12 @@
             },
             selectedPlayer: function () {
                 return this.selectedactorid != null ? this.getPlayerByUniqueId(this.selectedactorid) : null;
+            },
+            selectedPlayerEvaluation: function () {
+                if (!this.selectedPlayer || !this.crAnalysis || !this.crAnalysis.playerEvaluations) {
+                    return null;
+                }
+                return this.crAnalysis.playerEvaluations[this.selectedPlayer.uniqueID] || null;
             },
             commanderSelected: function () {
                 return !!(this.selectedPlayer && this.positioningAnalysis && this.selectedPlayer.uniqueID === this.positioningAnalysis.commanderId);
@@ -1120,7 +1202,21 @@
             choosePlayer: function (player) {
                 this.playerSearchQuery = "";
                 this.playerSearchOpen = false;
+                this.closePlayerEvaluationAreaDetail();
                 this.selectReplayActor(player.uniqueID);
+            },
+            openPlayerEvaluationAreaDetail: function (area) {
+                if (!area || !area.isInteractive || !area.detailSections || area.detailSections.length === 0) {
+                    return;
+                }
+                this.playerEvaluationDetailModal = {
+                    title: area.drilldownTitle || area.label,
+                    subtitle: area.drilldownSubtitle || "",
+                    sections: area.detailSections,
+                };
+            },
+            closePlayerEvaluationAreaDetail: function () {
+                this.playerEvaluationDetailModal = null;
             },
         },
     });
