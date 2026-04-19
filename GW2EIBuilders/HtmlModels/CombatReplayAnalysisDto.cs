@@ -22,6 +22,7 @@ internal class CombatReplayAnalysisDto
     public CombatReplayThreatBoonAnalysisDto ThreatBoons { get; set; } = new();
     public CombatReplayPositioningAnalysisDto Positioning { get; set; } = new();
     public CombatReplayEventAnalysisDto Events { get; set; } = new();
+    public CombatReplayDefenseAnalysisDto Defense { get; set; } = new();
     public Dictionary<int, CombatReplayPlayerEvaluationDto> PlayerEvaluations { get; set; } = [];
 }
 
@@ -132,6 +133,76 @@ internal class CombatReplayThreatPlayerBoonTimelineDto
     public int[] CurrentStacks { get; set; } = [];
     public double[] RunningCoverage { get; set; } = [];
     public double[] RunningOverapplication { get; set; } = [];
+}
+
+internal class CombatReplayDefenseAnalysisDto
+{
+    public bool HasBarrierData { get; set; }
+    public bool BarrierCoverageMayBeIncomplete { get; set; }
+    public long TotalBarrierGranted { get; set; }
+    public long InitialBarrierOnSquad { get; set; }
+    public long TotalBarrierAvailable { get; set; }
+    public long TotalDamageToSquad { get; set; }
+    public long HealthDamageToSquad { get; set; }
+    public long BarrierDamageAbsorbed { get; set; }
+    public double BarrierAbsorptionPercent { get; set; }
+    public CombatReplayDefenseBurstBarrierDto BurstBarrier { get; set; } = new();
+    public CombatReplayDefenseMitigationDto Mitigation { get; set; } = new();
+    public List<CombatReplayEventActorSummaryDto> TopBarrierProviders { get; set; } = [];
+}
+
+internal class CombatReplayDefenseBurstBarrierDto
+{
+    public int EnemyBurstWindows { get; set; }
+    public int BurstWindowsWithBarrierAbsorbed { get; set; }
+    public int BurstWindowsWithSquadDown { get; set; }
+    public int BurstWindowsHeld { get; set; }
+    public int LowHealthSurvivorOccurrences { get; set; }
+    public int LowHealthSurvivorPlayers { get; set; }
+    public double TotalBurstDamageToSquad { get; set; }
+    public double TotalBurstBarrierAbsorbed { get; set; }
+    public double BurstBarrierAbsorptionPercent { get; set; }
+    public double AverageBurstDamageToSquad { get; set; }
+    public double AverageBurstBarrierAbsorbed { get; set; }
+    public double HeldBurstBarrierShare { get; set; }
+    public double DownedBurstBarrierShare { get; set; }
+    public List<CombatReplayDefenseBurstSurvivorEventDto> LowHealthSurvivorEvents { get; set; } = [];
+    public List<string> Takeaways { get; set; } = [];
+}
+
+internal class CombatReplayDefenseBurstSurvivorEventDto
+{
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public int ActorId { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public double LowestHealthPercent { get; set; }
+}
+
+internal class CombatReplayDefenseMitigationDto
+{
+    public List<CombatReplayDefenseMitigationThresholdDto> Thresholds { get; set; } = [];
+}
+
+internal class CombatReplayDefenseMitigationThresholdDto
+{
+    public int ThresholdPercent { get; set; }
+    public int Count { get; set; }
+    public List<CombatReplayDefenseMitigationEventDto> Events { get; set; } = [];
+}
+
+internal class CombatReplayDefenseMitigationEventDto
+{
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public long PreviousFullHealthTime { get; set; }
+    public string PreviousFullHealthTimeLabel { get; set; } = "";
+    public long RecoveryTime { get; set; }
+    public string RecoveryTimeLabel { get; set; } = "";
+    public int ActorId { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
 }
 
 internal class CombatReplayPositioningAnalysisDto
@@ -350,15 +421,6 @@ internal class CombatReplayRecoveredEventDto : CombatReplayDownEventDto
     public List<CombatReplayEventTimelineEntryDto> SupportTimeline { get; set; } = [];
 }
 
-internal class CombatReplayBarrierSaveAnalysisDto
-{
-    public bool Available { get; set; }
-    public int TotalEvents { get; set; }
-    public List<CombatReplayEventActorSummaryDto> SavedPlayers { get; set; } = [];
-    public List<CombatReplayEventActorSummaryDto> Providers { get; set; } = [];
-    public List<CombatReplayBarrierSaveEventDto> Events { get; set; } = [];
-}
-
 internal class CombatReplayConditionConversionAnalysisDto
 {
     public int TotalEvents { get; set; }
@@ -409,25 +471,6 @@ internal class CombatReplayEventTimelineEntryDto
     public string Value { get; set; } = "";
     public string Secondary { get; set; } = "";
     public bool IsHardCc { get; set; }
-}
-
-internal class CombatReplayBarrierSaveEventDto
-{
-    public long Time { get; set; }
-    public string TimeLabel { get; set; } = "";
-    public int SavedPlayerId { get; set; }
-    public string SavedPlayerName { get; set; } = "";
-    public string SavedPlayerIcon { get; set; } = "";
-    public int TotalBarrier { get; set; }
-    public int BarrierAbsorbed { get; set; }
-    public double LowestHealthPercent { get; set; }
-    public int ApproxHealthStart { get; set; }
-    public int ApproxBarrierStart { get; set; }
-    public double HealthPercentStart { get; set; }
-    public double BarrierPercentStart { get; set; }
-    public string ProviderSummary { get; set; } = "";
-    public List<CombatReplayEventContributionDto> Providers { get; set; } = [];
-    public List<CombatReplayEventTimelineEntryDto> IncomingDamage { get; set; } = [];
 }
 
 internal class CombatReplayConditionConversionEventDto
@@ -549,8 +592,6 @@ internal static class CombatReplayAnalysisBuilder
     private const int LookbackWindow = 3000;
     private const int RecoveryRezAttributionWindow = 500;
     private const int BucketSize = 1000;
-    private const int SaveEventMergeWindow = 500;
-    private const int SaveEventLookaheadWindow = 1500;
     private const double MeaningfulContributionThreshold = 0.10;
     private const float RangeThreshold = 1200.0f;
     private static readonly PositioningCriteria PositioningSettings = new(
@@ -649,19 +690,6 @@ internal static class CombatReplayAnalysisBuilder
         IReadOnlyList<CombatReplayEventContributionDto> ConditionDamageBreakdown,
         IReadOnlyList<CombatReplayEventContributionDto> Contributors,
         IReadOnlyList<CombatReplayEventTimelineEntryDto> DamageTimeline);
-    private readonly record struct BarrierSaveCandidate(
-        long StartTime,
-        long EndTime,
-        SingleActor SavedPlayer,
-        int TotalBarrier,
-        int BarrierAbsorbed,
-        int ApproxHealthStart,
-        int ApproxBarrierStart,
-        double HealthPercentStart,
-        double BarrierPercentStart,
-        double LowestHealthPercent,
-        IReadOnlyList<CombatReplayEventContributionDto> Providers,
-        IReadOnlyList<CombatReplayEventTimelineEntryDto> IncomingDamage);
     private readonly record struct TeamActorContext(
         IReadOnlyList<SingleActor> Attackers,
         IReadOnlyList<SingleActor> Targets,
@@ -718,6 +746,7 @@ internal static class CombatReplayAnalysisBuilder
             ThreatBoons = threatAnalysis,
             Positioning = positioningAnalysis,
             Events = BuildEventAnalysis(log, squadPlayers, hostileTargets),
+            Defense = BuildDefenseAnalysis(log, squadPlayers, enemyAnalysis, times),
             PlayerEvaluations = BuildPlayerEvaluations(log, squadPlayers, hostileTargets, squadAnalysis, enemyAnalysis, positioningAnalysis, times),
         };
     }
@@ -1870,6 +1899,378 @@ internal static class CombatReplayAnalysisBuilder
         };
     }
 
+    private static CombatReplayDefenseAnalysisDto BuildDefenseAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        CombatReplayTeamAnalysisDto enemyAnalysis,
+        IReadOnlyList<long> times)
+    {
+        var summary = new CombatReplayDefenseAnalysisDto
+        {
+            HasBarrierData = log.CombatData.HasEXTBarrier,
+            BarrierCoverageMayBeIncomplete = log.CombatData.HasEXTBarrier,
+        };
+
+        long totalDamageToSquad = 0;
+        long healthDamageToSquad = 0;
+        long barrierDamageAbsorbed = 0;
+
+        foreach (SingleActor player in squadPlayers)
+        {
+            foreach (HealthDamageEvent damageEvent in player.GetDamageTakenEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd))
+            {
+                if (!damageEvent.HasHit)
+                {
+                    continue;
+                }
+
+                int totalDamage = damageEvent.HealthDamage;
+                if (totalDamage <= 0)
+                {
+                    continue;
+                }
+
+                totalDamageToSquad += totalDamage;
+                healthDamageToSquad += Math.Max(damageEvent.HealthDamage - damageEvent.ShieldDamage, 0);
+                barrierDamageAbsorbed += damageEvent.ShieldDamage;
+            }
+        }
+
+        summary.TotalDamageToSquad = totalDamageToSquad;
+        summary.HealthDamageToSquad = healthDamageToSquad;
+        summary.BarrierDamageAbsorbed = barrierDamageAbsorbed;
+        summary.BarrierAbsorptionPercent = totalDamageToSquad > 0
+            ? Math.Round(barrierDamageAbsorbed * 100.0 / totalDamageToSquad, 1)
+            : 0.0;
+
+        if (!log.CombatData.HasEXTBarrier)
+        {
+            return summary;
+        }
+
+        var topBarrierProviderContributions = new List<(int? ActorId, string Name, string Icon, double Amount, long EventTime)>();
+        long totalBarrierGranted = 0;
+        long initialBarrierOnSquad = 0;
+
+        foreach (SingleActor player in squadPlayers)
+        {
+            long barrierAtStart = Math.Max(GetApproximateCurrentBarrier(player, log, Math.Max(log.LogData.LogStart, player.FirstAware)), 0);
+            initialBarrierOnSquad += barrierAtStart;
+        }
+
+        foreach (SingleActor provider in squadPlayers)
+        {
+            long providerBarrier = provider.EXTBarrier.GetOutgoingBarrierStats(null, log, log.LogData.LogStart, log.LogData.LogEnd).Barrier;
+            if (providerBarrier <= 0)
+            {
+                continue;
+            }
+
+            totalBarrierGranted += providerBarrier;
+            topBarrierProviderContributions.Add((
+                provider.UniqueID,
+                provider.Character,
+                provider.GetIcon(),
+                providerBarrier,
+                log.LogData.LogEnd));
+        }
+
+        summary.TotalBarrierGranted = totalBarrierGranted;
+        summary.InitialBarrierOnSquad = initialBarrierOnSquad;
+        summary.TotalBarrierAvailable = totalBarrierGranted + initialBarrierOnSquad;
+        summary.BurstBarrier = BuildDefenseBurstBarrierAnalysis(log, squadPlayers, enemyAnalysis, times);
+        summary.Mitigation = BuildDefenseMitigationAnalysis(log, squadPlayers);
+        summary.TopBarrierProviders = BuildTopActorSummaries(topBarrierProviderContributions);
+        return summary;
+    }
+
+    private static CombatReplayDefenseMitigationDto BuildDefenseMitigationAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers)
+    {
+        int[] thresholds = [10, 20, 25, 33, 50];
+        var result = new CombatReplayDefenseMitigationDto
+        {
+            Thresholds =
+            [
+                .. thresholds.Select(threshold => BuildDefenseMitigationThresholdAnalysis(log, squadPlayers, threshold))
+            ],
+        };
+        return result;
+    }
+
+    private static CombatReplayDefenseMitigationThresholdDto BuildDefenseMitigationThresholdAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        int thresholdPercent)
+    {
+        var mitigationEvents = new List<CombatReplayDefenseMitigationEventDto>();
+
+        foreach (SingleActor player in squadPlayers)
+        {
+            IReadOnlyList<Segment> healthUpdates = player.GetHealthUpdates(log);
+            if (healthUpdates.Count == 0)
+            {
+                continue;
+            }
+
+            IReadOnlyList<DownEvent> downEvents = log.CombatData.GetDownEvents(player.AgentItem);
+            IReadOnlyList<DeadEvent> deadEvents = log.CombatData.GetDeadEvents(player.AgentItem);
+            int downIndex = 0;
+            int deadIndex = 0;
+            bool mitigationActive = false;
+            long mitigationStartTime = 0;
+            long previousFullHealthTime = 0;
+            long mitigationPreviousFullHealthTime = 0;
+
+            foreach (Segment healthSegment in healthUpdates.OrderBy(segment => segment.Start))
+            {
+                while (downIndex < downEvents.Count && downEvents[downIndex].Time <= healthSegment.Start)
+                {
+                    if (mitigationActive)
+                    {
+                        mitigationActive = false;
+                    }
+                    downIndex++;
+                }
+
+                while (deadIndex < deadEvents.Count && deadEvents[deadIndex].Time <= healthSegment.Start)
+                {
+                    if (mitigationActive)
+                    {
+                        mitigationActive = false;
+                    }
+                    deadIndex++;
+                }
+
+                bool aliveAndUpright =
+                    !player.IsDowned(log, healthSegment.Start) &&
+                    !player.IsDead(log, healthSegment.Start) &&
+                    !player.IsDC(log, healthSegment.Start);
+
+                if (aliveAndUpright && healthSegment.Value >= 100.0)
+                {
+                    previousFullHealthTime = healthSegment.Start;
+                }
+
+                if (!mitigationActive)
+                {
+                    if (
+                        healthSegment.Value <= thresholdPercent &&
+                        aliveAndUpright
+                    )
+                    {
+                        mitigationActive = true;
+                        mitigationStartTime = healthSegment.Start;
+                        mitigationPreviousFullHealthTime = previousFullHealthTime;
+                        if (mitigationPreviousFullHealthTime == 0)
+                        {
+                            mitigationPreviousFullHealthTime = FindPreviousFullHealthTime(player, log, mitigationStartTime);
+                        }
+                    }
+                    continue;
+                }
+
+                if (aliveAndUpright && healthSegment.Value >= 100.0)
+                {
+                    mitigationEvents.Add(new CombatReplayDefenseMitigationEventDto
+                    {
+                        Time = mitigationStartTime,
+                        TimeLabel = FormatTime(mitigationStartTime),
+                        PreviousFullHealthTime = mitigationPreviousFullHealthTime,
+                        PreviousFullHealthTimeLabel = mitigationPreviousFullHealthTime > 0 ? FormatTime(mitigationPreviousFullHealthTime) : "",
+                        RecoveryTime = healthSegment.Start,
+                        RecoveryTimeLabel = FormatTime(healthSegment.Start),
+                        ActorId = player.UniqueID,
+                        Name = player.Character,
+                        Icon = player.GetIcon(),
+                    });
+                    mitigationActive = false;
+                }
+            }
+        }
+
+        mitigationEvents = [.. mitigationEvents.OrderBy(evt => evt.Time).ThenBy(evt => evt.Name, StringComparer.OrdinalIgnoreCase)];
+        return new CombatReplayDefenseMitigationThresholdDto
+        {
+            ThresholdPercent = thresholdPercent,
+            Count = mitigationEvents.Count,
+            Events = mitigationEvents,
+        };
+    }
+
+    private static long FindPreviousFullHealthTime(SingleActor player, ParsedEvtcLog log, long mitigationStartTime)
+    {
+        long lowerBound = Math.Max(player.FirstAware, log.LogData.LogStart);
+        if (mitigationStartTime < lowerBound)
+        {
+            return 0;
+        }
+
+        const long coarseStep = 100;
+        const long fineStep = 10;
+        long coarseCandidate = 0;
+        for (long probe = mitigationStartTime; probe >= lowerBound; probe -= coarseStep)
+        {
+            if (IsAliveUprightAt(player, log, probe) && GetSafePercent(player.GetCurrentHealthPercent(log, probe)) >= 100.0)
+            {
+                coarseCandidate = probe;
+                break;
+            }
+        }
+
+        if (coarseCandidate == 0)
+        {
+            if (IsAliveUprightAt(player, log, lowerBound) && GetSafePercent(player.GetCurrentHealthPercent(log, lowerBound)) >= 100.0)
+            {
+                return lowerBound;
+            }
+            return 0;
+        }
+
+        long refinedCandidate = coarseCandidate;
+        long refineEnd = Math.Min(mitigationStartTime, coarseCandidate + coarseStep - 1);
+        for (long probe = coarseCandidate; probe <= refineEnd; probe += fineStep)
+        {
+            if (IsAliveUprightAt(player, log, probe) && GetSafePercent(player.GetCurrentHealthPercent(log, probe)) >= 100.0)
+            {
+                refinedCandidate = probe;
+            }
+        }
+
+        long preciseStart = Math.Max(coarseCandidate, refinedCandidate - fineStep);
+        long preciseEnd = Math.Min(mitigationStartTime, refinedCandidate + fineStep);
+        for (long probe = preciseStart; probe <= preciseEnd; probe++)
+        {
+            if (IsAliveUprightAt(player, log, probe) && GetSafePercent(player.GetCurrentHealthPercent(log, probe)) >= 100.0)
+            {
+                refinedCandidate = probe;
+            }
+        }
+
+        return refinedCandidate;
+    }
+
+    private static bool IsAliveUprightAt(SingleActor player, ParsedEvtcLog log, long time)
+    {
+        return !player.IsDowned(log, time) && !player.IsDead(log, time) && !player.IsDC(log, time);
+    }
+
+    private static CombatReplayDefenseBurstBarrierDto BuildDefenseBurstBarrierAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        CombatReplayTeamAnalysisDto enemyAnalysis,
+        IReadOnlyList<long> times)
+    {
+        var summary = new CombatReplayDefenseBurstBarrierDto();
+        List<EvaluationWindow> burstWindows = BuildBurstWindows(enemyAnalysis, times);
+        summary.EnemyBurstWindows = burstWindows.Count;
+        if (burstWindows.Count == 0)
+        {
+            return summary;
+        }
+
+        var heldWindowShares = new List<double>();
+        var downedWindowShares = new List<double>();
+        var lowHealthSurvivorRows = new List<(SingleActor Player, long Time, double LowestHealthPercent)>();
+
+        foreach (EvaluationWindow window in burstWindows)
+        {
+            long windowDamage = 0;
+            long windowBarrierAbsorbed = 0;
+            bool hadSquadDown = false;
+
+            foreach (SingleActor player in squadPlayers)
+            {
+                foreach (HealthDamageEvent damageEvent in player.GetDamageTakenEvents(null, log, window.Start, window.End))
+                {
+                    if (!damageEvent.HasHit || damageEvent.HealthDamage <= 0)
+                    {
+                        continue;
+                    }
+
+                    windowDamage += damageEvent.HealthDamage;
+                    windowBarrierAbsorbed += damageEvent.ShieldDamage;
+                }
+
+                if (!hadSquadDown && log.CombatData.GetDownEvents(player.AgentItem).Any(evt => evt.Time >= window.Start && evt.Time <= window.End))
+                {
+                    hadSquadDown = true;
+                }
+            }
+
+            if (windowBarrierAbsorbed > 0)
+            {
+                summary.BurstWindowsWithBarrierAbsorbed++;
+            }
+            if (hadSquadDown)
+            {
+                summary.BurstWindowsWithSquadDown++;
+            }
+            else
+            {
+                summary.BurstWindowsHeld++;
+            }
+
+            summary.TotalBurstDamageToSquad += windowDamage;
+            summary.TotalBurstBarrierAbsorbed += windowBarrierAbsorbed;
+
+            double windowShare = windowDamage > 0 ? windowBarrierAbsorbed * 100.0 / windowDamage : 0.0;
+            if (hadSquadDown)
+            {
+                downedWindowShares.Add(windowShare);
+            }
+            else
+            {
+                heldWindowShares.Add(windowShare);
+            }
+
+            if (windowShare > 0)
+            {
+                foreach (SingleActor player in squadPlayers)
+                {
+                    double healthPercentStart = GetSafePercent(player.GetCurrentHealthPercent(log, window.Start));
+                    (long lowestHealthTime, double lowestHealthPercent) = GetLowestHealthPoint(player, log, window.Start, window.End, healthPercentStart);
+                    if (lowestHealthPercent > 0 && lowestHealthPercent <= windowShare && !player.IsDowned(log, window.Start, window.End))
+                    {
+                        lowHealthSurvivorRows.Add((player, lowestHealthTime, lowestHealthPercent));
+                    }
+                }
+            }
+        }
+
+        summary.TotalBurstDamageToSquad = Math.Round(summary.TotalBurstDamageToSquad, 1);
+        summary.TotalBurstBarrierAbsorbed = Math.Round(summary.TotalBurstBarrierAbsorbed, 1);
+        summary.BurstBarrierAbsorptionPercent = summary.TotalBurstDamageToSquad > 0
+            ? Math.Round(summary.TotalBurstBarrierAbsorbed * 100.0 / summary.TotalBurstDamageToSquad, 1)
+            : 0.0;
+        summary.AverageBurstDamageToSquad = Math.Round(summary.TotalBurstDamageToSquad / burstWindows.Count, 1);
+        summary.AverageBurstBarrierAbsorbed = Math.Round(summary.TotalBurstBarrierAbsorbed / burstWindows.Count, 1);
+        summary.HeldBurstBarrierShare = heldWindowShares.Count > 0 ? Math.Round(heldWindowShares.Average(), 1) : 0.0;
+        summary.DownedBurstBarrierShare = downedWindowShares.Count > 0 ? Math.Round(downedWindowShares.Average(), 1) : 0.0;
+        List<(SingleActor Player, long Time, double LowestHealthPercent)> uniqueLowHealthSurvivorRows = [.. lowHealthSurvivorRows
+            .GroupBy(row => (row.Player.UniqueID, row.Time))
+            .Select(group => group
+                .OrderBy(row => row.LowestHealthPercent)
+                .First())
+            .OrderBy(row => row.Time)
+            .ThenBy(row => row.LowestHealthPercent)];
+        summary.LowHealthSurvivorOccurrences = uniqueLowHealthSurvivorRows.Count;
+        summary.LowHealthSurvivorPlayers = uniqueLowHealthSurvivorRows.Select(row => row.Player.UniqueID).Distinct().Count();
+        summary.LowHealthSurvivorEvents = [.. uniqueLowHealthSurvivorRows
+            .Select(row => new CombatReplayDefenseBurstSurvivorEventDto
+            {
+                Time = row.Time,
+                TimeLabel = FormatTime(row.Time),
+                ActorId = row.Player.UniqueID,
+                Name = row.Player.Character,
+                Icon = row.Player.GetIcon(),
+                LowestHealthPercent = Math.Round(row.LowestHealthPercent, 1),
+            })];
+        summary.Takeaways = BuildDefenseBurstBarrierTakeaways(summary);
+        return summary;
+    }
+
     private static CombatReplayDownAnalysisDto BuildDownAnalysis(
         ParsedEvtcLog log,
         IReadOnlyList<SingleActor> squadPlayers,
@@ -2846,179 +3247,6 @@ internal static class CombatReplayAnalysisBuilder
         return timeline;
     }
 
-    private static CombatReplayBarrierSaveAnalysisDto BuildBarrierSaveAnalysis(
-        ParsedEvtcLog log,
-        IReadOnlyList<SingleActor> squadPlayers)
-    {
-        var result = new CombatReplayBarrierSaveAnalysisDto
-        {
-            Available = log.CombatData.HasEXTBarrier,
-        };
-        if (!log.CombatData.HasEXTBarrier)
-        {
-            return result;
-        }
-
-        var candidateEvents = new List<BarrierSaveCandidate>();
-        foreach (SingleActor player in squadPlayers)
-        {
-            candidateEvents.AddRange(BuildBarrierSaveCandidates(log, player));
-        }
-
-        List<CombatReplayBarrierSaveEventDto> events =
-        [
-            .. candidateEvents
-                .OrderBy(candidate => candidate.StartTime)
-                .Select(candidate => new CombatReplayBarrierSaveEventDto
-                {
-                    Time = candidate.StartTime,
-                    TimeLabel = FormatTime(candidate.StartTime),
-                    SavedPlayerId = candidate.SavedPlayer.UniqueID,
-                    SavedPlayerName = candidate.SavedPlayer.Character,
-                    SavedPlayerIcon = candidate.SavedPlayer.GetIcon(),
-                    TotalBarrier = candidate.TotalBarrier,
-                    BarrierAbsorbed = candidate.BarrierAbsorbed,
-                    LowestHealthPercent = candidate.LowestHealthPercent,
-                    ApproxHealthStart = candidate.ApproxHealthStart,
-                    ApproxBarrierStart = candidate.ApproxBarrierStart,
-                    HealthPercentStart = candidate.HealthPercentStart,
-                    BarrierPercentStart = candidate.BarrierPercentStart,
-                    ProviderSummary = BuildCompactContributorSummary(candidate.Providers),
-                    Providers = [.. candidate.Providers],
-                    IncomingDamage = [.. candidate.IncomingDamage],
-                })
-        ];
-        result.Events = events;
-        result.TotalEvents = events.Count;
-        result.SavedPlayers = [.. events
-            .GroupBy(evt => evt.SavedPlayerId)
-            .Select(group => new CombatReplayEventActorSummaryDto
-            {
-                ActorId = group.Key,
-                Name = group.First().SavedPlayerName,
-                Icon = group.First().SavedPlayerIcon,
-                Count = group.Count(),
-                Amount = group.Sum(evt => evt.BarrierAbsorbed),
-            })
-            .OrderByDescending(entry => entry.Count)
-            .ThenByDescending(entry => entry.Amount)
-            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)];
-        result.Providers = BuildTopActorSummaries(events.SelectMany(
-            evt => evt.Providers.Select(provider => (provider.ActorId, provider.Name, provider.Icon, provider.Amount, evt.Time))));
-        return result;
-    }
-
-    private static IReadOnlyList<BarrierSaveCandidate> BuildBarrierSaveCandidates(
-        ParsedEvtcLog log,
-        SingleActor player)
-    {
-        IReadOnlyList<EXTBarrierEvent> incomingBarrierEvents = player.EXTBarrier.GetIncomingBarrierEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd);
-        if (incomingBarrierEvents.Count == 0)
-        {
-            return [];
-        }
-
-        var candidates = new List<BarrierSaveCandidate>();
-        int index = 0;
-        while (index < incomingBarrierEvents.Count)
-        {
-            EXTBarrierEvent firstEvent = incomingBarrierEvents[index];
-            long clusterStart = firstEvent.Time;
-            long clusterEnd = clusterStart;
-            var clusterEvents = new List<EXTBarrierEvent> { firstEvent };
-            int nextIndex = index + 1;
-            while (nextIndex < incomingBarrierEvents.Count && incomingBarrierEvents[nextIndex].Time - clusterEnd <= SaveEventMergeWindow)
-            {
-                EXTBarrierEvent nextEvent = incomingBarrierEvents[nextIndex];
-                clusterEvents.Add(nextEvent);
-                clusterEnd = nextEvent.Time;
-                nextIndex++;
-            }
-
-            BarrierSaveCandidate? candidate = TryBuildBarrierSaveCandidate(log, player, clusterStart, clusterEnd, clusterEvents);
-            if (candidate != null)
-            {
-                candidates.Add(candidate.Value);
-            }
-            index = nextIndex;
-        }
-
-        return candidates;
-    }
-
-    private static BarrierSaveCandidate? TryBuildBarrierSaveCandidate(
-        ParsedEvtcLog log,
-        SingleActor player,
-        long clusterStart,
-        long clusterEnd,
-        IReadOnlyList<EXTBarrierEvent> clusterEvents)
-    {
-        long lookaheadEnd = Math.Min(log.LogData.LogEnd, clusterEnd + SaveEventLookaheadWindow);
-        long snapshotTime = Math.Max(log.LogData.LogStart, clusterStart - 1);
-        IReadOnlyList<HealthDamageEvent> incomingDamageEvents = player.GetDamageTakenEvents(null, log, clusterStart, lookaheadEnd)
-            .Where(damageEvent => damageEvent.HasHit && (damageEvent.HealthDamage > 0 || damageEvent.ShieldDamage > 0))
-            .OrderBy(damageEvent => damageEvent.Time)
-            .ToList();
-        if (!incomingDamageEvents.Any())
-        {
-            return null;
-        }
-        if (player.IsDowned(log, clusterStart, lookaheadEnd))
-        {
-            return null;
-        }
-
-        int clusterBarrier = clusterEvents.Sum(barrierEvent => barrierEvent.BarrierGiven);
-        if (clusterBarrier <= 0)
-        {
-            return null;
-        }
-
-        double healthPercentStart = GetSafePercent(player.GetCurrentHealthPercent(log, snapshotTime));
-        double barrierPercentStart = GetSafePercent(player.GetCurrentBarrierPercent(log, snapshotTime));
-        int approxHealthStart = GetApproximateCurrentHealth(player, log, snapshotTime);
-        int approxBarrierStart = GetApproximateCurrentBarrier(player, log, snapshotTime);
-        if (approxHealthStart <= 0)
-        {
-            return null;
-        }
-
-        int barrierAbsorbed = incomingDamageEvents.Sum(damageEvent => damageEvent.ShieldDamage);
-        if (barrierAbsorbed <= 0)
-        {
-            return null;
-        }
-
-        int cumulativeThreat = incomingDamageEvents.Sum(damageEvent => damageEvent.HealthDamage + damageEvent.ShieldDamage);
-        int lethalWithoutCluster = approxHealthStart + approxBarrierStart;
-        int lethalWithCluster = approxHealthStart + approxBarrierStart + clusterBarrier;
-        if (cumulativeThreat <= lethalWithoutCluster || cumulativeThreat > lethalWithCluster)
-        {
-            return null;
-        }
-
-        double lowestHealthPercent = GetLowestHealthPercent(player, log, clusterStart, lookaheadEnd, healthPercentStart);
-        List<CombatReplayEventContributionDto> providers = BuildMeaningfulBarrierProviders(log, clusterEvents);
-        if (providers.Count == 0)
-        {
-            return null;
-        }
-
-        return new BarrierSaveCandidate(
-            StartTime: clusterStart,
-            EndTime: lookaheadEnd,
-            SavedPlayer: player,
-            TotalBarrier: clusterBarrier,
-            BarrierAbsorbed: barrierAbsorbed,
-            ApproxHealthStart: approxHealthStart,
-            ApproxBarrierStart: approxBarrierStart,
-            HealthPercentStart: healthPercentStart,
-            BarrierPercentStart: barrierPercentStart,
-            LowestHealthPercent: lowestHealthPercent,
-            Providers: providers,
-            IncomingDamage: BuildIncomingDamageTimeline(log, incomingDamageEvents));
-    }
-
     private static CombatReplayConditionConversionAnalysisDto BuildConditionConversionAnalysis(
         ParsedEvtcLog log,
         IReadOnlyList<SingleActor> hostileTargets)
@@ -3229,17 +3457,6 @@ internal static class CombatReplayAnalysisBuilder
             Conditions = buffBreakdowns,
             Providers = providers,
         };
-    }
-
-    private static List<CombatReplayEventContributionDto> BuildMeaningfulBarrierProviders(
-        ParsedEvtcLog log,
-        IReadOnlyList<EXTBarrierEvent> clusterEvents)
-    {
-        double totalBarrier = clusterEvents.Sum(barrierEvent => barrierEvent.BarrierGiven);
-        Dictionary<AgentItem, double> providerTotals = clusterEvents
-            .GroupBy(barrierEvent => barrierEvent.CreditedFrom)
-            .ToDictionary(group => group.Key, group => (double)group.Sum(barrierEvent => barrierEvent.BarrierGiven));
-        return BuildMeaningfulActorContributionList(log, providerTotals, totalBarrier);
     }
 
     private static List<CombatReplayEventContributionDto> BuildMeaningfulConditionProviders(
@@ -3705,6 +3922,34 @@ internal static class CombatReplayAnalysisBuilder
         return takeaways.Take(4).ToList();
     }
 
+    private static List<string> BuildDefenseBurstBarrierTakeaways(CombatReplayDefenseBurstBarrierDto summary)
+    {
+        var takeaways = new List<string>();
+        if (summary.EnemyBurstWindows == 0)
+        {
+            return takeaways;
+        }
+
+        takeaways.Add($"Barrier absorbed damage in {summary.BurstWindowsWithBarrierAbsorbed} of {summary.EnemyBurstWindows} tracked enemy burst windows, for {FormatOneDecimal(summary.BurstBarrierAbsorptionPercent)}% burst absorption overall.");
+
+        if (summary.BurstWindowsHeld > 0 || summary.BurstWindowsWithSquadDown > 0)
+        {
+            takeaways.Add($"{summary.BurstWindowsHeld} burst windows were held without a squad down, while {summary.BurstWindowsWithSquadDown} produced at least one squad down.");
+        }
+
+        if (summary.BurstWindowsHeld > 0 && summary.BurstWindowsWithSquadDown > 0)
+        {
+            takeaways.Add($"Held bursts averaged {FormatOneDecimal(summary.HeldBurstBarrierShare)}% barrier absorption versus {FormatOneDecimal(summary.DownedBurstBarrierShare)}% in bursts that still caused downs.");
+        }
+
+        if (summary.LowHealthSurvivorOccurrences > 0)
+        {
+            takeaways.Add($"{summary.LowHealthSurvivorOccurrences} burst-window survival moments fell below that burst's own barrier absorption percentage without becoming downs.");
+        }
+
+        return takeaways.Take(4).ToList();
+    }
+
     private static List<CombatReplayEventActorSummaryDto> BuildTopActorSummaries(
         IEnumerable<(int? ActorId, string Name, string Icon, double Amount, long EventTime)> contributions)
     {
@@ -3777,6 +4022,30 @@ internal static class CombatReplayAnalysisBuilder
             minimumPercent = Math.Min(minimumPercent, healthSegment.Value);
         }
         return Math.Round(minimumPercent, 1);
+    }
+
+    private static (long Time, double Percent) GetLowestHealthPoint(
+        SingleActor actor,
+        ParsedEvtcLog log,
+        long start,
+        long end,
+        double fallbackPercent)
+    {
+        double minimumPercent = fallbackPercent;
+        long minimumTime = start;
+        foreach (Segment healthSegment in actor.GetHealthUpdates(log))
+        {
+            if (healthSegment.Start < start || healthSegment.Start > end)
+            {
+                continue;
+            }
+            if (healthSegment.Value < minimumPercent)
+            {
+                minimumPercent = healthSegment.Value;
+                minimumTime = healthSegment.Start;
+            }
+        }
+        return (minimumTime, Math.Round(minimumPercent, 1));
     }
 
     private static int GetApproximateCurrentHealth(SingleActor actor, ParsedEvtcLog log, long time)

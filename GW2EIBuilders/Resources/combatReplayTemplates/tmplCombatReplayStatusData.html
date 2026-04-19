@@ -120,6 +120,9 @@
             getEventAnalysis: function () {
                 return this.crAnalysis && this.crAnalysis.events ? this.crAnalysis.events : null;
             },
+            getDefenseAnalysis: function () {
+                return this.crAnalysis && this.crAnalysis.defense ? this.crAnalysis.defense : null;
+            },
             formatAmount: function (value) {
                 return Number(value || 0).toLocaleString(undefined, {
                     minimumFractionDigits: 0,
@@ -193,7 +196,10 @@
                     <a class="nav-link" :class="{active: overviewMode === 4}" @click="overviewMode = 4">Events</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" :class="{active: overviewMode === 5}" @click="overviewMode = 5">Player</a>
+                    <a class="nav-link" :class="{active: overviewMode === 5}" @click="overviewMode = 5">Defense</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: overviewMode === 6}" @click="overviewMode = 6">Player</a>
                 </li>
             </ul>
             <div v-if="!hasanalysis || overviewMode === 0" class="d-flex flex-column">
@@ -206,6 +212,7 @@
             <combat-replay-threat-boons-component v-else-if="overviewMode === 2" :time="time" :selectedactorid="selectedactorid"></combat-replay-threat-boons-component>
             <combat-replay-positioning-component v-else-if="overviewMode === 3" :time="time" :selectedactorid="selectedactorid"></combat-replay-positioning-component>
             <combat-replay-events-component v-else-if="overviewMode === 4" :time="time" :selectedactorid="selectedactorid"></combat-replay-events-component>
+            <combat-replay-defense-component v-else-if="overviewMode === 5" :time="time" :selectedactorid="selectedactorid"></combat-replay-defense-component>
             <combat-replay-player-analysis-component v-else :time="time" :selectedactorid="selectedactorid"></combat-replay-player-analysis-component>
             <div v-if="showOverviewHelp" class="wvw-summary-modal-backdrop" @click.self="showOverviewHelp = false">
                 <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay compact card help">
@@ -2526,226 +2533,6 @@
         },
     });
 
-    Vue.component("combat-replay-barrier-saves-component", {
-        mixins: [combatReplayWvWAnalysisMixin],
-        props: ["time", "selectedactorid"],
-        data: function () {
-            return {
-                selectedEventKey: null,
-                selectedProviderKey: null,
-            };
-        },
-        template: `
-        <div class="combat-replay-wvw-analysis-panel">
-            <div class="combat-replay-wvw-analysis-card">
-                <div class="combat-replay-wvw-analysis-card-title">Barrier Save Summary</div>
-                <div v-if="events.length === 0" class="combat-replay-wvw-analysis-helper">{{emptyMessage}}</div>
-                <template v-else>
-                    <div class="combat-replay-wvw-analysis-grid">
-                        <div class="combat-replay-wvw-analysis-metric">
-                            <div class="combat-replay-wvw-analysis-label">Barrier save events</div>
-                            <div class="combat-replay-wvw-analysis-value">{{formatCount(barrierAnalysis.totalEvents)}}</div>
-                        </div>
-                        <div class="combat-replay-wvw-analysis-metric">
-                            <div class="combat-replay-wvw-analysis-label">Barrier absorbed</div>
-                            <div class="combat-replay-wvw-analysis-value">{{formatCount(totalBarrierAbsorbed)}}</div>
-                        </div>
-                        <div class="combat-replay-wvw-analysis-metric">
-                            <div class="combat-replay-wvw-analysis-label">Most saved player</div>
-                            <div class="combat-replay-wvw-analysis-value">{{topSavedPlayer ? topSavedPlayer.name : 'None'}}</div>
-                            <div v-if="topSavedPlayer" class="combat-replay-wvw-analysis-detail">{{formatCount(topSavedPlayer.count)}} saves</div>
-                        </div>
-                        <div class="combat-replay-wvw-analysis-metric">
-                            <div class="combat-replay-wvw-analysis-label">Top barrier provider</div>
-                            <div class="combat-replay-wvw-analysis-value">{{topProvider ? topProvider.name : 'None'}}</div>
-                            <div v-if="topProvider" class="combat-replay-wvw-analysis-detail">{{formatAmount(topProvider.amount)}} credited barrier</div>
-                        </div>
-                    </div>
-                    <div v-if="savedPlayers.length > 0" class="mt-2">
-                        <div class="combat-replay-wvw-analysis-label">Saves by player</div>
-                        <div class="combat-replay-wvw-analysis-top-actors">
-                            <button
-                                v-for="player in savedPlayers.slice(0, 5)"
-                                :key="'barrier-save-player-' + player.actorId"
-                                type="button"
-                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
-                                @click="focusActor(player.actorId)">
-                                <span class="combat-replay-wvw-analysis-top-actor-name">{{player.name}}</span>
-                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(player.count)}} saves</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div v-if="providers.length > 0" class="mt-2">
-                        <div class="combat-replay-wvw-analysis-label">Saves credited by provider</div>
-                        <div class="combat-replay-wvw-analysis-top-actors">
-                            <button
-                                v-for="provider in providers.slice(0, 5)"
-                                :key="'barrier-save-provider-' + provider.actorId"
-                                type="button"
-                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
-                                @click="focusActor(provider.actorId)">
-                                <span class="combat-replay-wvw-analysis-top-actor-name">{{provider.name}}</span>
-                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(provider.amount)}}</span>
-                            </button>
-                        </div>
-                    </div>
-                </template>
-            </div>
-            <div class="row">
-                <div class="col-lg-5 mb-2">
-                    <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
-                        <div class="combat-replay-wvw-analysis-card-title">Barrier Save Events</div>
-                        <div style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;">
-                            <div v-if="events.length === 0" class="combat-replay-wvw-analysis-helper">{{emptyMessage}}</div>
-                            <div v-else class="combat-replay-wvw-analysis-bursts">
-                                <button
-                                    v-for="event in events"
-                                    :key="'barrier-save-event-' + event.time + '-' + event.savedPlayerId"
-                                    type="button"
-                                    class="combat-replay-wvw-analysis-burst-entry"
-                                    @click="openEvent(event)">
-                                    <span class="combat-replay-wvw-analysis-burst-time">{{event.timeLabel}}</span>
-                                    <span class="combat-replay-wvw-analysis-burst-detail">{{event.savedPlayerName}}</span>
-                                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatCount(event.totalBarrier)}} barrier</span>
-                                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatCount(event.barrierAbsorbed)}} absorbed</span>
-                                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatPercent(event.lowestHealthPercent)}} low</span>
-                                    <span class="combat-replay-wvw-analysis-burst-detail">{{event.providerSummary}}</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-lg-7 mb-2">
-                    <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
-                        <div class="combat-replay-wvw-analysis-card-title">Selected Save Event</div>
-                        <div style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;">
-                            <div v-if="!selectedEvent" class="combat-replay-wvw-analysis-helper">Select a barrier save event to inspect the moment in detail.</div>
-                            <div v-else class="combat-replay-wvw-analysis-selected">
-                                <div class="combat-replay-wvw-analysis-selected-header">
-                                    <img :src="selectedEvent.savedPlayerIcon" :alt="selectedEvent.savedPlayerName" class="combat-replay-wvw-analysis-selected-icon">
-                                    <div>
-                                        <div class="combat-replay-wvw-analysis-selected-name">{{selectedEvent.savedPlayerName}}</div>
-                                        <div class="combat-replay-wvw-analysis-selected-type">{{selectedEvent.timeLabel}} barrier save candidate</div>
-                                    </div>
-                                </div>
-                                <div class="combat-replay-wvw-analysis-grid">
-                                    <div class="combat-replay-wvw-analysis-metric">
-                                        <div class="combat-replay-wvw-analysis-label">Health at start</div>
-                                        <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.approxHealthStart)}}</div>
-                                        <div class="combat-replay-wvw-analysis-detail">{{formatPercent(selectedEvent.healthPercentStart)}} current health</div>
-                                    </div>
-                                    <div class="combat-replay-wvw-analysis-metric">
-                                        <div class="combat-replay-wvw-analysis-label">Barrier at start</div>
-                                        <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.approxBarrierStart)}}</div>
-                                        <div class="combat-replay-wvw-analysis-detail">{{formatPercent(selectedEvent.barrierPercentStart)}} current barrier</div>
-                                    </div>
-                                    <div class="combat-replay-wvw-analysis-metric">
-                                        <div class="combat-replay-wvw-analysis-label">Cluster barrier</div>
-                                        <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.totalBarrier)}}</div>
-                                    </div>
-                                    <div class="combat-replay-wvw-analysis-metric">
-                                        <div class="combat-replay-wvw-analysis-label">Shield damage absorbed</div>
-                                        <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.barrierAbsorbed)}}</div>
-                                    </div>
-                                    <div class="combat-replay-wvw-analysis-metric">
-                                        <div class="combat-replay-wvw-analysis-label">Lowest health reached</div>
-                                        <div class="combat-replay-wvw-analysis-value">{{formatPercent(selectedEvent.lowestHealthPercent)}}</div>
-                                    </div>
-                                </div>
-                                <div class="mt-2">
-                                    <div class="combat-replay-wvw-analysis-label">Barrier providers</div>
-                                    <div class="wvw-summary-modal-list">
-                                        <div v-for="provider in selectedEvent.providers" :key="'barrier-provider-' + selectedEvent.time + '-' + provider.name" class="wvw-summary-modal-row">
-                                            <div class="wvw-summary-modal-skill">
-                                                <button v-if="provider.actorId != null" type="button" class="btn btn-link p-0" @click="focusActor(provider.actorId)">
-                                                    <span class="wvw-summary-modal-skill-name">{{provider.name}}</span>
-                                                </button>
-                                                <span v-else class="wvw-summary-modal-skill-name">{{provider.name}}</span>
-                                            </div>
-                                            <div class="wvw-summary-modal-values">
-                                                <span class="wvw-summary-modal-count">{{formatAmount(provider.amount)}}</span>
-                                                <span class="wvw-summary-modal-secondary">{{formatPercent(provider.percent)}}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="mt-2">
-                                    <div class="combat-replay-wvw-analysis-label">Incoming damage sequence</div>
-                                    <div v-if="selectedEvent.incomingDamage.length === 0" class="combat-replay-wvw-analysis-helper">No incoming damage events were captured in the evaluation window.</div>
-                                    <div v-else class="wvw-summary-modal-list">
-                                        <div v-for="entry in selectedEvent.incomingDamage" :key="'barrier-damage-' + entry.time + '-' + entry.label" class="wvw-summary-modal-row">
-                                            <div class="wvw-summary-modal-skill">
-                                                <span class="wvw-summary-modal-skill-name">{{entry.timeLabel}} - {{entry.label}}</span>
-                                            </div>
-                                            <div class="wvw-summary-modal-values">
-                                                <span class="wvw-summary-modal-count">{{entry.value}}</span>
-                                                <span v-if="entry.secondary" class="wvw-summary-modal-secondary">{{entry.secondary}}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        `,
-        computed: {
-            eventAnalysis: function () {
-                return this.getEventAnalysis();
-            },
-            barrierAnalysis: function () {
-                return this.eventAnalysis && this.eventAnalysis.barrierSaves ? this.eventAnalysis.barrierSaves : { available: false, totalEvents: 0, events: [], savedPlayers: [], providers: [] };
-            },
-            events: function () {
-                return this.barrierAnalysis.events || [];
-            },
-            selectedEvent: function () {
-                if (this.events.length === 0) {
-                    return null;
-                }
-                return this.events.find(event => this.makeEventKey(event) === this.selectedEventKey) || this.events[0];
-            },
-            emptyMessage: function () {
-                return this.barrierAnalysis.available
-                    ? "No qualifying barrier saves were found in this log."
-                    : "Barrier save analysis needs barrier extension data, and that data is unavailable in this log.";
-            },
-            totalBarrierAbsorbed: function () {
-                return this.events.reduce((total, event) => total + (event.barrierAbsorbed || 0), 0);
-            },
-            savedPlayers: function () {
-                return this.barrierAnalysis.savedPlayers || [];
-            },
-            providers: function () {
-                return this.barrierAnalysis.providers || [];
-            },
-            topSavedPlayer: function () {
-                return this.savedPlayers.length > 0 ? this.savedPlayers[0] : null;
-            },
-            topProvider: function () {
-                return this.providers.length > 0 ? this.providers[0] : null;
-            },
-        },
-        methods: {
-            makeEventKey: function (event) {
-                return String(event.time) + ":" + String(event.savedPlayerId);
-            },
-            openEvent: function (event) {
-                this.selectedEventKey = this.makeEventKey(event);
-                this.jumpToBurst(event.time);
-                this.selectReplayActor(event.savedPlayerId);
-            },
-            focusActor: function (actorId) {
-                if (actorId == null) {
-                    return;
-                }
-                this.selectReplayActor(actorId);
-            },
-        },
-    });
-
     Vue.component("combat-replay-condition-conversions-component", {
         mixins: [combatReplayWvWAnalysisMixin],
         props: ["time", "selectedactorid"],
@@ -3193,6 +2980,175 @@
                 return details
                     .map(detail => detail.name + " " + this.formatAmount(detail.amount))
                     .join(", ");
+            },
+        },
+    });
+
+    Vue.component("combat-replay-defense-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time", "selectedactorid"],
+        data: function () {
+            return {
+                selectedMitigationThreshold: 50,
+            };
+        },
+        template: `
+        <div class="combat-replay-wvw-analysis-panel">
+            <div v-if="defenseAnalysis" class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">Barrier Summary</div>
+                <div v-if="defenseAnalysis.barrierCoverageMayBeIncomplete" class="combat-replay-wvw-analysis-detail text-center mb-2">
+                    Barrier totals may be understated or incomplete if some squad players were missing the healing/barrier addon.
+                </div>
+                <div class="row">
+                    <div :class="defenseAnalysis.topBarrierProviders && defenseAnalysis.topBarrierProviders.length > 0 ? 'col-xl-8 mb-3 mb-xl-0' : 'col-12'">
+                        <div class="combat-replay-wvw-analysis-grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Overall Barrier Absorption</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatPercent(defenseAnalysis.barrierAbsorptionPercent)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatAmount(defenseAnalysis.barrierDamageAbsorbed)}} damage absorbed out of {{formatAmount(defenseAnalysis.totalDamageToSquad)}} total damage</div>
+                            </div>
+                            <div v-if="defenseAnalysis.hasBarrierData && burstBarrier && burstBarrier.enemyBurstWindows > 0" class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Burst Barrier Absorption</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatPercent(burstBarrier.burstBarrierAbsorptionPercent)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatAmount(burstBarrier.totalBurstBarrierAbsorbed)}} damage absorbed out of {{formatAmount(burstBarrier.totalBurstDamageToSquad)}} burst damage</div>
+                                <div class="combat-replay-wvw-analysis-detail">Across {{formatCount(burstBarrier.enemyBurstWindows)}} burst windows</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="defenseAnalysis.topBarrierProviders && defenseAnalysis.topBarrierProviders.length > 0" class="col-xl-4">
+                        <div class="combat-replay-wvw-analysis-label mb-1">Top Barrier Providers</div>
+                        <div class="combat-replay-wvw-analysis-top-actors" style="max-height: 17vh; overflow-y: auto; padding-right: 0.25rem;">
+                            <button
+                                v-for="(entry, index) in defenseAnalysis.topBarrierProviders"
+                                :key="'defense-provider-' + index + '-' + entry.actorId"
+                                type="button"
+                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                :disabled="!entry.actorId"
+                                @click.stop="focusProvider(entry)">
+                                <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                                <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="!defenseAnalysis.hasBarrierData" class="combat-replay-wvw-analysis-helper mt-3">
+                    This log does not include barrier extension data, so granted barrier values are unavailable.
+                </div>
+            </div>
+            <div v-if="mitigationThresholds.length > 0" class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">Mitigation</div>
+                <div class="combat-replay-wvw-analysis-detail text-center mb-2">
+                    Cases where a squad player dropped to the selected health threshold or lower, then fully recovered without going down or dying.
+                </div>
+                <div class="d-flex justify-content-center align-items-center flex-wrap mb-2">
+                    <label class="combat-replay-wvw-analysis-label mb-0 mr-2" for="mitigation-threshold-select">Health threshold</label>
+                    <select
+                        id="mitigation-threshold-select"
+                        v-model.number="selectedMitigationThreshold"
+                        class="form-control form-control-sm"
+                        style="width: auto; min-width: 110px;">
+                        <option v-for="threshold in mitigationThresholds" :key="'mitigation-threshold-' + threshold.thresholdPercent" :value="threshold.thresholdPercent">
+                            {{threshold.thresholdPercent}}%
+                        </option>
+                    </select>
+                </div>
+                <div class="combat-replay-wvw-analysis-detail text-center mb-2">
+                    {{formatCount(selectedMitigationCount)}} qualifying cases at {{selectedMitigationThreshold}}%.
+                </div>
+                <div v-if="selectedMitigationEvents.length > 0" class="combat-replay-wvw-analysis-top-actors" style="max-height: 40vh; overflow-y: auto; padding-right: 0.25rem;">
+                    <div
+                        v-for="event in selectedMitigationEvents"
+                        :key="'defense-mitigation-' + event.time + '-' + event.actorId"
+                        class="combat-replay-wvw-analysis-top-actor-entry">
+                        <div class="combat-replay-wvw-analysis-top-actor-name mb-1">
+                            <img v-if="event.icon" :src="event.icon" alt="" class="icon icon-hover mx-1" />
+                            {{event.name}}
+                        </div>
+                        <div class="d-flex flex-wrap align-items-center" style="gap: 0.35rem;">
+                            <button
+                                v-if="event.previousFullHealthTime > 0"
+                                type="button"
+                                class="btn btn-link btn-sm p-0 combat-replay-wvw-analysis-detail"
+                                @click.stop="openMitigationEventAt(event, event.previousFullHealthTime)">
+                                Full: {{event.previousFullHealthTimeLabel}}
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-link btn-sm p-0 combat-replay-wvw-analysis-detail"
+                                @click.stop="openMitigationEventAt(event, event.time)">
+                                Low: {{event.timeLabel}}
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-link btn-sm p-0 combat-replay-wvw-analysis-detail"
+                                @click.stop="openMitigationEventAt(event, event.recoveryTime)">
+                                Recover: {{event.recoveryTimeLabel}}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="combat-replay-wvw-analysis-helper">
+                    No qualifying mitigation cases were found at {{selectedMitigationThreshold}}%.
+                </div>
+            </div>
+            <div v-if="!defenseAnalysis" class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">Defense</div>
+                <div class="combat-replay-wvw-analysis-helper">
+                    Defense analysis is unavailable for this log.
+                </div>
+            </div>
+        </div>
+        `,
+        computed: {
+            defenseAnalysis: function () {
+                return this.getDefenseAnalysis();
+            },
+            burstBarrier: function () {
+                return this.defenseAnalysis && this.defenseAnalysis.burstBarrier ? this.defenseAnalysis.burstBarrier : null;
+            },
+            mitigationThresholds: function () {
+                return this.defenseAnalysis && this.defenseAnalysis.mitigation && this.defenseAnalysis.mitigation.thresholds
+                    ? this.defenseAnalysis.mitigation.thresholds
+                    : [];
+            },
+            selectedMitigation: function () {
+                if (this.mitigationThresholds.length === 0) {
+                    return null;
+                }
+                return this.mitigationThresholds.find(threshold => threshold.thresholdPercent === this.selectedMitigationThreshold) || this.mitigationThresholds[this.mitigationThresholds.length - 1];
+            },
+            selectedMitigationEvents: function () {
+                return this.selectedMitigation && this.selectedMitigation.events ? this.selectedMitigation.events : [];
+            },
+            selectedMitigationCount: function () {
+                return this.selectedMitigation ? this.selectedMitigation.count : 0;
+            },
+        },
+        methods: {
+            focusProvider: function (entry) {
+                if (!entry || !entry.actorId) {
+                    return;
+                }
+                this.selectReplayActor(entry.actorId);
+            },
+            setOverviewMode: function () {
+                var current = this.$parent;
+                while (current) {
+                    if (current.$data && Object.prototype.hasOwnProperty.call(current.$data, "overviewMode")) {
+                        current.overviewMode = 0;
+                        return;
+                    }
+                    current = current.$parent;
+                }
+            },
+            openMitigationEventAt: function (event, time) {
+                if (!event) {
+                    return;
+                }
+                this.setOverviewMode();
+                this.jumpToBurst(time);
+                this.selectReplayActor(event.actorId);
             },
         },
     });
