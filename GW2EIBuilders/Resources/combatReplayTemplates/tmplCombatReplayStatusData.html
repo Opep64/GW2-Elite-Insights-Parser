@@ -35,6 +35,9 @@
             },
         },
         methods: {
+            normalizeSearchValue: function (value) {
+                return String(value || "").toLowerCase();
+            },
             findNearestSnapshotIndex: function (times, time) {
                 let low = 0;
                 let high = times.length - 1;
@@ -208,12 +211,14 @@
                 </div>
                 <combat-replay-overview-stats-component :time="time" :selectedactorid="selectedactorid" :targetless="targetless"></combat-replay-overview-stats-component>
             </div>
-            <combat-replay-wvw-analysis-component v-else-if="overviewMode === 1" :time="time" :selectedactorid="selectedactorid"></combat-replay-wvw-analysis-component>
-            <combat-replay-threat-boons-component v-else-if="overviewMode === 2" :time="time" :selectedactorid="selectedactorid"></combat-replay-threat-boons-component>
-            <combat-replay-positioning-component v-else-if="overviewMode === 3" :time="time" :selectedactorid="selectedactorid"></combat-replay-positioning-component>
-            <combat-replay-events-component v-else-if="overviewMode === 4" :time="time" :selectedactorid="selectedactorid"></combat-replay-events-component>
-            <combat-replay-defense-component v-else-if="overviewMode === 5" :time="time" :selectedactorid="selectedactorid"></combat-replay-defense-component>
-            <combat-replay-player-analysis-component v-else :time="time" :selectedactorid="selectedactorid"></combat-replay-player-analysis-component>
+            <keep-alive>
+                <combat-replay-wvw-analysis-component v-if="hasanalysis && overviewMode === 1" :time="time" :selectedactorid="selectedactorid"></combat-replay-wvw-analysis-component>
+                <combat-replay-threat-boons-component v-else-if="hasanalysis && overviewMode === 2" :time="time" :selectedactorid="selectedactorid"></combat-replay-threat-boons-component>
+                <combat-replay-positioning-component v-else-if="hasanalysis && overviewMode === 3" :time="time" :selectedactorid="selectedactorid"></combat-replay-positioning-component>
+                <combat-replay-events-component v-else-if="hasanalysis && overviewMode === 4" :time="time" :selectedactorid="selectedactorid"></combat-replay-events-component>
+                <combat-replay-defense-component v-else-if="hasanalysis && overviewMode === 5" :time="time" :selectedactorid="selectedactorid"></combat-replay-defense-component>
+                <combat-replay-player-analysis-component v-else-if="hasanalysis && overviewMode === 6" :time="time" :selectedactorid="selectedactorid"></combat-replay-player-analysis-component>
+            </keep-alive>
             <div v-if="showOverviewHelp" class="wvw-summary-modal-backdrop" @click.self="showOverviewHelp = false">
                 <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay compact card help">
                     <button type="button" class="wvw-summary-modal-close" aria-label="Close compact card help" @click="showOverviewHelp = false">&times;</button>
@@ -267,7 +272,20 @@
             return {
                 overviewMode: 0,
                 showOverviewHelp: false,
+                analysisScrollTopByMode: {},
             };
+        },
+        watch: {
+            overviewMode: function (newMode, oldMode) {
+                if (typeof oldMode === "number") {
+                    this.$set(this.analysisScrollTopByMode, oldMode, window.pageYOffset || document.documentElement.scrollTop || 0);
+                }
+                this.$nextTick(() => {
+                    if (Object.prototype.hasOwnProperty.call(this.analysisScrollTopByMode, newMode)) {
+                        window.scrollTo(0, this.analysisScrollTopByMode[newMode]);
+                    }
+                });
+            },
         },
     });
 
@@ -888,21 +906,23 @@
                     <a class="nav-link" :class="{active: eventMode === 'recovered'}" @click="eventMode = 'recovered'">Recovered</a>
                 </li>
             </ul>
-            <combat-replay-downs-component
-                v-if="eventMode === 'downs'"
-                :time="time"
-                :selectedactorid="selectedactorid">
-            </combat-replay-downs-component>
-            <combat-replay-kills-component
-                v-if="eventMode === 'kills'"
-                :time="time"
-                :selectedactorid="selectedactorid">
-            </combat-replay-kills-component>
-            <combat-replay-recovered-component
-                v-if="eventMode === 'recovered'"
-                :time="time"
-                :selectedactorid="selectedactorid">
-            </combat-replay-recovered-component>
+            <keep-alive>
+                <combat-replay-downs-component
+                    v-if="eventMode === 'downs'"
+                    :time="time"
+                    :selectedactorid="selectedactorid">
+                </combat-replay-downs-component>
+                <combat-replay-kills-component
+                    v-else-if="eventMode === 'kills'"
+                    :time="time"
+                    :selectedactorid="selectedactorid">
+                </combat-replay-kills-component>
+                <combat-replay-recovered-component
+                    v-else-if="eventMode === 'recovered'"
+                    :time="time"
+                    :selectedactorid="selectedactorid">
+                </combat-replay-recovered-component>
+            </keep-alive>
         </div>
         `,
         computed: {
@@ -918,8 +938,10 @@
         data: function () {
             return {
                 selectedEventKey: null,
-                summaryView: "combined",
+                summaryView: "enemy",
                 showDownSummaryHelp: false,
+                eventListScrollTop: 0,
+                eventDetailScrollTop: 0,
             };
         },
         template: `
@@ -931,9 +953,9 @@
                 <div class="combat-replay-wvw-analysis-card-title">Down Summary</div>
                 <div style="display: flex; justify-content: center; margin-bottom: 0.85rem;">
                     <div :style="getSummaryToggleGroupStyle()" role="group" aria-label="Down summary view">
-                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'combined')" @click="summaryView = 'combined'">Combined</button>
-                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'squad')" @click="summaryView = 'squad'">Squad</button>
                         <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'enemy')" @click="summaryView = 'enemy'">Enemy</button>
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'squad')" @click="summaryView = 'squad'">Squad</button>
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'combined')" @click="summaryView = 'combined'">Combined</button>
                     </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-grid mb-2">
@@ -1112,9 +1134,9 @@
                     <div class="combat-replay-overview-help-section">
                         <div class="combat-replay-overview-help-heading">View modes</div>
                         <ul class="combat-replay-overview-help-list">
-                            <li><strong>Combined</strong>: squad and enemy down events together.</li>
-                            <li><strong>Squad</strong>: only downs suffered by our squad.</li>
                             <li><strong>Enemy</strong>: only enemy downs caused during the fight.</li>
+                            <li><strong>Squad</strong>: only downs suffered by our squad.</li>
+                            <li><strong>Combined</strong>: squad and enemy down events together.</li>
                         </ul>
                     </div>
                     <div class="combat-replay-overview-help-section">
@@ -1140,7 +1162,7 @@
                 <div class="col-lg-4 mb-2">
                     <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
                         <div class="combat-replay-wvw-analysis-card-title">Downs</div>
-                        <div style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;">
+                        <div ref="eventList" style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;" @scroll.passive="captureEventScroll">
                             <div v-if="events.length === 0" class="combat-replay-wvw-analysis-helper">No down events were found in this log.</div>
                             <div v-else class="combat-replay-wvw-analysis-bursts">
                                 <button
@@ -1176,7 +1198,7 @@
                 <div class="col-lg-8 mb-2">
                     <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
                         <div class="combat-replay-wvw-analysis-card-title">Selected Down Event</div>
-                        <div v-if="selectedEvent" style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;">
+                        <div v-if="selectedEvent" ref="eventDetail" style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;" @scroll.passive="captureEventScroll">
                             <div class="combat-replay-wvw-analysis-selected">
                                 <div class="combat-replay-wvw-analysis-selected-header">
                                     <img
@@ -1400,8 +1422,39 @@
                 return this.events.find(event => this.getEventKey(event) === this.selectedEventKey) || this.events[0];
             },
         },
+        activated: function () {
+            this.restoreEventScroll();
+        },
+        deactivated: function () {
+            this.captureEventScroll();
+        },
         methods: {
+            captureEventScroll: function () {
+                if (this.$refs.eventList) {
+                    this.eventListScrollTop = this.$refs.eventList.scrollTop;
+                }
+                if (this.$refs.eventDetail) {
+                    this.eventDetailScrollTop = this.$refs.eventDetail.scrollTop;
+                }
+            },
+            restoreEventScroll: function () {
+                this.$nextTick(() => {
+                    const applyScroll = () => {
+                        if (this.$refs.eventList) {
+                            this.$refs.eventList.scrollTop = this.eventListScrollTop || 0;
+                        }
+                        if (this.$refs.eventDetail) {
+                            this.$refs.eventDetail.scrollTop = this.eventDetailScrollTop || 0;
+                        }
+                    };
+                    applyScroll();
+                    if (window.requestAnimationFrame) {
+                        window.requestAnimationFrame(applyScroll);
+                    }
+                });
+            },
             openEvent: function (event) {
+                this.captureEventScroll();
                 this.selectedEventKey = this.getEventKey(event);
                 this.jumpToBurst(event.time);
                 this.selectReplayActor(event.actorId);
@@ -1480,8 +1533,10 @@
         data: function () {
             return {
                 selectedEventKey: null,
-                summaryView: "combined",
+                summaryView: "enemy",
                 showKillSummaryHelp: false,
+                eventListScrollTop: 0,
+                eventDetailScrollTop: 0,
             };
         },
         template: `
@@ -1493,9 +1548,9 @@
                 <div class="combat-replay-wvw-analysis-card-title">Kill Summary</div>
                 <div style="display: flex; justify-content: center; margin-bottom: 0.85rem;">
                     <div :style="getSummaryToggleGroupStyle()" role="group" aria-label="Kill summary view">
-                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'combined')" @click="summaryView = 'combined'">Combined</button>
-                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'squad')" @click="summaryView = 'squad'">Squad</button>
                         <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'enemy')" @click="summaryView = 'enemy'">Enemy</button>
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'squad')" @click="summaryView = 'squad'">Squad</button>
+                        <button type="button" class="btn" :style="getSummaryToggleButtonStyle(summaryView === 'combined')" @click="summaryView = 'combined'">Combined</button>
                     </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-grid mb-2">
@@ -1645,9 +1700,9 @@
                     <div class="combat-replay-overview-help-section">
                         <div class="combat-replay-overview-help-heading">View modes</div>
                         <ul class="combat-replay-overview-help-list">
-                            <li><strong>Combined</strong>: all kill windows together.</li>
-                            <li><strong>Squad</strong>: squad players being killed after going down.</li>
                             <li><strong>Enemy</strong>: enemy players our side converted from down to kill.</li>
+                            <li><strong>Squad</strong>: squad players being killed after going down.</li>
+                            <li><strong>Combined</strong>: all down-to-kill windows together.</li>
                         </ul>
                     </div>
                     <div class="combat-replay-overview-help-section">
@@ -1673,7 +1728,7 @@
                 <div class="col-lg-4 mb-2">
                     <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
                         <div class="combat-replay-wvw-analysis-card-title">Kills</div>
-                        <div style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;">
+                        <div ref="eventList" style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;" @scroll.passive="captureEventScroll">
                             <div v-if="events.length === 0" class="combat-replay-wvw-analysis-helper">No kill events were found in this log.</div>
                             <div v-else class="combat-replay-wvw-analysis-bursts">
                                 <button
@@ -1707,7 +1762,7 @@
                 <div class="col-lg-8 mb-2">
                     <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
                         <div class="combat-replay-wvw-analysis-card-title">Selected Kill Event</div>
-                        <div v-if="selectedEvent" style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;">
+                        <div v-if="selectedEvent" ref="eventDetail" style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;" @scroll.passive="captureEventScroll">
                             <div class="combat-replay-wvw-analysis-selected">
                                 <div class="combat-replay-wvw-analysis-selected-header">
                                     <img
@@ -1903,8 +1958,39 @@
                 return this.events.find(event => this.getEventKey(event) === this.selectedEventKey) || this.events[0];
             },
         },
+        activated: function () {
+            this.restoreEventScroll();
+        },
+        deactivated: function () {
+            this.captureEventScroll();
+        },
         methods: {
+            captureEventScroll: function () {
+                if (this.$refs.eventList) {
+                    this.eventListScrollTop = this.$refs.eventList.scrollTop;
+                }
+                if (this.$refs.eventDetail) {
+                    this.eventDetailScrollTop = this.$refs.eventDetail.scrollTop;
+                }
+            },
+            restoreEventScroll: function () {
+                this.$nextTick(() => {
+                    const applyScroll = () => {
+                        if (this.$refs.eventList) {
+                            this.$refs.eventList.scrollTop = this.eventListScrollTop || 0;
+                        }
+                        if (this.$refs.eventDetail) {
+                            this.$refs.eventDetail.scrollTop = this.eventDetailScrollTop || 0;
+                        }
+                    };
+                    applyScroll();
+                    if (window.requestAnimationFrame) {
+                        window.requestAnimationFrame(applyScroll);
+                    }
+                });
+            },
             openEvent: function (event) {
+                this.captureEventScroll();
                 this.selectedEventKey = this.getEventKey(event);
                 this.jumpToBurst(event.time);
                 this.selectReplayActor(event.actorId);
@@ -3103,12 +3189,23 @@
             return {
                 selectedMitigationThreshold: 50,
                 selectedMitigationEffect: "",
+                mitigationPlayerSearchOpen: false,
+                mitigationPlayerSearchQuery: "",
+                selectedMitigationPlayerId: null,
+                mitigationSavedOnly: false,
+                mitigationListScrollTop: 0,
+                pendingMitigationScrollRestore: false,
+                showMitigationSummaryHelp: false,
+                showMitigationCasesHelp: false,
             };
         },
         template: `
         <div class="combat-replay-wvw-analysis-panel">
-            <div v-if="defenseAnalysis" class="combat-replay-wvw-analysis-card">
-                <div class="combat-replay-wvw-analysis-card-title">Barrier Summary</div>
+            <div v-if="defenseAnalysis" class="combat-replay-wvw-analysis-card" style="position: relative;">
+                <div class="combat-replay-overview-help-row" style="position: absolute; top: 0.65rem; right: 0.75rem; margin-bottom: 0;">
+                    <button type="button" class="combat-replay-overview-help-button" title="Mitigation summary help" aria-label="Show mitigation summary help" @click="showMitigationSummaryHelp = true">?</button>
+                </div>
+                <div class="combat-replay-wvw-analysis-card-title" style="margin-top: 0;">Mitigation Summary</div>
                 <div v-if="defenseAnalysis.barrierCoverageMayBeIncomplete" class="combat-replay-wvw-analysis-detail text-center mb-2">
                     Barrier totals may be understated or incomplete if some squad players were missing the healing/barrier addon.
                 </div>
@@ -3148,9 +3245,87 @@
                 <div v-if="!defenseAnalysis.hasBarrierData" class="combat-replay-wvw-analysis-helper mt-3">
                     This log does not include barrier extension data, so granted barrier values are unavailable.
                 </div>
+                <div v-if="defenseAnalysis.savedPlayersSummary && defenseAnalysis.savedPlayersSummary.savedCases > 0" class="mt-3">
+                    <div class="combat-replay-wvw-analysis-label mb-2 text-center">Saved Players (99% threshold)</div>
+                    <div class="combat-replay-wvw-analysis-grid mb-2" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));">
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Saved cases</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(defenseAnalysis.savedPlayersSummary.savedCases)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">99% threshold saved entries</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Barrier absorbed for saved players</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(defenseAnalysis.savedPlayersSummary.totalBarrierAbsorbed)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">{{formatCount(defenseAnalysis.savedPlayersSummary.barrierSavedCases)}} cases included barrier</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Estimated damage reduction for saved players</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(defenseAnalysis.savedPlayersSummary.totalEstimatedDamageReduction)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">{{formatCount(defenseAnalysis.savedPlayersSummary.damageReductionSavedCases)}} cases included damage reduction</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Lowest Health</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(defenseAnalysis.savedPlayersSummary.averageLowestHealthPercent)}}%</div>
+                            <div class="combat-replay-wvw-analysis-detail">{{formatAmount(defenseAnalysis.savedPlayersSummary.lowestLowestHealthPercent)}}% lowest qualifying health</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-xl-4 mb-3 mb-xl-0">
+                            <div class="combat-replay-wvw-analysis-label mb-1">Save breakdown</div>
+                            <div class="combat-replay-wvw-analysis-top-actors">
+                                <div class="combat-replay-wvw-analysis-top-actor-entry">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">Barrier saves</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(defenseAnalysis.savedPlayersSummary.barrierSavedCases)}}</span>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-top-actor-entry">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">Damage reduction saves</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(defenseAnalysis.savedPlayersSummary.damageReductionSavedCases)}}</span>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-top-actor-entry">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">Barrier + damage reduction</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(defenseAnalysis.savedPlayersSummary.bothSavedCases)}}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-xl-4 mb-3 mb-xl-0">
+                            <div class="combat-replay-wvw-analysis-label mb-1">Saved-player window totals</div>
+                            <div class="combat-replay-wvw-analysis-top-actors">
+                                <div class="combat-replay-wvw-analysis-top-actor-entry">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">Incoming damage</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(defenseAnalysis.savedPlayersSummary.totalIncomingDamage)}}</span>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-top-actor-entry">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">Incoming healing</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(defenseAnalysis.savedPlayersSummary.totalIncomingHealing)}}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-xl-4">
+                            <div class="combat-replay-wvw-analysis-label mb-1">Top damage reduction effects</div>
+                            <div v-if="defenseAnalysis.savedPlayersSummary.topDamageReductionEffects && defenseAnalysis.savedPlayersSummary.topDamageReductionEffects.length > 0" class="combat-replay-wvw-analysis-top-actors">
+                                <div
+                                    v-for="(entry, index) in defenseAnalysis.savedPlayersSummary.topDamageReductionEffects"
+                                    :key="'saved-effect-' + index + '-' + entry.name"
+                                    class="combat-replay-wvw-analysis-top-actor-entry">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img v-if="entry.icon" :src="entry.icon" alt="" class="icon icon-hover mx-1" />
+                                        {{entry.name}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(entry.count)}} cases</span>
+                                </div>
+                            </div>
+                            <div v-else class="combat-replay-wvw-analysis-helper">
+                                No damage reduction saves were detected in the 99% bucket.
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div v-if="mitigationThresholds.length > 0" class="combat-replay-wvw-analysis-card">
-                <div class="combat-replay-wvw-analysis-card-title">Mitigation</div>
+            <div v-if="mitigationThresholds.length > 0" class="combat-replay-wvw-analysis-card" style="position: relative;">
+                <div class="combat-replay-overview-help-row" style="position: absolute; top: 0.65rem; right: 0.75rem; margin-bottom: 0;">
+                    <button type="button" class="combat-replay-overview-help-button" title="Mitigation cases help" aria-label="Show mitigation cases help" @click="showMitigationCasesHelp = true">?</button>
+                </div>
+                <div class="combat-replay-wvw-analysis-card-title" style="margin-top: 0;">Mitigation Cases</div>
                 <div class="combat-replay-wvw-analysis-detail text-center mb-2">
                     Cases where a squad player dropped to the selected health threshold or lower, then fully recovered without going down or dying.
                 </div>
@@ -3176,49 +3351,63 @@
                             {{effectName}}
                         </option>
                     </select>
+                    <label class="combat-replay-wvw-analysis-label mb-0 d-inline-flex align-items-center" style="gap: 0.4rem;">
+                        <input type="checkbox" v-model="mitigationSavedOnly">
+                        Saved only
+                    </label>
+                    <div style="display: inline-flex; align-items: center; gap: 0.4rem; min-width: 220px; max-width: 360px;">
+                        <label class="combat-replay-wvw-analysis-label mb-0" style="white-space: nowrap;">Player</label>
+                        <div class="combat-replay-player-search" style="flex: 1 1 auto; position: relative; z-index: 25;">
+                            <input
+                                v-model.trim="mitigationPlayerSearchQuery"
+                                class="combat-replay-player-search-input"
+                                type="text"
+                                placeholder="Type to find a player"
+                                @focus="openMitigationPlayerSearch"
+                                @input="handleMitigationPlayerSearchInput"
+                                @blur="handleMitigationPlayerSearchBlur">
+                            <div v-if="mitigationPlayerSearchOpen || mitigationPlayerSearchQuery" class="combat-replay-player-search-results" style="z-index: 30;">
+                                <button
+                                    v-for="player in filteredMitigationPlayers"
+                                    :key="'mitigation-player-search-' + player.uniqueID"
+                                    class="combat-replay-player-search-result"
+                                    type="button"
+                                    @mousedown.prevent="chooseMitigationPlayer(player)">
+                                    <img :src="player.icon" :alt="player.profession || player.name" class="combat-replay-player-search-result-icon">
+                                    <span class="combat-replay-player-search-result-name">{{player.name}}</span>
+                                </button>
+                                <div v-if="filteredMitigationPlayers.length === 0" class="combat-replay-player-search-empty">No matching players.</div>
+                            </div>
+                        </div>
+                        <button
+                            v-if="selectedMitigationPlayer"
+                            type="button"
+                            class="btn btn-sm"
+                            style="padding: 0.15rem 0.45rem; line-height: 1.1;"
+                            @click="clearMitigationPlayerFilter">
+                            Clear {{selectedMitigationPlayer.name}}
+                        </button>
+                    </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-detail text-center mb-2">
                     {{formatCount(selectedMitigationCount)}} qualifying cases at {{selectedMitigationThreshold}}%.
                 </div>
-                <div v-if="selectedMitigationEvents.length > 0" class="combat-replay-wvw-analysis-top-actors" style="max-height: 40vh; overflow-y: auto; padding-right: 0.25rem;">
+                <div v-if="selectedMitigationEvents.length > 0" ref="mitigationList" class="combat-replay-wvw-analysis-top-actors" style="max-height: 40vh; overflow-y: auto; padding-right: 0.25rem;" @scroll.passive="captureMitigationScroll">
                     <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem;">
                     <div
                         v-for="event in selectedMitigationEvents"
                         :key="'defense-mitigation-' + event.time + '-' + event.actorId"
                         class="combat-replay-wvw-analysis-burst-entry"
                         style="cursor: default; display: grid; gap: 0.45rem; align-items: start; min-width: 0;">
-                        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 0.5rem 0.75rem; align-items: start; min-width: 0;">
+                        <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem 0.75rem; align-items: start; min-width: 0;">
                             <div style="display: flex; align-items: center; gap: 0.5rem; min-width: 0; flex-wrap: wrap;">
                                 <div class="combat-replay-wvw-analysis-top-actor-name" style="min-width: 0; white-space: normal;">
                                     <img v-if="event.icon" :src="event.icon" alt="" class="icon icon-hover mx-1" />
                                     {{event.name}}
                                 </div>
-                            </div>
-                            <div style="display: grid; gap: 0.25rem; justify-items: center; align-content: start; min-width: 0;">
-                                <span
-                                    v-if="event.barrierAbsorbedToLowest > 0"
-                                    class="combat-replay-wvw-analysis-detail"
-                                    style="display: inline-flex; align-items: center; padding: 0.18rem 0.5rem; border-radius: 999px; background: rgba(255,255,255,0.05); color: inherit; line-height: 1.2; white-space: nowrap;">
-                                    Barrier {{formatAmount(event.barrierAbsorbedToLowest)}}
+                                <span class="combat-replay-wvw-analysis-detail" style="display: inline-flex; align-items: center; padding: 0.18rem 0.5rem; border-radius: 999px; background: rgba(255,255,255,0.05); line-height: 1.2; white-space: nowrap;">
+                                    {{event.healthPoolEstimated ? 'Estimated health pool ' : 'Health pool '}}{{formatCount(event.healthPoolUsed)}}
                                 </span>
-                                <div
-                                    v-if="event.barrierAbsorbedToLowest > 0"
-                                    class="combat-replay-wvw-analysis-detail"
-                                    style="text-align: center; line-height: 1.2;">
-                                    Est. health {{formatCount(event.lowestHealthEstimate)}}
-                                </div>
-                                <div
-                                    v-if="event.protectionEstimatedMitigation > 0"
-                                    class="combat-replay-wvw-analysis-detail"
-                                    style="text-align: center; line-height: 1.2;">
-                                    Prot est {{formatAmount(event.protectionEstimatedMitigation)}}
-                                </div>
-                                <div class="combat-replay-wvw-analysis-detail" style="text-align: center; line-height: 1.2;">
-                                    Dmg {{formatAmount(event.incomingDamage)}}
-                                </div>
-                                <div class="combat-replay-wvw-analysis-detail" style="text-align: center; line-height: 1.2;">
-                                    Heal {{formatAmount(event.incomingHealing)}}
-                                </div>
                             </div>
                             <div style="display: grid; gap: 0.2rem; text-align: right; white-space: nowrap; justify-items: end;">
                                 <div class="combat-replay-wvw-analysis-burst-time">
@@ -3229,41 +3418,63 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="d-flex flex-wrap align-items-center" style="gap: 0.5rem 0.75rem; min-width: 0;">
+                        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.35rem 0.5rem; min-width: 0;">
+                            <div v-if="event.barrierAbsorbedToLowest > 0" class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
+                                <div class="combat-replay-wvw-analysis-label" style="margin-bottom: 0.15rem;">Barrier absorbed</div>
+                                <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatAmount(event.barrierAbsorbedToLowest)}}</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
+                                <div class="combat-replay-wvw-analysis-label" style="margin-bottom: 0.15rem;">Health at lowest point</div>
+                                <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatPercent(event.lowestHealthPercent)}}</div>
+                            </div>
+                            <div v-if="event.estimatedMitigation > 0" class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
+                                <div class="combat-replay-wvw-analysis-label" style="margin-bottom: 0.15rem;">Estimated mitigation</div>
+                                <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatAmount(event.estimatedMitigation)}}</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
+                                <div class="combat-replay-wvw-analysis-label" style="margin-bottom: 0.15rem;">Incoming damage</div>
+                                <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatAmount(event.incomingDamage)}}</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
+                                <div class="combat-replay-wvw-analysis-label" style="margin-bottom: 0.15rem;">Incoming healing</div>
+                                <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatAmount(event.incomingHealing)}}</div>
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap align-items-center" style="gap: 0.45rem 0.9rem; min-width: 0;">
                             <button
                                 v-if="event.previousFullHealthTime > 0"
                                 type="button"
                                 class="btn btn-link btn-sm p-0 combat-replay-wvw-analysis-detail"
                                 @click.stop="openMitigationEventAt(event, event.previousFullHealthTime)">
-                                Full: {{event.previousFullHealthTimeLabel}}
+                                Jump to full health: {{event.previousFullHealthTimeLabel}}
                             </button>
                             <button
                                 type="button"
                                 class="btn btn-link btn-sm p-0 combat-replay-wvw-analysis-detail"
                                 @click.stop="openMitigationEventAt(event, event.time)">
-                                Low: {{event.timeLabel}}
+                                Jump to threshold crossing: {{event.timeLabel}}
                             </button>
                             <button
                                 v-if="event.lowestHealthTime > 0"
                                 type="button"
                                 class="btn btn-link btn-sm p-0 combat-replay-wvw-analysis-detail"
                                 @click.stop="openMitigationEventAt(event, event.lowestHealthTime)">
-                                Lowest: {{event.lowestHealthTimeLabel}}
+                                Jump to lowest health: {{event.lowestHealthTimeLabel}}
                             </button>
                             <button
                                 type="button"
                                 class="btn btn-link btn-sm p-0 combat-replay-wvw-analysis-detail"
                                 @click.stop="openMitigationEventAt(event, event.recoveryTime)">
-                                Recover: {{event.recoveryTimeLabel}}
+                                Jump to full recovery: {{event.recoveryTimeLabel}}
                             </button>
                         </div>
-                        <div v-if="event.effects && event.effects.length > 0" style="display: flex; flex-wrap: wrap; gap: 0.35rem 0.45rem; min-width: 0;">
+                        <div v-if="event.effects && event.effects.length > 0" style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.35rem 0.45rem; min-width: 0;">
                             <span
                                 v-for="(effect, effectIndex) in event.effects"
                                 :key="'mitigation-effect-' + event.actorId + '-' + event.time + '-' + effectIndex"
                                 class="combat-replay-wvw-analysis-detail"
                                 :title="getMitigationEffectTooltip(effect)"
-                                :style="event.barrierSavedPlayer && effect.name === 'Barrier'
+                                :style="(event.barrierSavedPlayer && effect.name === 'Barrier') || (event.estimatedMitigationSavedPlayer && event.estimatedMitigationSavedEffects && event.estimatedMitigationSavedEffects.includes(effect.name))
                                     ? 'display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.18rem 0.42rem; border-radius: 999px; background: rgba(106, 226, 170, 0.18); color: #b8ffd8; line-height: 1.25; border: 1px solid rgba(152, 240, 194, 0.35);'
                                     : 'display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.18rem 0.42rem; border-radius: 999px; background: rgba(255,255,255,0.05); line-height: 1.25;'">
                                 <img v-if="effect.icon" :src="effect.icon" alt="" class="icon icon-hover" style="margin-right: 0;" />
@@ -3282,6 +3493,96 @@
                 <div class="combat-replay-wvw-analysis-card-title">Defense</div>
                 <div class="combat-replay-wvw-analysis-helper">
                     Defense analysis is unavailable for this log.
+                </div>
+            </div>
+            <div v-if="showMitigationSummaryHelp" class="wvw-summary-modal-backdrop" @click.self="showMitigationSummaryHelp = false">
+                <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Mitigation summary help">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close mitigation summary help" @click="showMitigationSummaryHelp = false">&times;</button>
+                    <div class="wvw-summary-modal-title">Mitigation Summary Help</div>
+                    <div class="wvw-summary-modal-subtitle">
+                        This section combines whole-fight barrier totals with a focused saved-player summary built from the 99% mitigation threshold bucket.
+                    </div>
+                    <div class="combat-replay-overview-help-text">
+                        <strong>Saved player / saved case</strong> means a mitigation entry where barrier, estimated damage reduction, or both are large enough to cover the player's estimated remaining health at the lowest-health point.
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Whole-fight barrier metrics</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Overall Barrier Absorption</strong>: percentage of incoming squad damage that hit barrier instead of health over the whole fight.</li>
+                            <li><strong>Burst Barrier Absorption</strong>: percentage of incoming squad damage absorbed by barrier during tracked enemy burst windows.</li>
+                            <li><strong>Top Barrier Providers</strong>: squad players who contributed the most outgoing barrier across the fight.</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Saved Players (99% threshold)</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Saved cases</strong>: total mitigation entries in the 99% threshold bucket where barrier, damage reduction, or both met the current save estimate.</li>
+                            <li><strong>Barrier absorbed for saved players</strong>: barrier absorbed between the last full-health point and the lowest-health point for saved entries.</li>
+                            <li><strong>Estimated damage reduction for saved players</strong>: estimated strike damage prevented by tracked reduction effects during saved entries.</li>
+                            <li><strong>Lowest Health</strong>: the average lowest-health percent across qualifying saved entries, plus the single lowest qualifying health percent.</li>
+                            <li><strong>Save breakdown</strong>: counts of saved entries attributed to barrier, damage reduction, or both.</li>
+                            <li><strong>Top damage reduction effects</strong>: the most common tracked reduction effects that contributed to saved entries.</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Important caveats</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li>Saved-player counts are heuristic and are intended for comparison and investigation, not exact ground truth.</li>
+                            <li>Barrier values can be incomplete if some players were missing the barrier/healing addon.</li>
+                            <li>Damage reduction estimates currently only use the tracked reduction effects implemented in the mitigation calculation.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div v-if="showMitigationCasesHelp" class="wvw-summary-modal-backdrop" @click.self="showMitigationCasesHelp = false">
+                <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Mitigation cases help">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close mitigation cases help" @click="showMitigationCasesHelp = false">&times;</button>
+                    <div class="wvw-summary-modal-title">Mitigation Cases Help</div>
+                    <div class="wvw-summary-modal-subtitle">
+                        Mitigation Cases lists recovery windows where a squad player dropped to or below the selected threshold, then returned to full health without going down or dying.
+                    </div>
+                    <div class="combat-replay-overview-help-text">
+                        <strong>Saved player / saved case</strong> means a mitigation entry where barrier, estimated damage reduction, or both are large enough to cover the player's estimated remaining health at the lowest-health point.
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">How a case is built</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li>The case starts when the player first crosses the selected health threshold while alive and upright.</li>
+                            <li>The case is anchored to the last full-health point before the drop when one can be found.</li>
+                            <li>The case ends when the player returns to full health, or is discarded if the player goes down or dies first.</li>
+                            <li>A player is not added again until they fully recover, go down, or die.</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Filters and links</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Health threshold</strong>: switches between precomputed threshold buckets.</li>
+                            <li><strong>Effect</strong>: only shows cases where the selected mitigation effect appeared during the full-to-recover window.</li>
+                            <li><strong>Saved only</strong>: after the effect filter is applied, keeps only entries where the selected effect, or barrier, was part of the current save estimate.</li>
+                            <li><strong>Player</strong>: after threshold, saved-only, and effect filters are applied, narrows the list to one selected player.</li>
+                            <li><strong>Jump links</strong>: switch to Overview, move the replay to the selected moment, and select the player.</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Card fields</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Health pool</strong>: uses the player's real max-health pool when the log provides it, otherwise a spec-based estimate.</li>
+                            <li><strong>Barrier absorbed</strong>: actual logged shield damage absorbed from the start of the case to the lowest-health point.</li>
+                            <li><strong>Health at lowest point</strong>: lowest observed health percent in the case window.</li>
+                            <li><strong>Estimated mitigation</strong>: estimated strike damage prevented by tracked damage-reduction effects during the case window.</li>
+                            <li><strong>Incoming damage / Incoming healing</strong>: totals across the full-to-recover window.</li>
+                            <li><strong>Effect chips</strong>: mitigation effects active at some point in the window, with active duration shown on each chip.</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Saved highlighting</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Saved player</strong>: a case where barrier, estimated damage reduction, or both are large enough to cover the player's estimated remaining health at the lowest-health point.</li>
+                            <li>The <strong>Barrier</strong> effect chip is highlighted when barrier alone meets the current save estimate.</li>
+                            <li>Tracked damage-reduction effect chips are highlighted when those effects meet the current estimated save check.</li>
+                            <li>These highlights are heuristic and are intended to flag likely saves for review.</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>
@@ -3307,6 +3608,55 @@
             allSelectedMitigationEvents: function () {
                 return this.selectedMitigation && this.selectedMitigation.events ? this.selectedMitigation.events : [];
             },
+            mitigationSavedFilteredEvents: function () {
+                return this.allSelectedMitigationEvents.filter(event => {
+                    if (!this.mitigationSavedOnly) {
+                        return true;
+                    }
+                    if (this.selectedMitigationEffect === "Barrier") {
+                        return !!event.barrierSavedPlayer;
+                    }
+                    if (this.selectedMitigationEffect) {
+                        return !!event.estimatedMitigationSavedPlayer
+                            && !!event.estimatedMitigationSavedEffects
+                            && event.estimatedMitigationSavedEffects.includes(this.selectedMitigationEffect);
+                    }
+                    return !!event.barrierSavedPlayer || !!event.estimatedMitigationSavedPlayer;
+                });
+            },
+            mitigationEffectFilteredEvents: function () {
+                return this.mitigationSavedFilteredEvents.filter(event =>
+                    !this.selectedMitigationEffect
+                    || (event.effects && event.effects.some(effect => effect && effect.name === this.selectedMitigationEffect))
+                );
+            },
+            mitigationPlayers: function () {
+                const playersById = new Map();
+                for (const event of this.mitigationEffectFilteredEvents) {
+                    if (event && event.actorId != null && !playersById.has(event.actorId)) {
+                        playersById.set(event.actorId, {
+                            uniqueID: event.actorId,
+                            name: event.name,
+                            icon: event.icon,
+                            profession: "",
+                        });
+                    }
+                }
+                return Array.from(playersById.values()).sort((left, right) => left.name.localeCompare(right.name));
+            },
+            filteredMitigationPlayers: function () {
+                const query = this.normalizeSearchValue(this.mitigationPlayerSearchQuery);
+                const players = query
+                    ? this.mitigationPlayers.filter(player => this.normalizeSearchValue(player.name).includes(query))
+                    : this.mitigationPlayers;
+                return players.slice(0, 12);
+            },
+            selectedMitigationPlayer: function () {
+                if (this.selectedMitigationPlayerId == null) {
+                    return null;
+                }
+                return this.mitigationPlayers.find(player => String(player.uniqueID) === String(this.selectedMitigationPlayerId)) || null;
+            },
             mitigationEffectOptions: function () {
                 const effectNames = new Set();
                 for (const event of this.allSelectedMitigationEvents) {
@@ -3322,23 +3672,45 @@
                 return Array.from(effectNames).sort((left, right) => left.localeCompare(right));
             },
             selectedMitigationEvents: function () {
-                if (!this.selectedMitigationEffect) {
-                    return this.allSelectedMitigationEvents;
+                if (this.selectedMitigationPlayerId == null) {
+                    return this.mitigationEffectFilteredEvents;
                 }
-                return this.allSelectedMitigationEvents.filter(event =>
-                    event.effects && event.effects.some(effect => effect && effect.name === this.selectedMitigationEffect)
-                );
+                const selectedId = String(this.selectedMitigationPlayerId);
+                return this.mitigationEffectFilteredEvents.filter(event => String(event.actorId) === selectedId);
             },
             selectedMitigationCount: function () {
                 return this.selectedMitigationEvents.length;
             },
         },
         watch: {
+            mitigationPlayerSearchQuery: function (newQuery) {
+                if (newQuery) {
+                    this.mitigationPlayerSearchOpen = true;
+                }
+            },
             mitigationEffectOptions: function (newOptions) {
                 if (this.selectedMitigationEffect && newOptions.indexOf(this.selectedMitigationEffect) === -1) {
                     this.selectedMitigationEffect = "";
                 }
             },
+            mitigationPlayers: function (newPlayers) {
+                if (this.selectedMitigationPlayerId != null && !newPlayers.some(player => String(player.uniqueID) === String(this.selectedMitigationPlayerId))) {
+                    this.selectedMitigationPlayerId = null;
+                    this.mitigationPlayerSearchQuery = "";
+                }
+            },
+            selectedMitigationEvents: function () {
+                this.scheduleMitigationScrollRestore();
+            },
+        },
+        activated: function () {
+            this.scheduleMitigationScrollRestore();
+        },
+        updated: function () {
+            this.applyMitigationScrollRestore();
+        },
+        deactivated: function () {
+            this.captureMitigationScroll();
         },
         methods: {
             focusProvider: function (entry) {
@@ -3346,6 +3718,60 @@
                     return;
                 }
                 this.selectReplayActor(entry.actorId);
+            },
+            captureMitigationScroll: function () {
+                if (this.$refs.mitigationList) {
+                    this.mitigationListScrollTop = this.$refs.mitigationList.scrollTop;
+                }
+                this.pendingMitigationScrollRestore = this.mitigationListScrollTop > 0;
+            },
+            openMitigationPlayerSearch: function () {
+                this.mitigationPlayerSearchOpen = true;
+            },
+            handleMitigationPlayerSearchInput: function () {
+                this.mitigationPlayerSearchOpen = true;
+            },
+            handleMitigationPlayerSearchBlur: function () {
+                setTimeout(() => {
+                    this.mitigationPlayerSearchQuery = "";
+                    this.mitigationPlayerSearchOpen = false;
+                }, 120);
+            },
+            chooseMitigationPlayer: function (player) {
+                this.captureMitigationScroll();
+                this.selectedMitigationPlayerId = player.uniqueID;
+                this.mitigationPlayerSearchQuery = "";
+                this.mitigationPlayerSearchOpen = false;
+            },
+            clearMitigationPlayerFilter: function () {
+                this.captureMitigationScroll();
+                this.selectedMitigationPlayerId = null;
+                this.mitigationPlayerSearchQuery = "";
+                this.mitigationPlayerSearchOpen = false;
+            },
+            applyMitigationScrollRestore: function () {
+                if (!this.pendingMitigationScrollRestore || !this.$refs.mitigationList) {
+                    return;
+                }
+                this.$refs.mitigationList.scrollTop = this.mitigationListScrollTop || 0;
+                if (Math.abs(this.$refs.mitigationList.scrollTop - (this.mitigationListScrollTop || 0)) <= 1) {
+                    this.pendingMitigationScrollRestore = false;
+                }
+            },
+            scheduleMitigationScrollRestore: function () {
+                if (!(this.mitigationListScrollTop > 0)) {
+                    return;
+                }
+                this.pendingMitigationScrollRestore = true;
+                this.$nextTick(() => {
+                    this.applyMitigationScrollRestore();
+                    if (window.requestAnimationFrame) {
+                        window.requestAnimationFrame(() => this.applyMitigationScrollRestore());
+                    }
+                    setTimeout(() => this.applyMitigationScrollRestore(), 0);
+                    setTimeout(() => this.applyMitigationScrollRestore(), 50);
+                    setTimeout(() => this.applyMitigationScrollRestore(), 150);
+                });
             },
             setOverviewMode: function () {
                 var current = this.$parent;
@@ -3361,6 +3787,7 @@
                 if (!event) {
                     return;
                 }
+                this.captureMitigationScroll();
                 this.setOverviewMode();
                 this.jumpToBurst(time);
                 this.selectReplayActor(event.actorId);
@@ -3872,9 +4299,6 @@
             },
         },
         methods: {
-            normalizeSearchValue: function (value) {
-                return String(value || "").toLowerCase();
-            },
             openPlayerSearch: function () {
                 this.playerSearchOpen = true;
             },
