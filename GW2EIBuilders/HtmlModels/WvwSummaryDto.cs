@@ -140,7 +140,7 @@ internal class WvwSummaryDto
             OppositionEstimate = BuildOppositionEstimate(log, phase, combatReplayAnalysis, squadActors, hostilePlayerTargets, squad, enemy, squadDownState, enemyDownState, effectiveAlliedPlayerCount),
             Squad = squad,
             Enemy = enemy,
-            MetricRows = BuildMetricRows(durationInMilliseconds, squad, enemy, friendlyActors.Count),
+            MetricRows = BuildMetricRows(durationInMilliseconds, squad, enemy, squadDownState, enemyDownState, friendlyActors.Count),
             Moments = moments,
             PlayerStandouts = BuildPlayerStandouts(log, phase, combatReplayAnalysis, moments, squadActors, hostilePlayerTargets),
             DownsOutcomeRows = BuildDownsOutcomeRows(squadDownState, enemyDownState),
@@ -2819,11 +2819,23 @@ internal class WvwSummaryDto
         return result;
     }
 
-    private static List<WvwSummaryMetricRowDto> BuildMetricRows(long durationInMilliseconds, WvwSummarySideDto squad, WvwSummarySideDto enemy, int friendlyPlayerCount)
+    private static List<WvwSummaryMetricRowDto> BuildMetricRows(
+        long durationInMilliseconds,
+        WvwSummarySideDto squad,
+        WvwSummarySideDto enemy,
+        WvwSummaryDownStateSideDto squadDownState,
+        WvwSummaryDownStateSideDto enemyDownState,
+        int friendlyPlayerCount)
     {
         string squadPlayersValue = friendlyPlayerCount > 0
             ? $"{squad.PlayerCount} (+{friendlyPlayerCount} friendlies)"
             : squad.PlayerCount.ToString();
+        int squadDowns = enemyDownState.Downs;
+        int enemyDowns = squadDownState.Downs;
+        int squadKills = enemyDownState.KillConversions;
+        int enemyKills = squadDownState.KillConversions;
+        double squadDownKillConversionRate = squadDowns > 0 ? Math.Round(100.0 * squadKills / squadDowns, 1) : 0.0;
+        double enemyDownKillConversionRate = enemyDowns > 0 ? Math.Round(100.0 * enemyKills / enemyDowns, 1) : 0.0;
 
         return
         [
@@ -2831,9 +2843,9 @@ internal class WvwSummaryDto
             new WvwSummaryMetricRowDto("Players", squadPlayersValue, enemy.PlayerCount.ToString()),
             new WvwSummaryMetricRowDto("Outgoing Damage", squad.Damage.ToString(), enemy.Damage.ToString(), false, true),
             new WvwSummaryMetricRowDto("DPS", squad.Dps.ToString(CultureInfo.InvariantCulture), enemy.Dps.ToString(CultureInfo.InvariantCulture), false, true, 1),
-            new WvwSummaryMetricRowDto("Downs", squad.Downs.ToString(), enemy.Downs.ToString()),
-            new WvwSummaryMetricRowDto("Kills", squad.Kills.ToString(), enemy.Kills.ToString()),
-            new WvwSummaryMetricRowDto("Down to Kill %", squad.DownKillConversionRate.ToString(CultureInfo.InvariantCulture), enemy.DownKillConversionRate.ToString(CultureInfo.InvariantCulture), false, false, 1, true),
+            new WvwSummaryMetricRowDto("Downs", squadDowns.ToString(), enemyDowns.ToString()),
+            new WvwSummaryMetricRowDto("Kills", squadKills.ToString(), enemyKills.ToString()),
+            new WvwSummaryMetricRowDto("Down to Kill %", squadDownKillConversionRate.ToString(CultureInfo.InvariantCulture), enemyDownKillConversionRate.ToString(CultureInfo.InvariantCulture), false, false, 1, true),
             new WvwSummaryMetricRowDto("Boon Strips", squad.BoonStrips.ToString(), enemy.BoonStrips.ToString()),
             new WvwSummaryMetricRowDto("Strips / Min", squad.StripsPerMinute.ToString(CultureInfo.InvariantCulture), enemy.StripsPerMinute.ToString(CultureInfo.InvariantCulture), false, false, 1),
             new WvwSummaryMetricRowDto("Cleanses", squad.Cleanses.ToString(), enemy.Cleanses.ToString()),
