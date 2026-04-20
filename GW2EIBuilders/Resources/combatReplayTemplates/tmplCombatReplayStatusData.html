@@ -2990,6 +2990,7 @@
         data: function () {
             return {
                 selectedMitigationThreshold: 50,
+                selectedMitigationEffect: "",
             };
         },
         template: `
@@ -3041,7 +3042,7 @@
                 <div class="combat-replay-wvw-analysis-detail text-center mb-2">
                     Cases where a squad player dropped to the selected health threshold or lower, then fully recovered without going down or dying.
                 </div>
-                <div class="d-flex justify-content-center align-items-center flex-wrap mb-2">
+                <div class="d-flex justify-content-center align-items-center flex-wrap mb-2" style="gap: 0.5rem 1rem;">
                     <label class="combat-replay-wvw-analysis-label mb-0 mr-2" for="mitigation-threshold-select">Health threshold</label>
                     <select
                         id="mitigation-threshold-select"
@@ -3052,20 +3053,71 @@
                             {{threshold.thresholdPercent}}%
                         </option>
                     </select>
+                    <label class="combat-replay-wvw-analysis-label mb-0 mr-2" for="mitigation-effect-select">Effect</label>
+                    <select
+                        id="mitigation-effect-select"
+                        v-model="selectedMitigationEffect"
+                        class="form-control form-control-sm"
+                        style="width: auto; min-width: 170px;">
+                        <option value="">All effects</option>
+                        <option v-for="effectName in mitigationEffectOptions" :key="'mitigation-effect-option-' + effectName" :value="effectName">
+                            {{effectName}}
+                        </option>
+                    </select>
                 </div>
                 <div class="combat-replay-wvw-analysis-detail text-center mb-2">
                     {{formatCount(selectedMitigationCount)}} qualifying cases at {{selectedMitigationThreshold}}%.
                 </div>
                 <div v-if="selectedMitigationEvents.length > 0" class="combat-replay-wvw-analysis-top-actors" style="max-height: 40vh; overflow-y: auto; padding-right: 0.25rem;">
+                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem;">
                     <div
                         v-for="event in selectedMitigationEvents"
                         :key="'defense-mitigation-' + event.time + '-' + event.actorId"
-                        class="combat-replay-wvw-analysis-top-actor-entry">
-                        <div class="combat-replay-wvw-analysis-top-actor-name mb-1">
-                            <img v-if="event.icon" :src="event.icon" alt="" class="icon icon-hover mx-1" />
-                            {{event.name}}
+                        class="combat-replay-wvw-analysis-burst-entry"
+                        style="cursor: default; display: grid; gap: 0.45rem; align-items: start; min-width: 0;">
+                        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 0.5rem 0.75rem; align-items: start; min-width: 0;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; min-width: 0; flex-wrap: wrap;">
+                                <div class="combat-replay-wvw-analysis-top-actor-name" style="min-width: 0; white-space: normal;">
+                                    <img v-if="event.icon" :src="event.icon" alt="" class="icon icon-hover mx-1" />
+                                    {{event.name}}
+                                </div>
+                            </div>
+                            <div style="display: grid; gap: 0.25rem; justify-items: center; align-content: start; min-width: 0;">
+                                <span
+                                    v-if="event.barrierAbsorbedToLowest > 0"
+                                    class="combat-replay-wvw-analysis-detail"
+                                    style="display: inline-flex; align-items: center; padding: 0.18rem 0.5rem; border-radius: 999px; background: rgba(255,255,255,0.05); color: inherit; line-height: 1.2; white-space: nowrap;">
+                                    Barrier {{formatAmount(event.barrierAbsorbedToLowest)}}
+                                </span>
+                                <div
+                                    v-if="event.barrierAbsorbedToLowest > 0"
+                                    class="combat-replay-wvw-analysis-detail"
+                                    style="text-align: center; line-height: 1.2;">
+                                    Est. health {{formatCount(event.lowestHealthEstimate)}}
+                                </div>
+                                <div
+                                    v-if="event.protectionEstimatedMitigation > 0"
+                                    class="combat-replay-wvw-analysis-detail"
+                                    style="text-align: center; line-height: 1.2;">
+                                    Prot est {{formatAmount(event.protectionEstimatedMitigation)}}
+                                </div>
+                                <div class="combat-replay-wvw-analysis-detail" style="text-align: center; line-height: 1.2;">
+                                    Dmg {{formatAmount(event.incomingDamage)}}
+                                </div>
+                                <div class="combat-replay-wvw-analysis-detail" style="text-align: center; line-height: 1.2;">
+                                    Heal {{formatAmount(event.incomingHealing)}}
+                                </div>
+                            </div>
+                            <div style="display: grid; gap: 0.2rem; text-align: right; white-space: nowrap; justify-items: end;">
+                                <div class="combat-replay-wvw-analysis-burst-time">
+                                    {{event.timeLabel}}
+                                </div>
+                                <div v-if="event.previousFullHealthTime > 0" class="combat-replay-wvw-analysis-detail">
+                                    {{formatMitigationWindowDuration(event)}}
+                                </div>
+                            </div>
                         </div>
-                        <div class="d-flex flex-wrap align-items-center" style="gap: 0.35rem;">
+                        <div class="d-flex flex-wrap align-items-center" style="gap: 0.5rem 0.75rem; min-width: 0;">
                             <button
                                 v-if="event.previousFullHealthTime > 0"
                                 type="button"
@@ -3080,12 +3132,34 @@
                                 Low: {{event.timeLabel}}
                             </button>
                             <button
+                                v-if="event.lowestHealthTime > 0"
+                                type="button"
+                                class="btn btn-link btn-sm p-0 combat-replay-wvw-analysis-detail"
+                                @click.stop="openMitigationEventAt(event, event.lowestHealthTime)">
+                                Lowest: {{event.lowestHealthTimeLabel}}
+                            </button>
+                            <button
                                 type="button"
                                 class="btn btn-link btn-sm p-0 combat-replay-wvw-analysis-detail"
                                 @click.stop="openMitigationEventAt(event, event.recoveryTime)">
                                 Recover: {{event.recoveryTimeLabel}}
                             </button>
                         </div>
+                        <div v-if="event.effects && event.effects.length > 0" style="display: flex; flex-wrap: wrap; gap: 0.35rem 0.45rem; min-width: 0;">
+                            <span
+                                v-for="(effect, effectIndex) in event.effects"
+                                :key="'mitigation-effect-' + event.actorId + '-' + event.time + '-' + effectIndex"
+                                class="combat-replay-wvw-analysis-detail"
+                                :title="getMitigationEffectTooltip(effect)"
+                                :style="event.barrierSavedPlayer && effect.name === 'Barrier'
+                                    ? 'display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.18rem 0.42rem; border-radius: 999px; background: rgba(106, 226, 170, 0.18); color: #b8ffd8; line-height: 1.25; border: 1px solid rgba(152, 240, 194, 0.35);'
+                                    : 'display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.18rem 0.42rem; border-radius: 999px; background: rgba(255,255,255,0.05); line-height: 1.25;'">
+                                <img v-if="effect.icon" :src="effect.icon" alt="" class="icon icon-hover" style="margin-right: 0;" />
+                                <span>{{effect.name}}</span>
+                                <span style="font-variant-numeric: tabular-nums; color: #d4dfef;">{{formatMitigationSeconds(effect.seconds)}}</span>
+                            </span>
+                        </div>
+                    </div>
                     </div>
                 </div>
                 <div v-else class="combat-replay-wvw-analysis-helper">
@@ -3118,11 +3192,40 @@
                 }
                 return this.mitigationThresholds.find(threshold => threshold.thresholdPercent === this.selectedMitigationThreshold) || this.mitigationThresholds[this.mitigationThresholds.length - 1];
             },
-            selectedMitigationEvents: function () {
+            allSelectedMitigationEvents: function () {
                 return this.selectedMitigation && this.selectedMitigation.events ? this.selectedMitigation.events : [];
             },
+            mitigationEffectOptions: function () {
+                const effectNames = new Set();
+                for (const event of this.allSelectedMitigationEvents) {
+                    if (!event.effects) {
+                        continue;
+                    }
+                    for (const effect of event.effects) {
+                        if (effect && effect.name) {
+                            effectNames.add(effect.name);
+                        }
+                    }
+                }
+                return Array.from(effectNames).sort((left, right) => left.localeCompare(right));
+            },
+            selectedMitigationEvents: function () {
+                if (!this.selectedMitigationEffect) {
+                    return this.allSelectedMitigationEvents;
+                }
+                return this.allSelectedMitigationEvents.filter(event =>
+                    event.effects && event.effects.some(effect => effect && effect.name === this.selectedMitigationEffect)
+                );
+            },
             selectedMitigationCount: function () {
-                return this.selectedMitigation ? this.selectedMitigation.count : 0;
+                return this.selectedMitigationEvents.length;
+            },
+        },
+        watch: {
+            mitigationEffectOptions: function (newOptions) {
+                if (this.selectedMitigationEffect && newOptions.indexOf(this.selectedMitigationEffect) === -1) {
+                    this.selectedMitigationEffect = "";
+                }
             },
         },
         methods: {
@@ -3149,6 +3252,51 @@
                 this.setOverviewMode();
                 this.jumpToBurst(time);
                 this.selectReplayActor(event.actorId);
+            },
+            formatMitigationSeconds: function (seconds) {
+                return this.formatAmount(seconds) + "s";
+            },
+            formatMitigationWindowDuration: function (event) {
+                if (!event || !event.previousFullHealthTime || !event.recoveryTime || event.recoveryTime <= event.previousFullHealthTime) {
+                    return "";
+                }
+                return "Full to Recover " + this.formatAmount((event.recoveryTime - event.previousFullHealthTime) / 1000.0) + "s";
+            },
+            getMitigationEffectTooltip: function (effect) {
+                if (!effect || !effect.name) {
+                    return "";
+                }
+                const tooltips = {
+                    "Barrier": "Barrier absorbs incoming damage before it reaches health.",
+                    "Dodge": "Dodge grants evade frames that can avoid incoming hits.",
+                    "Protection": "Protection reduces incoming strike damage while active.",
+                    "Resolution": "Resolution reduces incoming condition damage while active.",
+                    "Aegis": "Aegis blocks the next incoming hit.",
+                    "Frost Aura": "Frost Aura reduces incoming strike damage while active.",
+                    "Light Aura": "Light Aura reduces incoming condition damage while active.",
+                    "Dark Aura": "Dark Aura reduces incoming condition damage while active.",
+                    "Distortion / Blur": "Distortion or Blur negates incoming hits while active.",
+                    "Determined": "Determined is a damage-negating state. Incoming hits generally do not affect the actor while this is active.",
+                    "Invulnerability": "Invulnerability prevents incoming damage from affecting the actor while active.",
+                    "Spawn Protection": "Spawn Protection prevents incoming damage from affecting the actor while active.",
+                    "Strength in Numbers": "Strength in Numbers is a Guardian defensive buff that reduces incoming damage while active.",
+                    "Obsidian Flesh": "Obsidian Flesh grants invulnerability while active.",
+                    "Rebound": "Rebound is a defensive effect that can prevent a death while active.",
+                    "Spectrum Shield": "Spectrum Shield reduces incoming strike and condition damage while active.",
+                    "Barrier Signet": "Barrier Signet reduces incoming strike and condition damage while active.",
+                    "Renewed Focus": "Renewed Focus grants invulnerability while active.",
+                    "Death Shroud": "Death Shroud reduces incoming damage while active.",
+                    "Signet of Stone": "Signet of Stone is a defensive signet state while active.",
+                    "Guard!": "Guard! redirects incoming damage to the ranger's pet while active.",
+                    "Dolyak Stance": "Dolyak Stance reduces incoming damage while active.",
+                    "Defy Pain": "Defy Pain grants invulnerability while active.",
+                    "Infuse Light": "Infuse Light converts incoming damage into healing while active.",
+                    "Vengeful Hammers": "Vengeful Hammers reduces incoming damage while active.",
+                    "Urn of Saint Viktor": "Urn of Saint Viktor reduces incoming damage while active.",
+                    "Shielding Hands": "Shielding Hands reduces incoming damage while active.",
+                    "Shadow Shroud": "Shadow Shroud reduces incoming damage while active.",
+                };
+                return tooltips[effect.name] || "";
             },
         },
     });
