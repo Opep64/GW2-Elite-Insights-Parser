@@ -32,6 +32,16 @@
                     </div>
                 </div>
                 <div class="wvw-summary-header-detail">{{summary.healStatsNotice}}</div>
+                <div v-if="phaseList.length > 0" class="wvw-summary-header-phases">
+                    <span class="wvw-summary-header-phases-label">Phases</span>
+                    <div class="wvw-summary-header-phase-list">
+                        <span v-for="phaseEntry in phaseList" :key="'wvw-summary-phase-' + phaseEntry.index"
+                            class="wvw-summary-header-phase-chip"
+                            :class="{'active': phaseEntry.index === phaseIndexValue}">
+                            {{phaseEntry.name}}
+                        </span>
+                    </div>
+                </div>
             </div>
             <div class="wvw-summary-subtabs">
                 <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'overview'}"
@@ -1207,6 +1217,20 @@
         computed: {
             phase: function() {
                 return logData.phases[this.phaseindex];
+            },
+            phaseIndexValue: function() {
+                return parseInt(this.phaseindex, 10) || 0;
+            },
+            phaseList: function() {
+                if (!logData || !logData.phases) {
+                    return [];
+                }
+                return logData.phases.map(function(phase, index) {
+                    return {
+                        index: index,
+                        name: phase && phase.name ? phase.name : ("Phase " + (index + 1)),
+                    };
+                });
             },
             summary: function() {
                 return this.phase.wvwSummary;
