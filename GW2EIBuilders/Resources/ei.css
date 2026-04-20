@@ -277,6 +277,14 @@ h6.actor-shorten-cr-compact {
     margin-right: 0.15rem;
 }
 
+.combat-replay-analysis-friendly-group {
+    max-width: 32rem;
+}
+
+.combat-replay-analysis-friendly-members {
+    align-content: flex-start;
+}
+
 .theme-slate .combat-replay-analysis-selected-card,
 .theme-yeti .combat-replay-analysis-selected-card {
     border-radius: 0.35rem;
