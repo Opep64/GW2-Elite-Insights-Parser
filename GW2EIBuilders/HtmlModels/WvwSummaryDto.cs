@@ -15,6 +15,11 @@ namespace GW2EIBuilders.HtmlModels;
 
 internal class WvwSummaryDto
 {
+    private const int ExecutionSizeGapGracePlayers = 4;
+    private const double ExecutionSizeGapScorePerPlayer = 1.5;
+    private const double ExecutionSizeGapScoreCap = 15.0;
+    private const double ExecutionMinimumHealingCoverage = 0.4;
+    private const double ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute = 15.0;
     private static readonly IReadOnlyList<long> OffensiveConditionBuffIds =
     [
         Vulnerability,
@@ -58,6 +63,17 @@ internal class WvwSummaryDto
         Swiftness,
         Superspeed,
     ];
+    private static readonly IReadOnlyList<long> ExecutionSupportBoonIds =
+    [
+        Stability,
+        Protection,
+        Resolution,
+        Resistance,
+        Aegis,
+        Might,
+        Fury,
+        Quickness,
+    ];
 
     public string FightTime { get; set; } = "";
     public double FightTimeSeconds { get; set; }
@@ -69,8 +85,7 @@ internal class WvwSummaryDto
     public bool HasHealingData { get; set; }
     public bool HasBarrierData { get; set; }
     public bool HasCrowdControlData { get; set; }
-    public WvwSummaryGradeDto SquadGrade { get; set; } = new();
-    public WvwSummaryOppositionEstimateDto OppositionEstimate { get; set; } = new();
+    public WvwSummaryFightExecutionScoreDto FightExecutionScore { get; set; } = new();
     public List<WvwSummaryMetricRowDto> MetricRows { get; set; } = [];
     public List<WvwSummaryMomentDto> Moments { get; set; } = [];
     public WvwSummaryPlayerStandoutsDto PlayerStandouts { get; set; } = new();
@@ -136,8 +151,7 @@ internal class WvwSummaryDto
             HasHealingData = log.CombatData.HasEXTHealing,
             HasBarrierData = log.CombatData.HasEXTBarrier,
             HasCrowdControlData = log.CombatData.HasCrowdControlData,
-            SquadGrade = BuildSquadGrade(log, phase, combatReplayAnalysis, squadActors, hostilePlayerTargets, squad, enemy, squadDownState, enemyDownState, effectiveAlliedPlayerCount, friendlyActors.Count),
-            OppositionEstimate = BuildOppositionEstimate(log, phase, combatReplayAnalysis, squadActors, hostilePlayerTargets, squad, enemy, squadDownState, enemyDownState, effectiveAlliedPlayerCount),
+            FightExecutionScore = BuildFightExecutionScore(log, phase, combatReplayAnalysis, squadActors, friendlyActors, hostilePlayerTargets, squad, enemy, squadDownState, enemyDownState),
             Squad = squad,
             Enemy = enemy,
             MetricRows = BuildMetricRows(durationInMilliseconds, squad, enemy, squadDownState, enemyDownState, friendlyActors.Count),
@@ -167,233 +181,977 @@ internal class WvwSummaryDto
         };
     }
 
-    private static WvwSummaryGradeDto BuildSquadGrade(
+    private static WvwSummaryFightExecutionScoreDto BuildFightExecutionScore(
         ParsedEvtcLog log,
         PhaseData phase,
         CombatReplayAnalysisDto? combatReplayAnalysis,
+        IReadOnlyList<SingleActor> squadActors,
+        IReadOnlyList<SingleActor> friendlyActors,
+        IReadOnlyList<SingleActor> hostilePlayerTargets,
+        WvwSummarySideDto squad,
+        WvwSummarySideDto enemy,
+        WvwSummaryDownStateSideDto squadDownState,
+        WvwSummaryDownStateSideDto enemyDownState)
+    {
+        var result = new WvwSummaryFightExecutionScoreDto
+        {
+            Context = BuildFightExecutionContext(log, phase, squadActors, hostilePlayerTargets, friendlyActors.Count),
+            Outcome = BuildFightExecutionOutcome(log, phase, squadActors, hostilePlayerTargets, squad, enemy, squadDownState, enemyDownState),
+            Summary = "Raw execution is scored separately from context and outcome. A numbers-adjusted interpretation is shown beside it when the active player gap is material. Comp, terrain, opponent difficulty, and raw win/loss are intentionally excluded from the raw execution score.",
+            Detail = "Uses only high-confidence inputs already present in the detailed WvW summary and combat replay. If a scored metric is unavailable, that metric is neutralized at 50 instead of guessed.",
+        };
+
+        if (combatReplayAnalysis == null || combatReplayAnalysis.Times.Length == 0)
+        {
+            const int totalMetricCount = 18;
+            result.ScoreAvailable = false;
+            result.Confidence = new WvwSummaryExecutionConfidenceDto
+            {
+                Label = "Low",
+                AvailableMetricCount = 0,
+                TotalMetricCount = totalMetricCount,
+                Notes = ["Combat Replay is required for the execution score in this v1."],
+            };
+            result.Context.DataConfidenceLabel = result.Confidence.Label;
+            result.Context.DataConfidenceDetail = $"0 of {totalMetricCount} scored metrics are available because Combat Replay is missing for this log.";
+            result.Detail = "Combat Replay is required for the full execution scorecard. Context and outcome are still shown so the fight can be reviewed without inventing replay-based values.";
+            return result;
+        }
+
+        double squadPlayers = Math.Max(squad.PlayerCount, 1);
+        double enemyPlayers = Math.Max(enemy.PlayerCount, 1);
+        WvwSummaryPhasePositioningDto positioningMetrics = BuildPhasePositioningMetrics(combatReplayAnalysis, phase);
+        List<long> squadDownTimes = GetPhaseDownTimes(log, squadActors, phase);
+        List<long> enemyDownTimes = GetPhaseDownTimes(log, hostilePlayerTargets, phase);
+        List<WvwSummaryExecutionWindow> squadBurstWindows = BuildPhaseBurstWindows(combatReplayAnalysis.Squad, combatReplayAnalysis.Times, phase.Start, phase.End, combatReplayAnalysis.Lookback);
+        List<WvwSummaryExecutionWindow> enemyBurstWindows = BuildPhaseBurstWindows(combatReplayAnalysis.Enemy, combatReplayAnalysis.Times, phase.Start, phase.End, combatReplayAnalysis.Lookback);
+        int squadBurstSuccessCount = CountWindowsContainingEvents(squadBurstWindows, enemyDownTimes);
+        int enemyBurstSuccessCount = CountWindowsContainingEvents(enemyBurstWindows, squadDownTimes);
+        int enemyBurstHeldCount = squadBurstWindows.Count - CountWindowsContainingEvents(squadBurstWindows, enemyDownTimes);
+        int squadBurstHeldCount = enemyBurstWindows.Count - CountWindowsContainingEvents(enemyBurstWindows, squadDownTimes);
+
+        var cohesionMetrics = new List<WvwSummaryExecutionMetricDto>(4);
+        if (positioningMetrics.HasData)
+        {
+            cohesionMetrics.Add(BuildInPositionExecutionMetric(positioningMetrics.InPositionRate, positioningMetrics.EvaluatedSamples));
+            cohesionMetrics.Add(BuildPositioningExecutionMetric("Too-far rate", positioningMetrics.TooFarRate, positioningMetrics.EvaluatedSamples, higherIsBetter: false));
+            cohesionMetrics.Add(BuildPositioningExecutionMetric("Overextended rate", positioningMetrics.OverextendedRate, positioningMetrics.EvaluatedSamples, higherIsBetter: false));
+            cohesionMetrics.Add(BuildPositioningExecutionMetric("Lateral-risk rate", positioningMetrics.LateralRiskRate, positioningMetrics.EvaluatedSamples, higherIsBetter: false));
+        }
+        else
+        {
+            string positioningNote = combatReplayAnalysis.Positioning.HasCommander
+                ? "Neutralized at 50: no eligible commander-relative replay samples fell inside this phase."
+                : "Neutralized at 50: commander-relative positioning requires a detected squad commander.";
+            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("In-position rate", positioningNote));
+            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Too-far rate", positioningNote));
+            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Overextended rate", positioningNote));
+            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Lateral-risk rate", positioningNote));
+        }
+        string cohesionSummary = positioningMetrics.HasData
+            ? $"{FormatDecimal(positioningMetrics.InPositionRate)}% in position, {FormatDecimal(positioningMetrics.TooFarRate)}% too far, {FormatDecimal(positioningMetrics.OverextendedRate)}% overextended, and {FormatDecimal(positioningMetrics.LateralRiskRate)}% lateral risk over {positioningMetrics.EvaluatedSamples.ToString("N0", CultureInfo.InvariantCulture)} eligible replay samples."
+            : "Commander-relative positioning could not be scored for this phase, so the pillar was neutralized.";
+
+        double squadDownsPerActivePlayer = enemyDownState.Downs / squadPlayers;
+        double enemyDownsPerActivePlayer = squadDownState.Downs / enemyPlayers;
+        double squadStripsPerActivePlayerPerMinute = squad.StripsPerMinute / squadPlayers;
+        double enemyStripsPerActivePlayerPerMinute = enemy.StripsPerMinute / enemyPlayers;
+
+        var pressureMetrics = new List<WvwSummaryExecutionMetricDto>(3)
+        {
+            BuildRelativeExecutionMetric(
+                "Downs per active player",
+                squadDownsPerActivePlayer,
+                enemyDownsPerActivePlayer,
+                higherIsBetter: true,
+                $"{FormatDecimal(squadDownsPerActivePlayer)} vs enemy {FormatDecimal(enemyDownsPerActivePlayer)} downs per active player"),
+            BuildRelativeExecutionMetric(
+                "Strips per active player per minute",
+                squadStripsPerActivePlayerPerMinute,
+                enemyStripsPerActivePlayerPerMinute,
+                higherIsBetter: true,
+                $"{FormatDecimal(squadStripsPerActivePlayerPerMinute)} vs enemy {FormatDecimal(enemyStripsPerActivePlayerPerMinute)} strips per active player per minute"),
+        };
+        if (squadBurstWindows.Count > 0 && enemyBurstWindows.Count > 0)
+        {
+            double squadBurstSuccessRate = Math.Round(squadBurstSuccessCount * 100.0 / squadBurstWindows.Count, 1);
+            double enemyBurstSuccessRate = Math.Round(enemyBurstSuccessCount * 100.0 / enemyBurstWindows.Count, 1);
+            pressureMetrics.Insert(1,
+                BuildRelativeExecutionMetric(
+                    "Burst-window success rate",
+                    squadBurstSuccessRate,
+                    enemyBurstSuccessRate,
+                    higherIsBetter: true,
+                    $"{FormatDecimal(squadBurstSuccessRate)}% vs enemy {FormatDecimal(enemyBurstSuccessRate)}% of strong synced burst windows created at least one down",
+                    $"{squadBurstSuccessCount}/{squadBurstWindows.Count} squad burst windows converted a down; enemy converted {enemyBurstSuccessCount}/{enemyBurstWindows.Count}."));
+        }
+        else
+        {
+            string burstNote = squadBurstWindows.Count == 0 && enemyBurstWindows.Count == 0
+                ? "Neutralized at 50: neither side produced a strong synced burst window in this phase."
+                : "Neutralized at 50: burst-window success needs at least one strong synced burst window from each side.";
+            pressureMetrics.Insert(1, BuildNeutralizedExecutionMetric("Burst-window success rate", burstNote));
+        }
+        string pressureSummary = $"{FormatDecimal(squadDownsPerActivePlayer)} downs per active player and {FormatDecimal(squadStripsPerActivePlayerPerMinute)} strips per active player per minute.";
+        if (pressureMetrics[1].Available)
+        {
+            pressureSummary = $"{pressureSummary} Strong synced burst windows converted downs at {FormatDecimal(Math.Round(squadBurstSuccessCount * 100.0 / squadBurstWindows.Count, 1))}% for the squad and {FormatDecimal(Math.Round(enemyBurstSuccessCount * 100.0 / enemyBurstWindows.Count, 1))}% for the enemy.";
+        }
+        else
+        {
+            pressureSummary = $"{pressureSummary} Burst-window success was neutralized because a comparable burst sample was unavailable.";
+        }
+
+        var downstateMetrics = new List<WvwSummaryExecutionMetricDto>(4)
+        {
+            BuildRelativeExecutionMetric(
+                "Enemy down conversion rate",
+                enemyDownState.KillConversionRate,
+                squadDownState.KillConversionRate,
+                higherIsBetter: true,
+                $"{FormatDecimal(enemyDownState.KillConversionRate)}% vs enemy {FormatDecimal(squadDownState.KillConversionRate)}%"),
+            BuildRelativeExecutionMetric(
+                "Own recovery rate",
+                squadDownState.RezRate,
+                enemyDownState.RezRate,
+                higherIsBetter: true,
+                $"{FormatDecimal(squadDownState.RezRate)}% vs enemy {FormatDecimal(enemyDownState.RezRate)}%"),
+        };
+        if (enemyDownState.AverageKillTime.HasValue && squadDownState.AverageKillTime.HasValue)
+        {
+            downstateMetrics.Insert(1,
+                BuildRelativeExecutionMetric(
+                    "Enemy average down-to-kill time",
+                    enemyDownState.AverageKillTime.Value,
+                    squadDownState.AverageKillTime.Value,
+                    higherIsBetter: false,
+                    $"{FormatOptionalSeconds(enemyDownState.AverageKillTime)} vs enemy {FormatOptionalSeconds(squadDownState.AverageKillTime)}"));
+        }
+        else
+        {
+            downstateMetrics.Insert(1, BuildNeutralizedExecutionMetric(
+                "Enemy average down-to-kill time",
+                "Neutralized at 50: one side had no kill conversions to time in this phase."));
+        }
+        if (squadDownState.AverageRezTime.HasValue && enemyDownState.AverageRezTime.HasValue)
+        {
+            downstateMetrics.Add(
+                BuildRelativeExecutionMetric(
+                    "Own average down-to-recover time",
+                    squadDownState.AverageRezTime.Value,
+                    enemyDownState.AverageRezTime.Value,
+                    higherIsBetter: false,
+                    $"{FormatOptionalSeconds(squadDownState.AverageRezTime)} vs enemy {FormatOptionalSeconds(enemyDownState.AverageRezTime)}"));
+        }
+        else
+        {
+            downstateMetrics.Add(BuildNeutralizedExecutionMetric(
+                "Own average down-to-recover time",
+                "Neutralized at 50: one side had no recoveries to time in this phase."));
+        }
+        string downstateSummary = $"{FormatDecimal(enemyDownState.KillConversionRate)}% of enemy downs were converted and the squad recovered {FormatDecimal(squadDownState.RezRate)}% of its own downs.";
+        if (downstateMetrics[1].Available && downstateMetrics[3].Available)
+        {
+            downstateSummary = $"{downstateSummary} Enemy downs were finished in {FormatOptionalSeconds(enemyDownState.AverageKillTime)} and squad recoveries resolved in {FormatOptionalSeconds(squadDownState.AverageRezTime)}.";
+        }
+        else
+        {
+            downstateSummary = $"{downstateSummary} Timing metrics were neutralized where this phase did not produce both sides of the comparison.";
+        }
+
+        double squadDeathsPerActivePlayer = squad.Deaths / squadPlayers;
+        double enemyDeathsPerActivePlayer = enemy.Deaths / enemyPlayers;
+        var resilienceMetrics = new List<WvwSummaryExecutionMetricDto>(3)
+        {
+            BuildRelativeExecutionMetric(
+                "Deaths per active player",
+                squadDeathsPerActivePlayer,
+                enemyDeathsPerActivePlayer,
+                higherIsBetter: false,
+                $"{FormatDecimal(squadDeathsPerActivePlayer)} vs enemy {FormatDecimal(enemyDeathsPerActivePlayer)} deaths per active player"),
+        };
+        if (enemyBurstWindows.Count > 0 && squadBurstWindows.Count > 0)
+        {
+            double squadHeldBurstRate = Math.Round(squadBurstHeldCount * 100.0 / enemyBurstWindows.Count, 1);
+            double enemyHeldBurstRate = Math.Round(enemyBurstHeldCount * 100.0 / squadBurstWindows.Count, 1);
+            resilienceMetrics.Add(
+                BuildRelativeExecutionMetric(
+                    "Held-burst rate",
+                    squadHeldBurstRate,
+                    enemyHeldBurstRate,
+                    higherIsBetter: true,
+                    $"{FormatDecimal(squadHeldBurstRate)}% vs enemy {FormatDecimal(enemyHeldBurstRate)}% of tested burst windows were held without a down",
+                    $"{squadBurstHeldCount}/{enemyBurstWindows.Count} enemy burst windows were held by the squad; enemy held {enemyBurstHeldCount}/{squadBurstWindows.Count} squad burst windows."));
+        }
+        else
+        {
+            resilienceMetrics.Add(BuildNeutralizedExecutionMetric(
+                "Held-burst rate",
+                "Neutralized at 50: held-burst rate needs at least one strong synced burst window into each side."));
+        }
+        if (log.CombatData.HasCrowdControlData)
+        {
+            double squadReceivedCrowdControlPerActivePlayer = squad.ReceivedCrowdControl / squadPlayers;
+            double enemyReceivedCrowdControlPerActivePlayer = enemy.ReceivedCrowdControl / enemyPlayers;
+            resilienceMetrics.Add(
+                BuildRelativeExecutionMetric(
+                    "Received CC per active player",
+                    squadReceivedCrowdControlPerActivePlayer,
+                    enemyReceivedCrowdControlPerActivePlayer,
+                    higherIsBetter: false,
+                    $"{FormatDecimal(squadReceivedCrowdControlPerActivePlayer)} vs enemy {FormatDecimal(enemyReceivedCrowdControlPerActivePlayer)} received CC per active player"));
+        }
+        else
+        {
+            resilienceMetrics.Add(BuildNeutralizedExecutionMetric(
+                "Received CC per active player",
+                "Neutralized at 50: crowd-control event data is unavailable for this log."));
+        }
+        string resilienceSummary = $"{FormatDecimal(squadDeathsPerActivePlayer)} deaths per active player in this phase.";
+        if (resilienceMetrics[1].Available)
+        {
+            resilienceSummary = $"{resilienceSummary} The squad held {FormatDecimal(Math.Round(squadBurstHeldCount * 100.0 / enemyBurstWindows.Count, 1))}% of enemy burst windows without a down.";
+        }
+        else
+        {
+            resilienceSummary = $"{resilienceSummary} Held-burst rate was neutralized because the phase lacked comparable burst windows.";
+        }
+        if (resilienceMetrics[2].Available)
+        {
+            resilienceSummary = $"{resilienceSummary} Received crowd control landed at {FormatDecimal(squad.ReceivedCrowdControl / squadPlayers)} per active player.";
+        }
+        else
+        {
+            resilienceSummary = $"{resilienceSummary} Received crowd control was neutralized because CC event data is unavailable.";
+        }
+
+        int healAddonPlayerCount = GetHealingAddonPlayerCount(log, squadActors);
+        double healAddonCoverage = squadActors.Count > 0 ? healAddonPlayerCount * 1.0 / squadActors.Count : 0.0;
+        string healAddonCoverageLabel = $"{healAddonPlayerCount}/{squadActors.Count} squad players ({FormatDecimal(healAddonCoverage * 100.0)}%) had Healing Stats";
+        int squadHealthDamageTaken = (int)Math.Max(0, combatReplayAnalysis.Defense.HealthDamageToSquad);
+        long squadHealingTotal = log.CombatData.HasEXTHealing
+            ? squadActors.Sum(actor => actor.EXTHealing.GetOutgoingHealStats(null, log, phase.Start, phase.End).Healing)
+            : 0;
+        CombatReplayDefenseSavedPlayersSummaryDto savedPlayersSummary = combatReplayAnalysis.Defense.SavedPlayersSummary;
+
+        var supportMetrics = new List<WvwSummaryExecutionMetricDto>(4);
+        if (log.CombatData.HasEXTHealing && healAddonCoverage >= ExecutionMinimumHealingCoverage && squadHealthDamageTaken > 0)
+        {
+            string healingNote = healAddonPlayerCount == squadActors.Count
+                ? $"{healAddonCoverageLabel}."
+                : $"{healAddonCoverageLabel}. Observed healing is likely understated because some squad healing is missing from the add-on sample.";
+            supportMetrics.Add(
+                BuildRelativeExecutionMetric(
+                    "Healing coverage",
+                    squadHealingTotal,
+                    squadHealthDamageTaken,
+                    higherIsBetter: true,
+                    $"{FormatWholeNumber(squadHealingTotal)} observed healing vs {FormatWholeNumber(squadHealthDamageTaken)} squad health damage",
+                    healingNote));
+        }
+        else
+        {
+            string healingNote = !log.CombatData.HasEXTHealing
+                ? $"Neutralized at 50: Healing Stats add-on data is unavailable for this log. {healAddonCoverageLabel}."
+                : healAddonCoverage < ExecutionMinimumHealingCoverage
+                    ? $"Neutralized at 50: healing coverage needs at least {FormatDecimal(ExecutionMinimumHealingCoverage * 100.0)}% squad Healing Stats coverage; {healAddonCoverageLabel}."
+                    : "Neutralized at 50: squad health damage was zero in this phase.";
+            supportMetrics.Add(BuildNeutralizedExecutionMetric("Healing coverage", healingNote));
+        }
+        WvwSummaryExecutionMetricDto cleansePressureMetric = BuildCleansePressureExecutionMetric(log, phase, squadActors, squadPlayers, out string cleansePressureSummary);
+        supportMetrics.Add(cleansePressureMetric);
+        if (TryComputePhaseWeightedThreatBoonCoverage(combatReplayAnalysis, phase, ExecutionSupportBoonIds, out double weightedSupportBoonCoverage, out string weightedSupportBoonCoverageNote))
+        {
+            supportMetrics.Add(
+                BuildRelativeExecutionMetric(
+                    "Weighted support boon coverage",
+                    weightedSupportBoonCoverage,
+                    100.0 - weightedSupportBoonCoverage,
+                    higherIsBetter: true,
+                    $"{FormatDecimal(weightedSupportBoonCoverage)}% weighted threatened-boon coverage",
+                    weightedSupportBoonCoverageNote));
+        }
+        else
+        {
+            supportMetrics.Add(BuildNeutralizedExecutionMetric(
+                "Weighted support boon coverage",
+                "Neutralized at 50: the squad never had threatened replay samples for weighted support-boon coverage in this phase."));
+        }
+        if (savedPlayersSummary.SavedCases > 0 || squadDownState.Downs > 0)
+        {
+            supportMetrics.Add(
+                BuildRelativeExecutionMetric(
+                    "Saved-player balance",
+                    savedPlayersSummary.SavedCases,
+                    squadDownState.Downs,
+                    higherIsBetter: true,
+                    $"{savedPlayersSummary.SavedCases} saved cases vs {squadDownState.Downs} squad downs",
+                    $"{savedPlayersSummary.BarrierSavedCases} barrier saves and {savedPlayersSummary.DamageReductionSavedCases} damage-reduction saves were detected."));
+        }
+        else
+        {
+            supportMetrics.Add(BuildNeutralizedExecutionMetric(
+                "Saved-player balance",
+                "Neutralized at 50: this phase had no detected saved-player cases and no squad downs to compare against."));
+        }
+        string supportSummary = cleansePressureSummary;
+        if (supportMetrics[0].Available)
+        {
+            supportSummary = $"{supportSummary} {FormatWholeNumber(squadHealingTotal)} observed healing from {healAddonCoverageLabel} covered against {FormatWholeNumber(squadHealthDamageTaken)} squad health damage.";
+        }
+        else
+        {
+            supportSummary = $"{supportSummary} Healing coverage was neutralized; {healAddonCoverageLabel}.";
+        }
+        if (supportMetrics[2].Available)
+        {
+            supportSummary = $"{supportSummary} Weighted threatened support-boon coverage averaged {FormatDecimal(weightedSupportBoonCoverage)}%.";
+        }
+        if (supportMetrics[3].Available)
+        {
+            supportSummary = $"{supportSummary} {savedPlayersSummary.SavedCases} saved cases were detected against {squadDownState.Downs} squad downs.";
+        }
+
+        result.Pillars =
+        [
+            BuildExecutionPillar(
+                "cohesion-positioning",
+                "Cohesion & Positioning",
+                cohesionMetrics,
+                cohesionSummary,
+                "Uses eligible non-commander squad replay samples only. Enemy commander-relative positioning is not observable in current detailed WvW outputs, so this pillar scores time spent in-position against each risk rate's own out-of-position share."),
+            BuildExecutionPillar(
+                "pressure-burst",
+                "Pressure & Burst",
+                pressureMetrics,
+                pressureSummary,
+                "Compares phase-level downs per active player, strong synced burst window success, and strips per active player per minute against the enemy."),
+            BuildExecutionPillar(
+                "downstate-control",
+                "Downstate Control",
+                downstateMetrics,
+                downstateSummary,
+                "Compares conversion, recovery, and the time spent in downstate before each side secured the outcome."),
+            BuildExecutionPillar(
+                "resilience-stabilization",
+                "Resilience & Stabilization",
+                resilienceMetrics,
+                resilienceSummary,
+                "Compares deaths per active player, held burst windows, and received crowd control per active player against the enemy."),
+            BuildExecutionPillar(
+                "support-mitigation",
+                "Support & Mitigation",
+                supportMetrics,
+                supportSummary,
+                $"Blends healing coverage, pressure-gated cleanse response, threat-weighted support-boon coverage, and saved-player mitigation. Cleanse response is self-scored only when tracked condition pressure reaches at least {FormatDecimal(ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute)} condition-seconds per active player per minute. Each tracked condition, including Vulnerability, counts as present or absent rather than by stack count, and faster cleanses get more credit because they remove more remaining duration. Healing coverage needs at least {FormatDecimal(ExecutionMinimumHealingCoverage * 100.0)}% squad Healing Stats coverage; missing support inputs are neutralized at 50 instead of guessed."),
+        ];
+
+        result.ScoreAvailable = true;
+        result.OverallScore = (int)Math.Round(result.Pillars.Average(pillar => pillar.Score));
+        result.Grade = ScoreToGrade(result.OverallScore);
+        result.NumbersAdjustment = BuildFightExecutionNumbersAdjustment(result.Pillars, squad.PlayerCount, enemy.PlayerCount, result.OverallScore);
+        result.Confidence = BuildFightExecutionConfidence(result.Pillars);
+        result.Context.DataConfidenceLabel = result.Confidence.Label;
+        result.Context.DataConfidenceDetail = result.Confidence.AvailableMetricCount == result.Confidence.TotalMetricCount
+            ? $"All {result.Confidence.TotalMetricCount} scored metrics were available for this phase."
+            : $"{result.Confidence.AvailableMetricCount} of {result.Confidence.TotalMetricCount} scored metrics were available. Missing metrics were neutralized at 50 instead of guessed.";
+
+        WvwSummaryExecutionPillarDto strongestPillar = result.Pillars
+            .OrderByDescending(pillar => pillar.Score)
+            .ThenBy(pillar => pillar.Label, StringComparer.OrdinalIgnoreCase)
+            .First();
+        WvwSummaryExecutionPillarDto weakestPillar = result.Pillars
+            .OrderBy(pillar => pillar.Score)
+            .ThenBy(pillar => pillar.Label, StringComparer.OrdinalIgnoreCase)
+            .First();
+        if (strongestPillar.Label != weakestPillar.Label || strongestPillar.Score != weakestPillar.Score)
+        {
+            result.StrongestPillarLabel = strongestPillar.Label;
+            result.StrongestPillarSummary = strongestPillar.Summary;
+            result.WeakestPillarLabel = weakestPillar.Label;
+            result.WeakestPillarSummary = weakestPillar.Summary;
+        }
+        return result;
+    }
+
+    private static WvwSummaryExecutionContextDto BuildFightExecutionContext(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> squadActors,
+        IReadOnlyList<SingleActor> hostilePlayerTargets,
+        int friendlyNonSquadCount)
+    {
+        var context = new WvwSummaryExecutionContextDto
+        {
+            SquadPlayerCount = squadActors.Count,
+            EnemyPlayerCount = hostilePlayerTargets.Count,
+            FriendlyNonSquadCount = friendlyNonSquadCount,
+            PhaseDuration = ToDurationString(Math.Max(phase.DurationInMS, 1)),
+        };
+        PopulateEnemyFormationStyleContext(log, phase, hostilePlayerTargets, squadActors, context);
+        return context;
+    }
+
+    private static void PopulateEnemyFormationStyleContext(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> hostilePlayerTargets,
+        IReadOnlyList<SingleActor> squadActors,
+        WvwSummaryExecutionContextDto context)
+    {
+        const long ignoreTailWindow = 10000;
+
+        List<WvwSummaryFormationSnapshot> enemyFormationSnapshots = BuildGroupFormationSnapshots(log, phase, hostilePlayerTargets, squadActors);
+        int peakPlayers = enemyFormationSnapshots.Select(snapshot => snapshot.PlayerCount).DefaultIfEmpty(0).Max();
+        int minimumEligibleCount = Math.Max(5, (int)Math.Ceiling(peakPlayers * 0.6));
+        int eligibleSnapshotCount = 0;
+        int organizedSnapshotCount = 0;
+        int cloudSnapshotCount = 0;
+
+        foreach (WvwSummaryFormationSnapshot snapshot in enemyFormationSnapshots)
+        {
+            if (snapshot.Time > phase.End - ignoreTailWindow || snapshot.PlayerCount < minimumEligibleCount)
+            {
+                continue;
+            }
+
+            eligibleSnapshotCount++;
+            if (snapshot.ClusteredShare >= 0.7 && snapshot.CompactnessScore >= 0.55)
+            {
+                organizedSnapshotCount++;
+            }
+            else if (snapshot.ClusteredShare <= 0.4 || snapshot.CompactnessScore <= 0.2)
+            {
+                cloudSnapshotCount++;
+            }
+        }
+
+        if (eligibleSnapshotCount == 0)
+        {
+            context.EnemyFormationStyleLabel = "Insufficient data";
+            context.EnemyFormationStyleDetail = "Could not evaluate enough engaged enemy replay snapshots to judge whether the enemy moved as an organized group, cloud, or mixed formation.";
+            return;
+        }
+
+        double organizedRate = Math.Round(organizedSnapshotCount * 100.0 / eligibleSnapshotCount, 1);
+        double cloudRate = Math.Round(cloudSnapshotCount * 100.0 / eligibleSnapshotCount, 1);
+        context.EnemyFormationStyleLabel = organizedRate >= 55.0 && cloudRate <= 20.0
+            ? "Organized"
+            : cloudRate >= 40.0
+                ? "Cloud"
+                : "Mixed";
+        context.EnemyFormationStyleDetail = $"{FormatDecimal(organizedRate)}% organized snapshots and {FormatDecimal(cloudRate)}% cloud snapshots across {eligibleSnapshotCount.ToString("N0", CultureInfo.InvariantCulture)} engaged replay samples. Ignores the last 10s and routed cleanup after the enemy falls below 60% of peak active count.";
+    }
+
+    private static WvwSummaryExecutionOutcomeDto BuildFightExecutionOutcome(
+        ParsedEvtcLog log,
+        PhaseData phase,
         IReadOnlyList<SingleActor> squadActors,
         IReadOnlyList<SingleActor> hostilePlayerTargets,
         WvwSummarySideDto squad,
         WvwSummarySideDto enemy,
         WvwSummaryDownStateSideDto squadDownState,
-        WvwSummaryDownStateSideDto enemyDownState,
-        double effectiveAlliedPlayerCount,
-        int friendlyPlayerCount)
+        WvwSummaryDownStateSideDto enemyDownState)
     {
-        double squadPlayers = Math.Max(squad.PlayerCount, 1);
-        double enemyPlayers = Math.Max(enemy.PlayerCount, 1);
-        WvwSummaryCohesionEstimateDto cohesion = BuildGroupCohesionEstimate(log, phase, squadActors, hostilePlayerTargets);
-        WvwSummaryBurstMetricsDto squadBurst = BuildBurstMetrics(phase, combatReplayAnalysis, combatReplayAnalysis?.Squad, squad.PlayerCount);
-        WvwSummaryBurstMetricsDto enemyBurst = BuildBurstMetrics(phase, combatReplayAnalysis, combatReplayAnalysis?.Enemy, enemy.PlayerCount);
-
-        var weightedSubGrades = new List<(WvwSummarySubGradeDto SubGrade, double Weight)>
+        return new WvwSummaryExecutionOutcomeDto
         {
-            (
-                new WvwSummarySubGradeDto
-                {
-                    Label = "Cohesion",
-                    Score = cohesion.Score,
-                    Grade = ScoreToGrade(cohesion.Score),
-                    Detail = $"{cohesion.StyleLabel}: {cohesion.Detail}",
-                },
-                0.20
-            ),
-            (
-                BuildSubGrade(
-                    "Offensive Execution",
-                    [
-                        CompareScore(squad.Damage / squadPlayers, enemy.Damage / enemyPlayers),
-                        CompareScore(squad.Dps / squadPlayers, enemy.Dps / enemyPlayers),
-                        CompareScore(squad.StripsPerMinute / squadPlayers, enemy.StripsPerMinute / enemyPlayers),
-                        CompareScore(squad.Downs / squadPlayers, enemy.Downs / enemyPlayers),
-                    ],
-                    $"{FormatDecimal(squad.Dps / squadPlayers)} DPS/player, {FormatDecimal(squad.StripsPerMinute / squadPlayers)} strips/min/player, {FormatDecimal(squad.Downs / squadPlayers)} downs/player."),
-                0.25
-            ),
-            (
-                BuildBurstSubGrade("Burst", squadBurst, enemyBurst),
-                0.20
-            ),
-            (
-                BuildSubGrade(
-                    "Resilience",
-                    [
-                        CompareScore(squad.Deaths / squadPlayers, enemy.Deaths / enemyPlayers, higherIsBetter: false),
-                        CompareScore(squad.DamageTaken / squadPlayers, enemy.DamageTaken / enemyPlayers, higherIsBetter: false),
-                        CompareScore(squad.ReceivedCrowdControl / squadPlayers, enemy.ReceivedCrowdControl / enemyPlayers, higherIsBetter: false),
-                    ],
-                    $"{FormatDecimal(squad.Deaths / squadPlayers)} deaths/player, {FormatDecimal(squad.DamageTaken / squadPlayers)} damage taken/player, {FormatDecimal(squad.ReceivedCrowdControl / squadPlayers)} received CC/player."),
-                0.15
-            ),
-            (
-                BuildSubGrade(
-                    "Kill Conversion",
-                    [
-                        CompareScore(squad.Kills / squadPlayers, enemy.Kills / enemyPlayers),
-                        CompareScore(enemyDownState.KillConversionRate, squadDownState.KillConversionRate),
-                        CompareScore(enemyDownState.RezRate, squadDownState.RezRate, higherIsBetter: false),
-                        CompareNullableLowerIsBetterScore(enemyDownState.AverageKillTime, squadDownState.AverageKillTime),
-                    ],
-                    $"{FormatDecimal(enemyDownState.KillConversionRate)}% of enemy downs finished, {FormatOptionalSeconds(enemyDownState.AverageKillTime)} average kill time, {FormatDecimal(enemyDownState.RezRate)}% of enemy downs recovered."),
-                0.20
-            ),
-        };
-
-        var subGrades = weightedSubGrades.Select(entry => entry.SubGrade).ToList();
-        int baseScore = (int)Math.Round(weightedSubGrades.Sum(entry => entry.SubGrade.Score * entry.Weight));
-        int countAdjustment = ComputeSideCountAdjustment(effectiveAlliedPlayerCount, enemy.PlayerCount);
-        int overallScore = Math.Clamp(baseScore + countAdjustment, 0, 100);
-
-        return new WvwSummaryGradeDto
-        {
-            BaseScore = baseScore,
-            CountAdjustment = countAdjustment,
-            Score = overallScore,
-            Grade = ScoreToGrade(overallScore),
-            Summary = BuildSquadGradeSummary(overallScore, subGrades),
-            Detail = "Compares this phase against the enemy team using cohesion, offensive execution, replay burst windows, resilience, and kill conversion signals drawn from the Summary tab and Combat Replay analysis.",
-            CountSummary = BuildPlayerCountSummary(squad.PlayerCount, friendlyPlayerCount, effectiveAlliedPlayerCount, enemy.PlayerCount, countAdjustment),
-            SubGrades = subGrades,
+            SquadDowns = enemyDownState.Downs,
+            EnemyDowns = squadDownState.Downs,
+            SquadKills = enemyDownState.KillConversions,
+            EnemyKills = squadDownState.KillConversions,
+            SquadDeaths = squad.Deaths,
+            EnemyDeaths = enemy.Deaths,
+            EnemyDownConversionRate = enemyDownState.KillConversionRate,
+            SquadRecoveryRate = squadDownState.RezRate,
+            WipeLabel = InferWipeLabel(log, phase, squadActors, hostilePlayerTargets),
         };
     }
 
-    private static WvwSummaryOppositionEstimateDto BuildOppositionEstimate(
-        ParsedEvtcLog log,
-        PhaseData phase,
-        CombatReplayAnalysisDto? combatReplayAnalysis,
-        IReadOnlyList<SingleActor> squadActors,
-        IReadOnlyList<SingleActor> hostilePlayerTargets,
-        WvwSummarySideDto squad,
-        WvwSummarySideDto enemy,
-        WvwSummaryDownStateSideDto squadDownState,
-        WvwSummaryDownStateSideDto enemyDownState,
-        double effectiveAlliedPlayerCount)
+    private static WvwSummaryExecutionConfidenceDto BuildFightExecutionConfidence(IReadOnlyList<WvwSummaryExecutionPillarDto> pillars)
     {
-        double squadPlayers = Math.Max(squad.PlayerCount, 1);
-        double enemyPlayers = Math.Max(enemy.PlayerCount, 1);
-        WvwSummaryCohesionEstimateDto cohesion = BuildGroupCohesionEstimate(log, phase, hostilePlayerTargets, squadActors);
-        WvwSummaryBurstMetricsDto squadBurst = BuildBurstMetrics(phase, combatReplayAnalysis, combatReplayAnalysis?.Squad, squad.PlayerCount);
-        WvwSummaryBurstMetricsDto enemyBurst = BuildBurstMetrics(phase, combatReplayAnalysis, combatReplayAnalysis?.Enemy, enemy.PlayerCount);
+        int totalMetricCount = pillars.Sum(pillar => pillar.MetricCount);
+        int availableMetricCount = pillars.Sum(pillar => pillar.AvailableMetricCount);
+        string label = availableMetricCount == totalMetricCount
+            ? "High"
+            : availableMetricCount >= Math.Ceiling(totalMetricCount * 0.5)
+                ? "Reduced"
+                : "Low";
+        List<string> notes =
+        [
+            .. pillars
+                .SelectMany(pillar => pillar.Metrics)
+                .Where(metric => !metric.Available && !string.IsNullOrWhiteSpace(metric.Note))
+                .Select(metric => metric.Note)
+                .Distinct(StringComparer.Ordinal)
+        ];
 
-        var weightedSubGrades = new List<(WvwSummarySubGradeDto SubGrade, double Weight)>
-        {
-            (
-                new WvwSummarySubGradeDto
-                {
-                    Label = "Cohesion",
-                    Score = cohesion.Score,
-                    Grade = ScoreToGrade(cohesion.Score),
-                    Detail = $"{cohesion.StyleLabel}: {cohesion.Detail}",
-                },
-                0.20
-            ),
-            (
-                BuildSubGrade(
-                    "Offensive Execution",
-                    [
-                        CompareScore(enemy.Damage / enemyPlayers, squad.Damage / squadPlayers),
-                        CompareScore(enemy.Dps / enemyPlayers, squad.Dps / squadPlayers),
-                        CompareScore(enemy.StripsPerMinute / enemyPlayers, squad.StripsPerMinute / squadPlayers),
-                        CompareScore(enemy.Downs / enemyPlayers, squad.Downs / squadPlayers),
-                    ],
-                    $"{FormatDecimal(enemy.Dps / enemyPlayers)} DPS/player, {FormatDecimal(enemy.StripsPerMinute / enemyPlayers)} strips/min/player, {FormatDecimal(enemy.Downs / enemyPlayers)} downs/player."),
-                0.25
-            ),
-            (
-                BuildBurstSubGrade("Burst", enemyBurst, squadBurst),
-                0.20
-            ),
-            (
-                BuildSubGrade(
-                    "Resilience",
-                    [
-                        CompareScore(enemy.Deaths / enemyPlayers, squad.Deaths / squadPlayers, higherIsBetter: false),
-                        CompareScore(enemy.DamageTaken / enemyPlayers, squad.DamageTaken / squadPlayers, higherIsBetter: false),
-                        CompareScore(enemy.ReceivedCrowdControl / enemyPlayers, squad.ReceivedCrowdControl / squadPlayers, higherIsBetter: false),
-                    ],
-                    $"{FormatDecimal(enemy.Deaths / enemyPlayers)} deaths/player, {FormatDecimal(enemy.DamageTaken / enemyPlayers)} damage taken/player, {FormatDecimal(enemy.ReceivedCrowdControl / enemyPlayers)} received CC/player."),
-                0.15
-            ),
-            (
-                BuildSubGrade(
-                    "Kill Conversion",
-                    [
-                        CompareScore(enemy.Kills / enemyPlayers, squad.Kills / squadPlayers),
-                        CompareScore(squadDownState.KillConversionRate, enemyDownState.KillConversionRate),
-                        CompareScore(squadDownState.RezRate, enemyDownState.RezRate, higherIsBetter: false),
-                        CompareNullableLowerIsBetterScore(squadDownState.AverageKillTime, enemyDownState.AverageKillTime),
-                    ],
-                    $"{FormatDecimal(squadDownState.KillConversionRate)}% of squad downs finished, {FormatOptionalSeconds(squadDownState.AverageKillTime)} average kill time, {FormatDecimal(squadDownState.RezRate)}% of squad downs recovered."),
-                0.20
-            ),
-        };
-
-        var subGrades = weightedSubGrades.Select(entry => entry.SubGrade).ToList();
-        int baseScore = (int)Math.Round(weightedSubGrades.Sum(entry => entry.SubGrade.Score * entry.Weight));
-        int countAdjustment = ComputeSideCountAdjustment(enemy.PlayerCount, effectiveAlliedPlayerCount);
-        int overallScore = Math.Clamp(baseScore + countAdjustment, 0, 100);
-
-        return new WvwSummaryOppositionEstimateDto
-        {
-            BaseScore = baseScore,
-            CountAdjustment = countAdjustment,
-            Score = overallScore,
-            Grade = ScoreToGrade(overallScore),
-            Summary = BuildOppositionEstimateSummary(overallScore, cohesion.StyleLabel, subGrades),
-            Detail = "Uses observed enemy damage, strip, replay burst windows, downs, conversion, survival, and replay-based formation behavior. Enemy healing and cleanses are not directly visible, so sustain is inferred from outcomes rather than measured outright.",
-            FormationLabel = cohesion.StyleLabel,
-            FormationDetail = cohesion.Detail,
-            SubGrades = subGrades,
-        };
-    }
-
-    private static WvwSummarySubGradeDto BuildSubGrade(string label, IReadOnlyList<double> scores, string detail)
-    {
-        int score = scores.Count > 0 ? (int)Math.Round(scores.Average()) : 50;
-        return new WvwSummarySubGradeDto
+        return new WvwSummaryExecutionConfidenceDto
         {
             Label = label,
-            Score = score,
-            Grade = ScoreToGrade(score),
+            AvailableMetricCount = availableMetricCount,
+            TotalMetricCount = totalMetricCount,
+            Notes = notes,
+        };
+    }
+
+    private static WvwSummaryExecutionNumbersAdjustmentDto BuildFightExecutionNumbersAdjustment(
+        IReadOnlyList<WvwSummaryExecutionPillarDto> pillars,
+        int squadPlayerCount,
+        int enemyPlayerCount,
+        int rawScore)
+    {
+        int playerGap = squadPlayerCount - enemyPlayerCount;
+        int absolutePlayerGap = Math.Abs(playerGap);
+        int effectivePlayerGap = Math.Max(absolutePlayerGap - ExecutionSizeGapGracePlayers, 0);
+        double fullWeightAdjustment = playerGap switch
+        {
+            > 0 => -Math.Min(effectivePlayerGap * ExecutionSizeGapScorePerPlayer, ExecutionSizeGapScoreCap),
+            < 0 => Math.Min(effectivePlayerGap * ExecutionSizeGapScorePerPlayer, ExecutionSizeGapScoreCap),
+            _ => 0.0,
+        };
+        bool isApplied = effectivePlayerGap > 0 && Math.Abs(fullWeightAdjustment) > 0.001;
+
+        foreach (WvwSummaryExecutionPillarDto pillar in pillars)
+        {
+            double adjustmentWeight = GetExecutionPillarAdjustmentWeight(pillar.Key);
+            int adjustedScore = Math.Clamp((int)Math.Round(pillar.Score + fullWeightAdjustment * adjustmentWeight), 0, 100);
+            pillar.AdjustedScore = adjustedScore;
+            pillar.AdjustedGrade = ScoreToGrade(adjustedScore);
+            pillar.AdjustmentApplied = isApplied && adjustmentWeight > 0 && adjustedScore != pillar.Score;
+            pillar.AdjustmentDetail = pillar.AdjustmentApplied
+                ? $"Numbers-adjusted: {adjustedScore}/100 ({FormatSignedDecimal(adjustedScore - pillar.Score, 0)}) from the active player gap."
+                : "";
+        }
+
+        int adjustedOverallScore = pillars.Count > 0 ? (int)Math.Round(pillars.Average(pillar => pillar.AdjustedScore)) : rawScore;
+        string summary = !isApplied
+            ? $"Numbers-adjusted read matches raw because the active player gap stayed within {ExecutionSizeGapGracePlayers} players."
+            : playerGap < 0
+                ? $"Squad was outnumbered by {absolutePlayerGap} active players, so the numbers-adjusted read softens outcome-heavy penalties."
+                : $"Squad had {absolutePlayerGap} more active players, so the numbers-adjusted read trims credit from outcome-heavy pillars.";
+        string detail = !isApplied
+            ? $"No size-gap compensation was applied. Adjustment starts only after the first {ExecutionSizeGapGracePlayers} active players of gap."
+            : $"Ignores the first {ExecutionSizeGapGracePlayers} active players of gap, then applies {FormatDecimal(ExecutionSizeGapScorePerPlayer)} score points per remaining player, capped at {FormatDecimal(ExecutionSizeGapScoreCap)} for a full-weight pillar. Cohesion & Positioning stays raw. Pressure & Burst and Support & Mitigation use half shift. Downstate Control and Resilience & Stabilization use full shift.";
+
+        return new WvwSummaryExecutionNumbersAdjustmentDto
+        {
+            IsApplied = isApplied,
+            RawScore = rawScore,
+            AdjustedScore = adjustedOverallScore,
+            AdjustedGrade = ScoreToGrade(adjustedOverallScore),
+            PlayerGap = playerGap,
+            AbsolutePlayerGap = absolutePlayerGap,
+            EffectivePlayerGap = effectivePlayerGap,
+            FullWeightAdjustment = Math.Round(fullWeightAdjustment, 1),
+            Summary = summary,
             Detail = detail,
         };
     }
 
-    private static WvwSummarySubGradeDto BuildBurstSubGrade(string label, WvwSummaryBurstMetricsDto sideBurst, WvwSummaryBurstMetricsDto opposingBurst)
+    private static WvwSummaryExecutionPillarDto BuildExecutionPillar(
+        string key,
+        string label,
+        IReadOnlyList<WvwSummaryExecutionMetricDto> metrics,
+        string summary,
+        string detail)
     {
-        if (!sideBurst.DataAvailable && !opposingBurst.DataAvailable)
+        int score = metrics.Count > 0 ? (int)Math.Round(metrics.Average(metric => metric.Score)) : 50;
+        int availableMetricCount = metrics.Count(metric => metric.Available);
+        string detailSuffix = availableMetricCount == metrics.Count
+            ? ""
+            : $" {metrics.Count - availableMetricCount} metric{(metrics.Count - availableMetricCount == 1 ? "" : "s")} neutralized at 50 due to missing comparison data.";
+        return new WvwSummaryExecutionPillarDto
         {
-            return new WvwSummarySubGradeDto
-            {
-                Label = label,
-                Score = 50,
-                Grade = ScoreToGrade(50),
-                Detail = "Combat Replay burst data is unavailable for this phase.",
-            };
+            Key = key,
+            Label = label,
+            Score = score,
+            Grade = ScoreToGrade(score),
+            AdjustedScore = score,
+            AdjustedGrade = ScoreToGrade(score),
+            Summary = summary,
+            Detail = detail + detailSuffix,
+            AvailableMetricCount = availableMetricCount,
+            MetricCount = metrics.Count,
+            Metrics = metrics.ToList(),
+        };
+    }
+
+    private static double GetExecutionPillarAdjustmentWeight(string key)
+    {
+        return key switch
+        {
+            "cohesion-positioning" => 0.0,
+            "pressure-burst" => 0.5,
+            "downstate-control" => 1.0,
+            "resilience-stabilization" => 1.0,
+            "support-mitigation" => 0.5,
+            _ => 0.0,
+        };
+    }
+
+    private static WvwSummaryExecutionMetricDto BuildRelativeExecutionMetric(
+        string label,
+        double squadValue,
+        double enemyValue,
+        bool higherIsBetter,
+        string value,
+        string note = "")
+    {
+        return new WvwSummaryExecutionMetricDto
+        {
+            Label = label,
+            Value = value,
+            Note = note,
+            Available = true,
+            Score = (int)Math.Round(CompareScore(squadValue, enemyValue, higherIsBetter)),
+        };
+    }
+
+    private static WvwSummaryExecutionMetricDto BuildPositioningExecutionMetric(string label, double rate, long evaluatedSamples, bool higherIsBetter)
+    {
+        double favorableShare = higherIsBetter ? rate : 100.0 - rate;
+        double unfavorableShare = higherIsBetter ? 100.0 - rate : rate;
+        return new WvwSummaryExecutionMetricDto
+        {
+            Label = label,
+            Value = $"{FormatDecimal(rate)}% over {evaluatedSamples.ToString("N0", CultureInfo.InvariantCulture)} eligible replay samples",
+            Available = true,
+            Score = (int)Math.Round(CompareScore(favorableShare, unfavorableShare)),
+        };
+    }
+
+    private static WvwSummaryExecutionMetricDto BuildInPositionExecutionMetric(double rate, long evaluatedSamples)
+    {
+        double score = Math.Clamp((rate - 10.0) * (100.0 / 60.0), 0.0, 100.0);
+        return new WvwSummaryExecutionMetricDto
+        {
+            Label = "In-position rate",
+            Value = $"{FormatDecimal(rate)}% over {evaluatedSamples.ToString("N0", CultureInfo.InvariantCulture)} eligible replay samples",
+            Available = true,
+            Score = (int)Math.Round(score),
+        };
+    }
+
+    private static WvwSummaryExecutionMetricDto BuildNeutralizedExecutionMetric(string label, string note)
+    {
+        return new WvwSummaryExecutionMetricDto
+        {
+            Label = label,
+            Value = "n/a",
+            Note = note,
+            Available = false,
+            Score = 50,
+        };
+    }
+
+    private static WvwSummaryExecutionMetricDto BuildCleansePressureExecutionMetric(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> squadActors,
+        double squadPlayers,
+        out string summary)
+    {
+        const string label = "Cleanse pressure response";
+
+        double durationInMinutes = Math.Max(phase.DurationInMS / 60000.0, 1.0 / 60.0);
+        double enduredConditionSeconds = ComputePhaseTrackedConditionPresenceSeconds(log, phase, squadActors);
+        double removedConditionSeconds = ComputePhaseRemovedConditionSeconds(log, phase, squadActors);
+        double potentialConditionSeconds = enduredConditionSeconds + removedConditionSeconds;
+        double pressurePerActivePlayerPerMinute = potentialConditionSeconds / Math.Max(squadPlayers, 1.0) / durationInMinutes;
+
+        if (pressurePerActivePlayerPerMinute < ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute)
+        {
+            summary = $"{FormatDecimal(pressurePerActivePlayerPerMinute)} tracked condition-seconds per active player per minute; cleanse execution was not meaningfully tested.";
+            return BuildNeutralizedExecutionMetric(
+                label,
+                $"Neutralized at 50: tracked condition pressure was only {FormatDecimal(pressurePerActivePlayerPerMinute)} condition-seconds per active player per minute, below the {FormatDecimal(ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute)} threshold for a meaningful cleanse test.");
         }
 
-        if (!sideBurst.HasBurstData && !opposingBurst.HasBurstData)
-        {
-            return new WvwSummarySubGradeDto
-            {
-                Label = label,
-                Score = 50,
-                Grade = ScoreToGrade(50),
-                Detail = "No strong synced burst windows were detected in this phase.",
-            };
-        }
-
-        return BuildSubGrade(
+        double preventedShare = potentialConditionSeconds > 0.0 ? Math.Round(removedConditionSeconds * 100.0 / potentialConditionSeconds, 1) : 0.0;
+        double enduredShare = Math.Round(Math.Max(0.0, 100.0 - preventedShare), 1);
+        summary = $"{FormatDecimal(pressurePerActivePlayerPerMinute)} tracked condition-seconds per active player per minute, with cleanses preventing {FormatDecimal(preventedShare)}%.";
+        return BuildRelativeExecutionMetric(
             label,
-            [
-                CompareScore(sideBurst.SyncedBurstsPerMinute, opposingBurst.SyncedBurstsPerMinute),
-                CompareScore(sideBurst.TopBurstDamagePerPlayer, opposingBurst.TopBurstDamagePerPlayer),
-                CompareScore(sideBurst.AverageBurstDamagePerPlayer, opposingBurst.AverageBurstDamagePerPlayer),
-                CompareScore(sideBurst.AverageBurstStripsPerPlayer, opposingBurst.AverageBurstStripsPerPlayer),
-            ],
-            sideBurst.HasBurstData
-                ? $"{sideBurst.TopBursts.Count} strong synced bursts, {FormatDecimal(sideBurst.SyncedBurstsPerMinute)} bursts/min, {FormatDecimal(sideBurst.TopBurstDamagePerPlayer)} top burst damage/player, {FormatDecimal(sideBurst.AverageBurstStripsPerPlayer)} top-5 avg strips/player."
-                : "No strong synced burst windows were detected in this phase.");
+            removedConditionSeconds,
+            enduredConditionSeconds,
+            higherIsBetter: true,
+            $"{FormatDecimal(preventedShare)}% prevented vs {FormatDecimal(enduredShare)}% endured under {FormatDecimal(pressurePerActivePlayerPerMinute)} tracked condition-seconds per active player per minute",
+            "Self-scored from tracked condition burden. Each tracked condition, including Vulnerability, counts as present or absent rather than by stack count, and allied cleanse removes remaining condition duration, so earlier cleanses score better because they prevent more seconds from being endured.");
+    }
+
+    private static double ComputePhaseTrackedConditionPresenceSeconds(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> actors)
+    {
+        double totalSeconds = 0.0;
+        foreach (SingleActor actor in actors)
+        {
+            foreach (Buff condition in log.Buffs.BuffsByClassification[Buff.BuffClassification.Condition])
+            {
+                foreach (Segment segment in actor.GetBuffPresenceStatus(log, condition.ID, phase.Start, phase.End))
+                {
+                    if (segment.Value <= 0.0)
+                    {
+                        continue;
+                    }
+
+                    long segmentStart = Math.Max(segment.Start, phase.Start);
+                    long segmentEnd = Math.Min(segment.End, phase.End);
+                    if (segmentEnd <= segmentStart)
+                    {
+                        continue;
+                    }
+
+                    totalSeconds += (segmentEnd - segmentStart) / 1000.0;
+                }
+            }
+        }
+
+        return Math.Round(totalSeconds, 1);
+    }
+
+    private static double ComputePhaseRemovedConditionSeconds(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> actors)
+    {
+        var trackedConditionIds = new HashSet<long>(
+            log.Buffs.BuffsByClassification[Buff.BuffClassification.Condition]
+                .Select(condition => condition.ID));
+        var squadAgentItems = new HashSet<AgentItem>(actors.Select(actor => actor.AgentItem.GetFinalMaster()));
+        double totalSeconds = 0.0;
+
+        foreach (SingleActor actor in actors)
+        {
+            foreach (BuffRemoveAllEvent removeEvent in log.CombatData.GetBuffRemoveAllDataByDst(actor.EnglobingAgentItem))
+            {
+                if (removeEvent.Time < phase.Start || removeEvent.Time > phase.End)
+                {
+                    continue;
+                }
+                if (removeEvent.Time < actor.FirstAware || removeEvent.Time > actor.LastAware)
+                {
+                    continue;
+                }
+                if (!removeEvent.ToFriendly || removeEvent.CreditedBy.IsUnknown || !trackedConditionIds.Contains(removeEvent.BuffID))
+                {
+                    continue;
+                }
+                if (!squadAgentItems.Contains(removeEvent.CreditedBy.GetFinalMaster()))
+                {
+                    continue;
+                }
+
+                totalSeconds += Math.Max(removeEvent.RemovedDuration, 0) / 1000.0;
+            }
+        }
+
+        return Math.Round(totalSeconds, 1);
+    }
+
+    private static WvwSummaryPhasePositioningDto BuildPhasePositioningMetrics(CombatReplayAnalysisDto combatReplayAnalysis, PhaseData phase)
+    {
+        var result = new WvwSummaryPhasePositioningDto
+        {
+            CommanderAvailable = combatReplayAnalysis.Positioning.HasCommander,
+        };
+        if (!combatReplayAnalysis.Positioning.HasCommander || combatReplayAnalysis.Times.Length == 0)
+        {
+            return result;
+        }
+
+        long totalEvaluatedSamples = 0;
+        long totalInPositionSamples = 0;
+        long totalTooFarSamples = 0;
+        long totalOverextendedSamples = 0;
+        long totalLateralRiskSamples = 0;
+
+        foreach (CombatReplayPositioningPlayerTimelineDto playerTimeline in combatReplayAnalysis.Positioning.Players.Values)
+        {
+            int limit = Math.Min(combatReplayAnalysis.Times.Length, playerTimeline.Eligible.Length);
+            for (int index = 0; index < limit; index++)
+            {
+                long time = combatReplayAnalysis.Times[index];
+                if (time < phase.Start || time > phase.End || !playerTimeline.Eligible[index])
+                {
+                    continue;
+                }
+
+                totalEvaluatedSamples++;
+                if (index < playerTimeline.InPosition.Length && playerTimeline.InPosition[index])
+                {
+                    totalInPositionSamples++;
+                }
+                if (index < playerTimeline.TooFar.Length && playerTimeline.TooFar[index])
+                {
+                    totalTooFarSamples++;
+                }
+                if (index < playerTimeline.Overextended.Length && playerTimeline.Overextended[index])
+                {
+                    totalOverextendedSamples++;
+                }
+                if (index < playerTimeline.LateralRisk.Length && playerTimeline.LateralRisk[index])
+                {
+                    totalLateralRiskSamples++;
+                }
+            }
+        }
+
+        if (totalEvaluatedSamples == 0)
+        {
+            return result;
+        }
+
+        result.EvaluatedSamples = totalEvaluatedSamples;
+        result.InPositionRate = Math.Round(totalInPositionSamples * 100.0 / totalEvaluatedSamples, 1);
+        result.TooFarRate = Math.Round(totalTooFarSamples * 100.0 / totalEvaluatedSamples, 1);
+        result.OverextendedRate = Math.Round(totalOverextendedSamples * 100.0 / totalEvaluatedSamples, 1);
+        result.LateralRiskRate = Math.Round(totalLateralRiskSamples * 100.0 / totalEvaluatedSamples, 1);
+        return result;
+    }
+
+    private static List<long> GetPhaseDownTimes(ParsedEvtcLog log, IReadOnlyList<SingleActor> actors, PhaseData phase)
+    {
+        return [.. actors
+            .SelectMany(actor => log.CombatData.GetDownEvents(actor.AgentItem).Select(evt => evt.Time))
+            .Where(time => time >= phase.Start && time <= phase.End)
+            .OrderBy(time => time)];
+    }
+
+    private static List<WvwSummaryExecutionWindow> BuildPhaseBurstWindows(
+        CombatReplayTeamAnalysisDto teamAnalysis,
+        IReadOnlyList<long> times,
+        long phaseStart,
+        long phaseEnd,
+        int lookback)
+    {
+        var result = new List<WvwSummaryExecutionWindow>();
+        if (times.Count == 0)
+        {
+            return result;
+        }
+
+        const int burstWindowTail = 1000;
+        int limit = Math.Min(times.Count, Math.Min(teamAnalysis.BurstStrength.Length, teamAnalysis.StripSynced.Length));
+        int windowStart = -1;
+        for (int index = 0; index < limit; index++)
+        {
+            long time = times[index];
+            if (time < phaseStart || time > phaseEnd)
+            {
+                if (windowStart >= 0)
+                {
+                    result.Add(CreatePhaseBurstWindow(windowStart, index - 1, times, phaseStart, phaseEnd, lookback, burstWindowTail));
+                    windowStart = -1;
+                }
+                continue;
+            }
+
+            bool qualified = teamAnalysis.BurstStrength[index] == "strong" && teamAnalysis.StripSynced[index];
+            if (qualified && windowStart < 0)
+            {
+                windowStart = index;
+            }
+            else if (!qualified && windowStart >= 0)
+            {
+                result.Add(CreatePhaseBurstWindow(windowStart, index - 1, times, phaseStart, phaseEnd, lookback, burstWindowTail));
+                windowStart = -1;
+            }
+        }
+
+        if (windowStart >= 0)
+        {
+            result.Add(CreatePhaseBurstWindow(windowStart, limit - 1, times, phaseStart, phaseEnd, lookback, burstWindowTail));
+        }
+        return MergeExecutionWindows(result, burstWindowTail);
+    }
+
+    private static WvwSummaryExecutionWindow CreatePhaseBurstWindow(
+        int startIndex,
+        int endIndex,
+        IReadOnlyList<long> times,
+        long phaseStart,
+        long phaseEnd,
+        int lookback,
+        int burstWindowTail)
+    {
+        long startTime = Math.Max(phaseStart, Math.Max(0, times[startIndex] - lookback));
+        long endTime = Math.Min(phaseEnd, times[endIndex] + burstWindowTail);
+        return new WvwSummaryExecutionWindow(startTime, endTime);
+    }
+
+    private static int CountWindowsContainingEvents(IReadOnlyList<WvwSummaryExecutionWindow> windows, IReadOnlyList<long> eventTimes)
+    {
+        if (windows.Count == 0 || eventTimes.Count == 0)
+        {
+            return 0;
+        }
+
+        int eventIndex = 0;
+        int count = 0;
+        foreach (WvwSummaryExecutionWindow window in windows.OrderBy(window => window.Start))
+        {
+            while (eventIndex < eventTimes.Count && eventTimes[eventIndex] < window.Start)
+            {
+                eventIndex++;
+            }
+            if (eventIndex < eventTimes.Count && eventTimes[eventIndex] <= window.End)
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static List<WvwSummaryExecutionWindow> MergeExecutionWindows(List<WvwSummaryExecutionWindow> windows, int burstWindowTail)
+    {
+        if (windows.Count == 0)
+        {
+            return windows;
+        }
+
+        List<WvwSummaryExecutionWindow> mergedWindows = [windows[0]];
+        foreach (WvwSummaryExecutionWindow window in windows.OrderBy(window => window.Start).Skip(1))
+        {
+            WvwSummaryExecutionWindow previous = mergedWindows[^1];
+            if (window.Start <= previous.End + burstWindowTail)
+            {
+                mergedWindows[^1] = new WvwSummaryExecutionWindow(previous.Start, Math.Max(previous.End, window.End));
+            }
+            else
+            {
+                mergedWindows.Add(window);
+            }
+        }
+
+        return mergedWindows;
+    }
+
+    private static string InferWipeLabel(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> squadActors,
+        IReadOnlyList<SingleActor> hostilePlayerTargets)
+    {
+        WvwSummarySideStateDto squadState = BuildSideState(log, squadActors, phase.End);
+        WvwSummarySideStateDto enemyState = BuildSideState(log, hostilePlayerTargets, phase.End);
+        bool squadWiped = squadState.Alive == 0 && squadState.Down == 0 && squadState.Dead > 0;
+        bool enemyWiped = enemyState.Alive == 0 && enemyState.Down == 0 && enemyState.Dead > 0;
+
+        if (squadWiped && enemyWiped)
+        {
+            return "Trade wipe inferred";
+        }
+        if (enemyWiped)
+        {
+            return "Enemy wipe inferred";
+        }
+        if (squadWiped)
+        {
+            return "Squad wipe inferred";
+        }
+        return "No wipe inferred";
     }
 
     private static double CompareScore(double squadValue, double enemyValue, bool higherIsBetter = true)
@@ -413,94 +1171,6 @@ internal class WvwSummaryDto
 
         double normalizedAdvantage = (favorableValue - unfavorableValue) / denominator;
         return Math.Clamp(50.0 + normalizedAdvantage * 40.0, 10.0, 90.0);
-    }
-
-    private static string BuildSquadGradeSummary(int overallScore, IReadOnlyList<WvwSummarySubGradeDto> subGrades)
-    {
-        if (subGrades.Count == 0)
-        {
-            return "This phase did not have enough data to grade.";
-        }
-
-        WvwSummarySubGradeDto strongest = subGrades.MaxBy(subGrade => subGrade.Score)!;
-        WvwSummarySubGradeDto weakest = subGrades.MinBy(subGrade => subGrade.Score)!;
-
-        if (overallScore >= 74)
-        {
-            return $"The squad won most exchanges this phase. Strongest area: {strongest.Label}.";
-        }
-        if (overallScore >= 58)
-        {
-            return $"The squad held a positive edge overall, led by {strongest.Label}, with {weakest.Label} lagging slightly behind.";
-        }
-        if (overallScore >= 42)
-        {
-            return $"This phase was fairly even. {strongest.Label} stood out most, while {weakest.Label} was the biggest drag on the score.";
-        }
-        if (overallScore >= 30)
-        {
-            return $"The squad struggled to keep pace this phase, especially in {weakest.Label}.";
-        }
-        return $"The squad was heavily pressured this phase. {weakest.Label} fell furthest behind the enemy.";
-    }
-
-    private static string BuildOppositionEstimateSummary(int overallScore, string cohesionStyle, IReadOnlyList<WvwSummarySubGradeDto> subGrades)
-    {
-        if (subGrades.Count == 0)
-        {
-            return "Not enough observed enemy data was available to estimate opposition skill.";
-        }
-
-        WvwSummarySubGradeDto strongest = subGrades.MaxBy(subGrade => subGrade.Score)!;
-        if (overallScore >= 74)
-        {
-            return $"The opposition looked very sharp in this phase. Strongest signal: {strongest.Label}. Formation read: {cohesionStyle}.";
-        }
-        if (overallScore >= 58)
-        {
-            return $"The opposition looked competent and coordinated overall, with {strongest.Label} standing out. Formation read: {cohesionStyle}.";
-        }
-        if (overallScore >= 42)
-        {
-            return $"The opposition looked mixed rather than dominant. Strongest signal: {strongest.Label}. Formation read: {cohesionStyle}.";
-        }
-        return $"The opposition did not show many strong execution signals in this phase. Formation read: {cohesionStyle}.";
-    }
-
-    private static int ComputeSideCountAdjustment(double sidePlayers, double otherPlayers)
-    {
-        double playerGap = otherPlayers - sidePlayers;
-        double excessGap = Math.Abs(playerGap) - 5.0;
-        if (excessGap <= 0.0)
-        {
-            return 0;
-        }
-
-        double maxPlayers = Math.Max(Math.Max(sidePlayers, otherPlayers), 1.0);
-        double scaledGap = excessGap * 0.85 + (excessGap * excessGap) / 18.0 + (Math.Abs(playerGap) / maxPlayers) * 6.0;
-        int adjustment = (int)Math.Round(Math.Clamp(scaledGap, 0.0, 18.0));
-        return playerGap > 0.0 ? adjustment : -adjustment;
-    }
-
-    private static string BuildPlayerCountSummary(int squadPlayers, int friendlyPlayers, double effectiveAlliedPlayerCount, int enemyPlayers, int countAdjustment)
-    {
-        string alliedSummary = friendlyPlayers > 0
-            ? $"{squadPlayers} squad + {friendlyPlayers} friendlies ({FormatCountValue(effectiveAlliedPlayerCount)} effective)"
-            : $"{squadPlayers} squad";
-
-        if (Math.Abs(effectiveAlliedPlayerCount - enemyPlayers) <= 5.0)
-        {
-            return $"Even numbers from squad view: {alliedSummary} vs {enemyPlayers} enemy. No count adjustment.";
-        }
-        if (countAdjustment > 0)
-        {
-            return $"Outnumbered from squad view: {alliedSummary} vs {enemyPlayers} enemy. +{countAdjustment} score context.";
-        }
-        if (countAdjustment < 0)
-        {
-            return $"Superior numbers from squad view: {alliedSummary} vs {enemyPlayers} enemy. {countAdjustment} score context.";
-        }
-        return $"Even numbers from squad view: {alliedSummary} vs {enemyPlayers} enemy. No count adjustment.";
     }
 
     private static WvwSummaryPlayerStandoutsDto BuildPlayerStandouts(
@@ -1501,6 +2171,67 @@ internal class WvwSummaryDto
         return Math.Round(totalSeconds, 1);
     }
 
+    private static bool TryComputePhaseWeightedThreatBoonCoverage(
+        CombatReplayAnalysisDto combatReplayAnalysis,
+        PhaseData phase,
+        IReadOnlyList<long> boonIds,
+        out double coverage,
+        out string note)
+    {
+        coverage = 0.0;
+        note = "";
+        if (combatReplayAnalysis.Times.Length == 0 || combatReplayAnalysis.ThreatBoons.Boons.Count == 0)
+        {
+            return false;
+        }
+
+        var trackedBoonIds = new HashSet<long>(boonIds);
+        List<CombatReplayThreatBoonTimelineDto> trackedBoons = [.. combatReplayAnalysis.ThreatBoons.Boons.Where(boon => trackedBoonIds.Contains(boon.Id))];
+        if (trackedBoons.Count == 0)
+        {
+            return false;
+        }
+
+        var weightedBoonCoverages = new List<double>(trackedBoons.Count);
+        foreach (CombatReplayThreatBoonTimelineDto boon in trackedBoons)
+        {
+            double weightedCoverageSum = 0.0;
+            int threatenedSamples = 0;
+            int sampleCount = Math.Min(combatReplayAnalysis.Times.Length, Math.Min(combatReplayAnalysis.ThreatBoons.ThreatenedPlayerCount.Length, boon.CurrentCoverage.Length));
+            for (int index = 0; index < sampleCount; index++)
+            {
+                long time = combatReplayAnalysis.Times[index];
+                if (time < phase.Start || time > phase.End)
+                {
+                    continue;
+                }
+
+                int threatenedPlayerCount = combatReplayAnalysis.ThreatBoons.ThreatenedPlayerCount[index];
+                if (threatenedPlayerCount <= 0)
+                {
+                    continue;
+                }
+
+                weightedCoverageSum += boon.CurrentCoverage[index] * threatenedPlayerCount;
+                threatenedSamples += threatenedPlayerCount;
+            }
+
+            if (threatenedSamples > 0)
+            {
+                weightedBoonCoverages.Add(weightedCoverageSum / threatenedSamples);
+            }
+        }
+
+        if (weightedBoonCoverages.Count == 0)
+        {
+            return false;
+        }
+
+        coverage = Math.Round(weightedBoonCoverages.Average(), 1);
+        note = $"Weighted by threatened squad players across {string.Join(", ", trackedBoons.Select(boon => boon.Name))}.";
+        return true;
+    }
+
     private static double GetAverageWindowSeriesValue(
         IReadOnlyDictionary<int, CombatReplayAnalysisAttackerTimelineDto>? timelines,
         IReadOnlyList<long>? times,
@@ -2176,40 +2907,6 @@ internal class WvwSummaryDto
         return $"{state.Alive} alive / {state.Down} down / {state.Dead} downed{runbackSuffix}";
     }
 
-    private static WvwSummaryBurstMetricsDto BuildBurstMetrics(
-        PhaseData phase,
-        CombatReplayAnalysisDto? combatReplayAnalysis,
-        CombatReplayTeamAnalysisDto? teamAnalysis,
-        int playerCount)
-    {
-        if (combatReplayAnalysis == null || teamAnalysis == null || combatReplayAnalysis.Times.Length == 0)
-        {
-            return new WvwSummaryBurstMetricsDto();
-        }
-
-        List<CombatReplayAnalysisBurstSummaryDto> topBursts = BuildPhaseTopBursts(teamAnalysis, combatReplayAnalysis.Times, phase.Start, phase.End);
-        if (topBursts.Count == 0)
-        {
-            return new WvwSummaryBurstMetricsDto
-            {
-                DataAvailable = true,
-            };
-        }
-
-        double normalizedPlayerCount = Math.Max(playerCount, 1);
-        double durationInMinutes = Math.Max(phase.DurationInMS / 60000.0, 1.0 / 60.0);
-
-        return new WvwSummaryBurstMetricsDto
-        {
-            DataAvailable = true,
-            TopBursts = topBursts,
-            SyncedBurstsPerMinute = Math.Round(topBursts.Count / durationInMinutes, 1),
-            TopBurstDamagePerPlayer = Math.Round(topBursts.Max(burst => burst.Damage) / normalizedPlayerCount, 1),
-            AverageBurstDamagePerPlayer = Math.Round(topBursts.Average(burst => burst.Damage) / normalizedPlayerCount, 1),
-            AverageBurstStripsPerPlayer = Math.Round(topBursts.Average(burst => burst.Strips) / normalizedPlayerCount, 1),
-        };
-    }
-
     private static List<CombatReplayAnalysisBurstSummaryDto> BuildPhaseTopBursts(
         CombatReplayTeamAnalysisDto analysis,
         IReadOnlyList<long> times,
@@ -2289,68 +2986,6 @@ internal class WvwSummaryDto
             return analysis.Kills[candidateIndex] > analysis.Kills[currentBestIndex];
         }
         return times[candidateIndex] < times[currentBestIndex];
-    }
-
-    private static WvwSummaryCohesionEstimateDto BuildGroupCohesionEstimate(
-        ParsedEvtcLog log,
-        PhaseData phase,
-        IReadOnlyList<SingleActor> groupActors,
-        IReadOnlyList<SingleActor> opposingActors)
-    {
-        const long ignoreTailWindow = 10000;
-        List<WvwSummaryFormationSnapshot> snapshots = BuildGroupFormationSnapshots(log, phase, groupActors, opposingActors);
-        int peakEligibleEnemies = snapshots.Select(snapshot => snapshot.PlayerCount).DefaultIfEmpty(0).Max();
-        int minimumEligibleCount = Math.Max(5, (int)Math.Ceiling(peakEligibleEnemies * 0.6));
-
-        var cohesionScores = new List<double>();
-        int organizedSnapshots = 0;
-        int cloudSnapshots = 0;
-
-        foreach (WvwSummaryFormationSnapshot snapshot in snapshots)
-        {
-            if (snapshot.Time > phase.End - ignoreTailWindow ||
-                snapshot.PlayerCount < minimumEligibleCount)
-            {
-                continue;
-            }
-
-            cohesionScores.Add(snapshot.SnapshotScore);
-
-            if (snapshot.ClusteredShare >= 0.7 && snapshot.CompactnessScore >= 0.55)
-            {
-                organizedSnapshots++;
-            }
-            else if (snapshot.ClusteredShare <= 0.4 || snapshot.CompactnessScore <= 0.2)
-            {
-                cloudSnapshots++;
-            }
-        }
-
-        if (cohesionScores.Count == 0)
-        {
-            return new WvwSummaryCohesionEstimateDto
-            {
-                Score = 50,
-                StyleLabel = "insufficient replay data",
-                Detail = "Could not evaluate enough engaged enemy snapshots to judge whether the opposition moved as an organized group or a cloud.",
-            };
-        }
-
-        int score = (int)Math.Round(cohesionScores.Average());
-        double organizedRate = Math.Round(organizedSnapshots * 100.0 / cohesionScores.Count, 1);
-        double cloudRate = Math.Round(cloudSnapshots * 100.0 / cohesionScores.Count, 1);
-        string styleLabel = organizedRate >= 55.0 && cloudRate <= 20.0
-            ? "organized group"
-            : cloudRate >= 40.0
-                ? "cloud"
-                : "mixed formation";
-
-        return new WvwSummaryCohesionEstimateDto
-        {
-            Score = score,
-            StyleLabel = styleLabel,
-            Detail = $"{FormatDecimal(organizedRate)}% organized snapshots, {FormatDecimal(cloudRate)}% cloud snapshots across {cohesionScores.Count} engaged replay samples. Ignores the last 10s and routed cleanup after the enemy falls below 60% of peak active count.",
-        };
     }
 
     private static List<WvwSummaryFormationSnapshot> BuildGroupFormationSnapshots(
@@ -2600,23 +3235,6 @@ internal class WvwSummaryDto
         return true;
     }
 
-    private static double CompareNullableLowerIsBetterScore(double? squadValue, double? enemyValue)
-    {
-        if (!squadValue.HasValue && !enemyValue.HasValue)
-        {
-            return 50.0;
-        }
-        if (!squadValue.HasValue)
-        {
-            return 60.0;
-        }
-        if (!enemyValue.HasValue)
-        {
-            return 40.0;
-        }
-        return CompareScore(squadValue.Value, enemyValue.Value, higherIsBetter: false);
-    }
-
     private static string ScoreToGrade(int score)
     {
         return score switch
@@ -2638,11 +3256,23 @@ internal class WvwSummaryDto
         return value.ToString("0.0", CultureInfo.InvariantCulture);
     }
 
+    private static string FormatSignedDecimal(double value, int decimals = 1)
+    {
+        string format = decimals <= 0 ? "0" : $"0.{new string('0', decimals)}";
+        string formatted = value.ToString(format, CultureInfo.InvariantCulture);
+        return value > 0 ? $"+{formatted}" : formatted;
+    }
+
     private static string FormatCountValue(double value)
     {
         return Math.Abs(value - Math.Round(value)) < 0.05
             ? Math.Round(value).ToString(CultureInfo.InvariantCulture)
             : value.ToString("0.0", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatWholeNumber(double value)
+    {
+        return Math.Round(value).ToString("N0", CultureInfo.InvariantCulture);
     }
 
     private static string FormatOptionalSeconds(double? value)
@@ -3402,55 +4032,106 @@ internal class WvwSummarySideStateDto
     public int Runback { get; set; }
 }
 
-internal class WvwSummaryGradeDto
+internal class WvwSummaryFightExecutionScoreDto
 {
-    public int BaseScore { get; set; }
-    public int CountAdjustment { get; set; }
-    public int Score { get; set; }
+    public bool ScoreAvailable { get; set; }
+    public int OverallScore { get; set; }
     public string Grade { get; set; } = "";
     public string Summary { get; set; } = "";
     public string Detail { get; set; } = "";
-    public string CountSummary { get; set; } = "";
-    public List<WvwSummarySubGradeDto> SubGrades { get; set; } = [];
+    public WvwSummaryExecutionContextDto Context { get; set; } = new();
+    public WvwSummaryExecutionOutcomeDto Outcome { get; set; } = new();
+    public WvwSummaryExecutionNumbersAdjustmentDto NumbersAdjustment { get; set; } = new();
+    public WvwSummaryExecutionConfidenceDto Confidence { get; set; } = new();
+    public List<WvwSummaryExecutionPillarDto> Pillars { get; set; } = [];
+    public string StrongestPillarLabel { get; set; } = "";
+    public string StrongestPillarSummary { get; set; } = "";
+    public string WeakestPillarLabel { get; set; } = "";
+    public string WeakestPillarSummary { get; set; } = "";
 }
 
-internal class WvwSummaryOppositionEstimateDto
+internal class WvwSummaryExecutionContextDto
 {
-    public int BaseScore { get; set; }
-    public int CountAdjustment { get; set; }
-    public int Score { get; set; }
-    public string Grade { get; set; } = "";
+    public int SquadPlayerCount { get; set; }
+    public int EnemyPlayerCount { get; set; }
+    public string EnemyFormationStyleLabel { get; set; } = "";
+    public string EnemyFormationStyleDetail { get; set; } = "";
+    public int FriendlyNonSquadCount { get; set; }
+    public string PhaseDuration { get; set; } = "";
+    public string DataConfidenceLabel { get; set; } = "";
+    public string DataConfidenceDetail { get; set; } = "";
+}
+
+internal class WvwSummaryExecutionOutcomeDto
+{
+    public int SquadDowns { get; set; }
+    public int EnemyDowns { get; set; }
+    public int SquadKills { get; set; }
+    public int EnemyKills { get; set; }
+    public int SquadDeaths { get; set; }
+    public int EnemyDeaths { get; set; }
+    public double EnemyDownConversionRate { get; set; }
+    public double SquadRecoveryRate { get; set; }
+    public string WipeLabel { get; set; } = "";
+}
+
+internal class WvwSummaryExecutionConfidenceDto
+{
+    public string Label { get; set; } = "";
+    public int AvailableMetricCount { get; set; }
+    public int TotalMetricCount { get; set; }
+    public List<string> Notes { get; set; } = [];
+}
+
+internal class WvwSummaryExecutionNumbersAdjustmentDto
+{
+    public bool IsApplied { get; set; }
+    public int RawScore { get; set; }
+    public int AdjustedScore { get; set; }
+    public string AdjustedGrade { get; set; } = "";
+    public int PlayerGap { get; set; }
+    public int AbsolutePlayerGap { get; set; }
+    public int EffectivePlayerGap { get; set; }
+    public double FullWeightAdjustment { get; set; }
     public string Summary { get; set; } = "";
     public string Detail { get; set; } = "";
-    public string FormationLabel { get; set; } = "";
-    public string FormationDetail { get; set; } = "";
-    public List<WvwSummarySubGradeDto> SubGrades { get; set; } = [];
 }
 
-internal class WvwSummarySubGradeDto
+internal class WvwSummaryExecutionPillarDto
 {
+    public string Key { get; set; } = "";
     public string Label { get; set; } = "";
     public int Score { get; set; }
     public string Grade { get; set; } = "";
+    public int AdjustedScore { get; set; }
+    public string AdjustedGrade { get; set; } = "";
+    public bool AdjustmentApplied { get; set; }
+    public string AdjustmentDetail { get; set; } = "";
+    public string Summary { get; set; } = "";
     public string Detail { get; set; } = "";
+    public int AvailableMetricCount { get; set; }
+    public int MetricCount { get; set; }
+    public List<WvwSummaryExecutionMetricDto> Metrics { get; set; } = [];
 }
 
-internal class WvwSummaryCohesionEstimateDto
+internal class WvwSummaryExecutionMetricDto
 {
+    public string Label { get; set; } = "";
+    public string Value { get; set; } = "";
+    public string Note { get; set; } = "";
+    public bool Available { get; set; }
     public int Score { get; set; }
-    public string StyleLabel { get; set; } = "";
-    public string Detail { get; set; } = "";
 }
 
-internal class WvwSummaryBurstMetricsDto
+internal class WvwSummaryPhasePositioningDto
 {
-    public bool DataAvailable { get; set; }
-    public List<CombatReplayAnalysisBurstSummaryDto> TopBursts { get; set; } = [];
-    public double SyncedBurstsPerMinute { get; set; }
-    public double TopBurstDamagePerPlayer { get; set; }
-    public double AverageBurstDamagePerPlayer { get; set; }
-    public double AverageBurstStripsPerPlayer { get; set; }
-    public bool HasBurstData => TopBursts.Count > 0;
+    public bool CommanderAvailable { get; set; }
+    public long EvaluatedSamples { get; set; }
+    public double InPositionRate { get; set; }
+    public double TooFarRate { get; set; }
+    public double OverextendedRate { get; set; }
+    public double LateralRiskRate { get; set; }
+    public bool HasData => CommanderAvailable && EvaluatedSamples > 0;
 }
 
 internal readonly record struct WvwSummaryFormationSnapshot(
@@ -3751,3 +4432,5 @@ internal readonly record struct WvwSummaryClusterWindowCandidate(
     int UniqueId,
     int Count,
     double Score);
+
+internal readonly record struct WvwSummaryExecutionWindow(long Start, long End);

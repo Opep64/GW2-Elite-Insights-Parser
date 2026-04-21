@@ -18,16 +18,8 @@
                             <span class="wvw-summary-header-fact-value">{{summary.fightTime}}</span>
                         </div>
                         <div class="wvw-summary-header-fact">
-                            <span class="wvw-summary-header-fact-label">Enemy Group Formation</span>
-                            <span class="wvw-summary-header-fact-value">{{enemyGroupFormation}}</span>
-                        </div>
-                        <div class="wvw-summary-header-fact">
                             <span class="wvw-summary-header-fact-label">Winner</span>
                             <span class="wvw-summary-header-fact-value">{{winnerLabel}}</span>
-                        </div>
-                        <div class="wvw-summary-header-fact">
-                            <span class="wvw-summary-header-fact-label">Estimate Context</span>
-                            <span class="wvw-summary-header-fact-value">{{numbersAdjustmentLabel}}</span>
                         </div>
                     </div>
                 </div>
@@ -61,35 +53,201 @@
                     Moments
                 </button>
             </div>
-            <div v-if="activeSummaryTab === 'overview' && summary.squadGrade" class="wvw-summary-grade-panel">
+            <div v-if="activeSummaryTab === 'overview' && summary.fightExecutionScore" class="wvw-summary-grade-panel">
                 <div class="wvw-summary-grade-header">
                     <div class="wvw-summary-grade-copy">
-                        <div class="wvw-summary-side-panel-title">Squad Skill</div>
+                        <div class="wvw-summary-side-panel-title">Fight Execution Score</div>
+                        <div class="wvw-summary-side-panel-subtitle">{{summary.fightExecutionScore.summary}}</div>
+                    </div>
+                    <div v-if="summary.fightExecutionScore.scoreAvailable"
+                        class="wvw-summary-grade-badge"
+                        :class="getExecutionToneClass(summary.fightExecutionScore.overallScore)">
+                        <div class="wvw-summary-grade-letter">{{summary.fightExecutionScore.overallScore}}</div>
+                        <div class="wvw-summary-grade-score">{{summary.fightExecutionScore.grade}} raw</div>
+                    </div>
+                    <div v-else class="wvw-summary-grade-badge wvw-summary-grade-tone-even">
+                        <div class="wvw-summary-grade-letter">n/a</div>
+                        <div class="wvw-summary-grade-score">Replay Required</div>
                     </div>
                 </div>
-                <div class="wvw-summary-grade-grid">
-                    <div v-for="subGrade in summary.squadGrade.subGrades" :key="'squad-grade-' + subGrade.label"
+                <div class="wvw-summary-grade-card-detail">{{summary.fightExecutionScore.detail}}</div>
+                <div class="wvw-summary-execution-layout">
+                    <div v-if="summary.fightExecutionScore.scoreAvailable" class="wvw-summary-side-panel">
+                        <div class="wvw-summary-grade-card-header">
+                            <div>
+                                <div class="wvw-summary-side-panel-title">Numbers-Adjusted Interpretation</div>
+                                <div class="wvw-summary-side-panel-subtitle">{{summary.fightExecutionScore.numbersAdjustment.summary}}</div>
+                            </div>
+                            <span class="wvw-summary-grade-card-badge" :class="getExecutionToneClass(summary.fightExecutionScore.numbersAdjustment.adjustedScore)">
+                                {{summary.fightExecutionScore.numbersAdjustment.adjustedScore}} / 100
+                            </span>
+                        </div>
+                        <div class="wvw-summary-execution-facts">
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Raw Overall</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.numbersAdjustment.rawScore}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Adjusted Overall</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.numbersAdjustment.adjustedScore}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Adjusted Grade</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.numbersAdjustment.adjustedGrade}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Player Gap</span>
+                                <span class="wvw-summary-execution-fact-value">{{formatSignedNumber(summary.fightExecutionScore.numbersAdjustment.playerGap)}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Effective Gap</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.numbersAdjustment.effectivePlayerGap}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Full-Weight Shift</span>
+                                <span class="wvw-summary-execution-fact-value">{{formatSignedNumber(summary.fightExecutionScore.numbersAdjustment.fullWeightAdjustment, 1)}}</span>
+                            </div>
+                        </div>
+                        <div class="wvw-summary-execution-detail">{{summary.fightExecutionScore.numbersAdjustment.detail}}</div>
+                    </div>
+                    <div class="wvw-summary-side-panel">
+                        <div class="wvw-summary-side-panel-title">Context</div>
+                        <div class="wvw-summary-side-panel-subtitle">Context is shown separately and does not affect the score.</div>
+                        <div class="wvw-summary-execution-facts">
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Squad Players</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.context.squadPlayerCount}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Enemy Players</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.context.enemyPlayerCount}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Enemy Formation</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.context.enemyFormationStyleLabel}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Friendly Non-Squad</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.context.friendlyNonSquadCount}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Phase Duration</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.context.phaseDuration}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Data Confidence</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.context.dataConfidenceLabel}}</span>
+                            </div>
+                        </div>
+                        <div v-if="summary.fightExecutionScore.context.enemyFormationStyleDetail" class="wvw-summary-execution-detail">{{summary.fightExecutionScore.context.enemyFormationStyleDetail}}</div>
+                        <div class="wvw-summary-execution-detail">{{summary.fightExecutionScore.context.dataConfidenceDetail}}</div>
+                        <div v-if="summary.fightExecutionScore.confidence.notes && summary.fightExecutionScore.confidence.notes.length > 0" class="wvw-summary-execution-notes">
+                            <div v-for="(note, index) in summary.fightExecutionScore.confidence.notes" :key="'execution-confidence-note-' + index" class="wvw-summary-execution-note">
+                                {{note}}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="wvw-summary-side-panel">
+                        <div class="wvw-summary-side-panel-title">Outcome Headline</div>
+                        <div class="wvw-summary-side-panel-subtitle">Outcome is shown separately from execution. Downs and kills are side-attributed, while deaths are taken by side.</div>
+                        <div class="wvw-summary-execution-facts">
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Squad Downs</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.outcome.squadDowns}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Enemy Downs</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.outcome.enemyDowns}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Squad Kills</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.outcome.squadKills}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Enemy Kills</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.outcome.enemyKills}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Squad Deaths</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.outcome.squadDeaths}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Enemy Deaths</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.outcome.enemyDeaths}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Enemy Down Conversion</span>
+                                <span class="wvw-summary-execution-fact-value">{{round1(summary.fightExecutionScore.outcome.enemyDownConversionRate)}}%</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Squad Recovery</span>
+                                <span class="wvw-summary-execution-fact-value">{{round1(summary.fightExecutionScore.outcome.squadRecoveryRate)}}%</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Wipe</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.outcome.wipeLabel}}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="summary.fightExecutionScore.scoreAvailable && summary.fightExecutionScore.pillars && summary.fightExecutionScore.pillars.length > 0" class="wvw-summary-grade-grid">
+                    <div v-for="pillar in summary.fightExecutionScore.pillars"
+                        :key="'execution-pillar-' + pillar.key"
                         class="wvw-summary-grade-card">
                         <div class="wvw-summary-grade-card-header">
-                            <div class="wvw-summary-grade-card-title">{{subGrade.label}}</div>
+                            <div>
+                                <div class="wvw-summary-grade-card-title">{{pillar.label}}</div>
+                                <div class="wvw-summary-execution-pillar-meta">{{pillar.availableMetricCount}} / {{pillar.metricCount}} metrics available</div>
+                            </div>
+                            <span class="wvw-summary-grade-card-badge" :class="getExecutionToneClass(pillar.score)">
+                                {{pillar.score}} / 100
+                            </span>
                         </div>
-                        <div class="wvw-summary-grade-card-detail">{{subGrade.detail}}</div>
+                        <div class="wvw-summary-grade-card-detail">{{pillar.summary}}</div>
+                        <details class="wvw-summary-execution-breakdown">
+                            <summary class="wvw-summary-execution-breakdown-toggle">
+                                Show metric scores
+                            </summary>
+                            <div class="wvw-summary-execution-breakdown-body">
+                                <div class="wvw-summary-execution-breakdown-meta">
+                                    Pillar score averages {{pillar.metricCount}} metric scores. Each metric currently counts {{getExecutionMetricWeightLabel(pillar)}}.
+                                </div>
+                                <div class="wvw-summary-execution-detail">{{pillar.detail}}</div>
+                                <div v-if="summary.fightExecutionScore.numbersAdjustment.isApplied && pillar.adjustmentApplied" class="wvw-summary-execution-adjusted">
+                                    {{pillar.adjustmentDetail}}
+                                </div>
+                                <div class="wvw-summary-execution-metrics">
+                                    <div v-for="metric in pillar.metrics"
+                                        :key="'execution-metric-' + pillar.key + '-' + metric.label"
+                                        class="wvw-summary-execution-metric">
+                                        <div class="wvw-summary-execution-metric-header">
+                                            <div>
+                                                <div class="wvw-summary-execution-metric-label">{{metric.label}}</div>
+                                                <div class="wvw-summary-execution-metric-meta">
+                                                    {{getExecutionMetricWeightLabel(pillar)}}
+                                                    <span v-if="!metric.available"> · Neutralized to 50</span>
+                                                </div>
+                                            </div>
+                                            <span class="wvw-summary-grade-card-badge wvw-summary-execution-metric-score" :class="getExecutionToneClass(metric.score)">
+                                                {{metric.score}} / 100
+                                            </span>
+                                        </div>
+                                        <div class="wvw-summary-execution-metric-value">{{metric.value}}</div>
+                                        <div v-if="metric.note" class="wvw-summary-execution-metric-note">{{metric.note}}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
                     </div>
                 </div>
-            </div>
-            <div v-if="activeSummaryTab === 'overview' && summary.oppositionEstimate" class="wvw-summary-grade-panel">
-                <div class="wvw-summary-grade-header">
-                    <div class="wvw-summary-grade-copy">
-                        <div class="wvw-summary-side-panel-title">Opposition Skill</div>
+                <div v-if="summary.fightExecutionScore.scoreAvailable && (summary.fightExecutionScore.strongestPillarLabel || summary.fightExecutionScore.weakestPillarLabel)" class="wvw-summary-execution-insights">
+                    <div v-if="summary.fightExecutionScore.strongestPillarLabel" class="wvw-summary-grade-card">
+                        <div class="wvw-summary-grade-card-title">Strongest Pillar: {{summary.fightExecutionScore.strongestPillarLabel}}</div>
+                        <div class="wvw-summary-grade-card-detail">{{summary.fightExecutionScore.strongestPillarSummary}}</div>
                     </div>
-                </div>
-                <div class="wvw-summary-grade-grid">
-                    <div v-for="subGrade in summary.oppositionEstimate.subGrades" :key="'opposition-grade-' + subGrade.label"
-                        class="wvw-summary-grade-card">
-                        <div class="wvw-summary-grade-card-header">
-                            <div class="wvw-summary-grade-card-title">{{subGrade.label}}</div>
-                        </div>
-                        <div class="wvw-summary-grade-card-detail">{{subGrade.detail}}</div>
+                    <div v-if="summary.fightExecutionScore.weakestPillarLabel" class="wvw-summary-grade-card">
+                        <div class="wvw-summary-grade-card-title">Weakest Pillar: {{summary.fightExecutionScore.weakestPillarLabel}}</div>
+                        <div class="wvw-summary-grade-card-detail">{{summary.fightExecutionScore.weakestPillarSummary}}</div>
                     </div>
                 </div>
             </div>
@@ -667,6 +825,39 @@
                 }
                 return row.percentage ? formatted + "%" : formatted;
             },
+            getExecutionToneClass: function(score) {
+                if (score >= 82) {
+                    return "wvw-summary-grade-tone-strong";
+                }
+                if (score >= 66) {
+                    return "wvw-summary-grade-tone-good";
+                }
+                if (score >= 50) {
+                    return "wvw-summary-grade-tone-even";
+                }
+                if (score >= 34) {
+                    return "wvw-summary-grade-tone-weak";
+                }
+                return "wvw-summary-grade-tone-danger";
+            },
+            getExecutionMetricWeightLabel: function(pillar) {
+                if (!pillar || !pillar.metricCount) {
+                    return "0.0% of pillar";
+                }
+                return this.round1(100 / pillar.metricCount) + "% of pillar";
+            },
+            formatSignedNumber: function(value, decimals) {
+                var places = decimals == null ? 0 : decimals;
+                var number = Number(value);
+                if (!Number.isFinite(number)) {
+                    return "";
+                }
+                if (Math.abs(number) < Math.pow(10, -places) / 2) {
+                    number = 0;
+                }
+                var formatted = number.toFixed(places);
+                return number > 0 ? "+" + formatted : formatted;
+            },
             getMomentToneClass: function(moment) {
                 if (!moment || !moment.tone) {
                     return "";
@@ -1235,12 +1426,6 @@
             summary: function() {
                 return this.phase.wvwSummary;
             },
-            enemyGroupFormation: function() {
-                if (!this.summary || !this.summary.oppositionEstimate || !this.summary.oppositionEstimate.formationLabel) {
-                    return "Unavailable";
-                }
-                return this.summary.oppositionEstimate.formationLabel;
-            },
             playerCountStatusKey: function() {
                 if (!this.summary || !this.summary.squad || !this.summary.enemy) {
                     return "unknown";
@@ -1288,19 +1473,6 @@
                     ? squadCount + " squad + " + friendlyCount + " friendlies (" + this.formatEffectiveCount(alliedEffectiveCount) + " effective)"
                     : squadCount + " squad";
                 return alliedSummary + " vs " + enemyCount + " enemy";
-            },
-            numbersAdjustmentLabel: function() {
-                if (!this.summary || !this.summary.squadGrade) {
-                    return "Unavailable";
-                }
-                const adjustment = this.summary.squadGrade.countAdjustment || 0;
-                if (adjustment > 0) {
-                    return "+" + adjustment + " to squad estimate";
-                }
-                if (adjustment < 0) {
-                    return adjustment + " to squad estimate";
-                }
-                return "No numbers adjustment";
             },
             winnerLabel: function() {
                 if (!this.summary || !this.summary.squad || !this.summary.enemy) {
