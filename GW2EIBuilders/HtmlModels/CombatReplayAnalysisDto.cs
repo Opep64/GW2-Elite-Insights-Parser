@@ -148,7 +148,23 @@ internal class CombatReplayDefenseAnalysisDto
     public double BarrierAbsorptionPercent { get; set; }
     public CombatReplayDefenseBurstBarrierDto BurstBarrier { get; set; } = new();
     public CombatReplayDefenseMitigationDto Mitigation { get; set; } = new();
+    public CombatReplayDefenseSavedPlayersSummaryDto SavedPlayersSummary { get; set; } = new();
     public List<CombatReplayEventActorSummaryDto> TopBarrierProviders { get; set; } = [];
+}
+
+internal class CombatReplayDefenseSavedPlayersSummaryDto
+{
+    public int SavedCases { get; set; }
+    public double TotalBarrierAbsorbed { get; set; }
+    public int BarrierSavedCases { get; set; }
+    public double TotalEstimatedDamageReduction { get; set; }
+    public int DamageReductionSavedCases { get; set; }
+    public double AverageLowestHealthPercent { get; set; }
+    public double LowestLowestHealthPercent { get; set; }
+    public int BothSavedCases { get; set; }
+    public double TotalIncomingDamage { get; set; }
+    public double TotalIncomingHealing { get; set; }
+    public List<CombatReplayEventActorSummaryDto> TopDamageReductionEffects { get; set; } = [];
 }
 
 internal class CombatReplayDefenseBurstBarrierDto
@@ -206,11 +222,16 @@ internal class CombatReplayDefenseMitigationEventDto
     public int ActorId { get; set; }
     public string Name { get; set; } = "";
     public string Icon { get; set; } = "";
+    public int HealthPoolUsed { get; set; }
+    public bool HealthPoolEstimated { get; set; }
     public double LowestHealthPercent { get; set; }
     public int LowestHealthEstimate { get; set; }
     public double BarrierAbsorbedToLowest { get; set; }
     public bool BarrierSavedPlayer { get; set; }
-    public double ProtectionEstimatedMitigation { get; set; }
+    public double EstimatedMitigationToLowest { get; set; }
+    public double EstimatedMitigation { get; set; }
+    public bool EstimatedMitigationSavedPlayer { get; set; }
+    public List<string> EstimatedMitigationSavedEffects { get; set; } = [];
     public double IncomingDamage { get; set; }
     public double IncomingHealing { get; set; }
     public List<CombatReplayMitigationEffectDto> Effects { get; set; } = [];
@@ -227,6 +248,53 @@ internal sealed class TrackedMitigationBuff
 {
     public string Name { get; init; } = "";
     public long[] BuffIds { get; init; } = [];
+}
+
+internal sealed class TrackedMitigationReduction
+{
+    public string Name { get; init; } = "";
+    public long[] BuffIds { get; init; } = [];
+    public double StrikeReduction { get; init; }
+}
+
+internal static class CombatReplayMitigationDefinitions
+{
+    public static readonly IReadOnlyList<TrackedMitigationBuff> TrackedEffects =
+    [
+        new() { Name = "Protection", BuffIds = [Protection, ProtectionUnstrippable] },
+        new() { Name = "Resolution", BuffIds = [Resolution, ResolutionUnstrippable] },
+        new() { Name = "Aegis", BuffIds = [Aegis] },
+        new() { Name = "Frost Aura", BuffIds = [FrostAura] },
+        new() { Name = "Light Aura", BuffIds = [LightAura] },
+        new() { Name = "Dark Aura", BuffIds = [DarkAura] },
+        new() { Name = "Distortion / Blur", BuffIds = [Blur] },
+        new() { Name = "Determined", BuffIds = [Determined762, Determined785, Determined788, Determined895, Determined3892, Determined31450, Determined52271] },
+        new() { Name = "Invulnerability", BuffIds = [Invulnerability757, Invulnerability56227, Invulnerability801] },
+        new() { Name = "Spawn Protection", BuffIds = [SpawnProtection] },
+        new() { Name = "Strength in Numbers", BuffIds = [StrengthinNumbers] },
+        new() { Name = "Obsidian Flesh", BuffIds = [ObsidianFlesh] },
+        new() { Name = "Rebound", BuffIds = [Rebound] },
+        new() { Name = "Spectrum Shield", BuffIds = [SpectrumShieldBuff] },
+        new() { Name = "Barrier Signet", BuffIds = [BarrierSignet, BarrierSignetJDrive] },
+        new() { Name = "Renewed Focus", BuffIds = [RenewedFocus] },
+        new() { Name = "Death Shroud", BuffIds = [DeathShroud] },
+        new() { Name = "Signet of Stone", BuffIds = [SignetOfStoneActive] },
+        new() { Name = "Guard!", BuffIds = [GuardBuff] },
+        new() { Name = "Dolyak Stance", BuffIds = [DolyakStanceBuff] },
+        new() { Name = "Defy Pain", BuffIds = [DefyPainSoulbeastBuff] },
+        new() { Name = "Infuse Light", BuffIds = [InfuseLight] },
+        new() { Name = "Vengeful Hammers", BuffIds = [VengefulHammersBuff] },
+        new() { Name = "Urn of Saint Viktor", BuffIds = [UrnOfSaintViktorBuff] },
+        new() { Name = "Shielding Hands", BuffIds = [ShieldingHandsBuff] },
+        new() { Name = "Shadow Shroud", BuffIds = [ShadowShroud] },
+    ];
+
+    public static readonly IReadOnlyList<TrackedMitigationReduction> StrikeReductions =
+    [
+        new() { Name = "Protection", BuffIds = [Protection, ProtectionUnstrippable], StrikeReduction = 0.33 },
+        new() { Name = "Frost Aura", BuffIds = [FrostAura], StrikeReduction = 0.10 },
+        new() { Name = "Guard!", BuffIds = [GuardBuff], StrikeReduction = 0.33 },
+    ];
 }
 
 internal class CombatReplayPositioningAnalysisDto
@@ -2004,6 +2072,7 @@ internal static class CombatReplayAnalysisBuilder
         summary.TotalBarrierAvailable = totalBarrierGranted + initialBarrierOnSquad;
         summary.BurstBarrier = BuildDefenseBurstBarrierAnalysis(log, squadPlayers, enemyAnalysis, times);
         summary.Mitigation = BuildDefenseMitigationAnalysis(log, squadPlayers);
+        summary.SavedPlayersSummary = BuildDefenseSavedPlayersSummary(log, summary.Mitigation);
         summary.TopBarrierProviders = BuildTopActorSummaries(topBarrierProviderContributions);
         return summary;
     }
@@ -2012,7 +2081,7 @@ internal static class CombatReplayAnalysisBuilder
         ParsedEvtcLog log,
         IReadOnlyList<SingleActor> squadPlayers)
     {
-        int[] thresholds = [10, 20, 25, 33, 50, 80];
+        int[] thresholds = [10, 20, 25, 33, 50, 80, 99];
         var result = new CombatReplayDefenseMitigationDto
         {
             Thresholds =
@@ -2100,7 +2169,8 @@ internal static class CombatReplayAnalysisBuilder
                     long mitigationWindowStart = mitigationPreviousFullHealthTime > 0 ? mitigationPreviousFullHealthTime : mitigationStartTime;
                     double mitigationWindowStartHealthPercent = GetSafePercent(player.GetCurrentHealthPercent(log, mitigationWindowStart));
                     (long lowestHealthTime, double lowestHealthPercent) = GetLowestHealthPoint(player, log, mitigationWindowStart, healthSegment.Start, mitigationWindowStartHealthPercent);
-                    int lowestHealthEstimate = (int)Math.Round(CombatReplayDefenseMitigationEventDto.EstimatedPlayerMaxHealth * lowestHealthPercent / 100.0, 0);
+                    (int healthPoolUsed, bool healthPoolEstimated) = GetMitigationHealthPool(player, log);
+                    int lowestHealthEstimate = (int)Math.Round(healthPoolUsed * lowestHealthPercent / 100.0, 0);
                     double barrierAbsorbedToLowest = 0.0;
                     if (lowestHealthTime > mitigationWindowStart)
                     {
@@ -2110,7 +2180,10 @@ internal static class CombatReplayAnalysisBuilder
                             .Sum(damageEvent => (double)damageEvent.ShieldDamage), 1);
                     }
                     bool barrierSavedPlayer = barrierAbsorbedToLowest > 0 && lowestHealthEstimate - barrierAbsorbedToLowest <= 0;
-                    double protectionEstimatedMitigation = GetEstimatedProtectionMitigation(player, log, mitigationWindowStart, healthSegment.Start);
+                    (double estimatedMitigationToLowest, List<string> estimatedMitigationSavedEffects) =
+                        GetEstimatedStrikeMitigation(player, log, mitigationWindowStart, lowestHealthTime > mitigationWindowStart ? lowestHealthTime + 1 : mitigationWindowStart);
+                    bool estimatedMitigationSavedPlayer = estimatedMitigationToLowest > 0 && lowestHealthEstimate - estimatedMitigationToLowest <= 0;
+                    (double estimatedMitigation, _) = GetEstimatedStrikeMitigation(player, log, mitigationWindowStart, healthSegment.Start);
                     double incomingDamage = Math.Round(player
                         .GetDamageTakenEvents(null, log, mitigationWindowStart, healthSegment.Start)
                         .Where(damageEvent => damageEvent.HasHit && (damageEvent.HealthDamage > 0 || damageEvent.ShieldDamage > 0))
@@ -2134,11 +2207,16 @@ internal static class CombatReplayAnalysisBuilder
                         ActorId = player.UniqueID,
                         Name = player.Character,
                         Icon = player.GetIcon(),
+                        HealthPoolUsed = healthPoolUsed,
+                        HealthPoolEstimated = healthPoolEstimated,
                         LowestHealthPercent = lowestHealthPercent,
                         LowestHealthEstimate = lowestHealthEstimate,
                         BarrierAbsorbedToLowest = barrierAbsorbedToLowest,
                         BarrierSavedPlayer = barrierSavedPlayer,
-                        ProtectionEstimatedMitigation = protectionEstimatedMitigation,
+                        EstimatedMitigationToLowest = estimatedMitigationToLowest,
+                        EstimatedMitigation = estimatedMitigation,
+                        EstimatedMitigationSavedPlayer = estimatedMitigationSavedPlayer,
+                        EstimatedMitigationSavedEffects = estimatedMitigationSavedEffects,
                         IncomingDamage = incomingDamage,
                         IncomingHealing = incomingHealing,
                         Effects = BuildMitigationEffects(log, player, mitigationWindowStart, healthSegment.Start),
@@ -2155,6 +2233,62 @@ internal static class CombatReplayAnalysisBuilder
             Count = mitigationEvents.Count,
             Events = mitigationEvents,
         };
+    }
+
+    private static CombatReplayDefenseSavedPlayersSummaryDto BuildDefenseSavedPlayersSummary(
+        ParsedEvtcLog log,
+        CombatReplayDefenseMitigationDto mitigation)
+    {
+        CombatReplayDefenseMitigationThresholdDto? threshold99 = mitigation.Thresholds.FirstOrDefault(threshold => threshold.ThresholdPercent == 99);
+        if (threshold99 == null || threshold99.Events.Count == 0)
+        {
+            return new CombatReplayDefenseSavedPlayersSummaryDto();
+        }
+
+        List<CombatReplayDefenseMitigationEventDto> savedEvents = [.. threshold99.Events.Where(evt =>
+            evt.BarrierSavedPlayer || evt.EstimatedMitigationSavedPlayer)];
+        if (savedEvents.Count == 0)
+        {
+            return new CombatReplayDefenseSavedPlayersSummaryDto();
+        }
+
+        int barrierSavedCases = savedEvents.Count(evt => evt.BarrierSavedPlayer);
+        int damageReductionSavedCases = savedEvents.Count(evt => evt.EstimatedMitigationSavedPlayer);
+        int bothSavedCases = savedEvents.Count(evt => evt.BarrierSavedPlayer && evt.EstimatedMitigationSavedPlayer);
+
+        var result = new CombatReplayDefenseSavedPlayersSummaryDto
+        {
+            SavedCases = savedEvents.Count,
+            TotalBarrierAbsorbed = Math.Round(savedEvents.Sum(evt => evt.BarrierAbsorbedToLowest), 1),
+            BarrierSavedCases = barrierSavedCases,
+            TotalEstimatedDamageReduction = Math.Round(savedEvents.Sum(evt => evt.EstimatedMitigationToLowest), 0),
+            DamageReductionSavedCases = damageReductionSavedCases,
+            AverageLowestHealthPercent = Math.Round(savedEvents.Average(evt => evt.LowestHealthPercent), 1),
+            LowestLowestHealthPercent = Math.Round(savedEvents.Min(evt => evt.LowestHealthPercent), 1),
+            BothSavedCases = bothSavedCases,
+            TotalIncomingDamage = Math.Round(savedEvents.Sum(evt => evt.IncomingDamage), 1),
+            TotalIncomingHealing = Math.Round(savedEvents.Sum(evt => evt.IncomingHealing), 1),
+        };
+
+        result.TopDamageReductionEffects = [.. savedEvents
+            .Where(evt => evt.EstimatedMitigationSavedPlayer && evt.EstimatedMitigationSavedEffects.Count > 0)
+            .SelectMany(evt => evt.EstimatedMitigationSavedEffects.Distinct(StringComparer.OrdinalIgnoreCase))
+            .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                TrackedMitigationReduction? definition = CombatReplayMitigationDefinitions.StrikeReductions
+                    .FirstOrDefault(effect => effect.Name.Equals(group.Key, StringComparison.OrdinalIgnoreCase));
+                return new CombatReplayEventActorSummaryDto
+                {
+                    Name = group.Key,
+                    Icon = definition != null ? GetMitigationEffectIcon(log, definition.BuffIds) : "",
+                    Count = group.Count(),
+                    Amount = group.Count(),
+                };
+            })
+            .OrderByDescending(entry => entry.Count)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)];
+        return result;
     }
 
     private static long FindPreviousFullHealthTime(SingleActor player, ParsedEvtcLog log, long mitigationStartTime)
@@ -2226,35 +2360,6 @@ internal static class CombatReplayAnalysisBuilder
         }
 
         var effects = new List<CombatReplayMitigationEffectDto>();
-        IReadOnlyList<TrackedMitigationBuff> trackedMitigationBuffs =
-        [
-            new() { Name = "Protection", BuffIds = [Protection, ProtectionUnstrippable] },
-            new() { Name = "Resolution", BuffIds = [Resolution, ResolutionUnstrippable] },
-            new() { Name = "Aegis", BuffIds = [Aegis] },
-            new() { Name = "Frost Aura", BuffIds = [FrostAura] },
-            new() { Name = "Light Aura", BuffIds = [LightAura] },
-            new() { Name = "Dark Aura", BuffIds = [DarkAura] },
-            new() { Name = "Distortion / Blur", BuffIds = [Blur] },
-            new() { Name = "Determined", BuffIds = [Determined762, Determined785, Determined788, Determined895, Determined3892, Determined31450, Determined52271] },
-            new() { Name = "Invulnerability", BuffIds = [Invulnerability757, Invulnerability56227, Invulnerability801] },
-            new() { Name = "Spawn Protection", BuffIds = [SpawnProtection] },
-            new() { Name = "Strength in Numbers", BuffIds = [StrengthinNumbers] },
-            new() { Name = "Obsidian Flesh", BuffIds = [ObsidianFlesh] },
-            new() { Name = "Rebound", BuffIds = [Rebound] },
-            new() { Name = "Spectrum Shield", BuffIds = [SpectrumShieldBuff] },
-            new() { Name = "Barrier Signet", BuffIds = [BarrierSignet, BarrierSignetJDrive] },
-            new() { Name = "Renewed Focus", BuffIds = [RenewedFocus] },
-            new() { Name = "Death Shroud", BuffIds = [DeathShroud] },
-            new() { Name = "Signet of Stone", BuffIds = [SignetOfStoneActive] },
-            new() { Name = "Guard!", BuffIds = [GuardBuff] },
-            new() { Name = "Dolyak Stance", BuffIds = [DolyakStanceBuff] },
-            new() { Name = "Defy Pain", BuffIds = [DefyPainSoulbeastBuff] },
-            new() { Name = "Infuse Light", BuffIds = [InfuseLight] },
-            new() { Name = "Vengeful Hammers", BuffIds = [VengefulHammersBuff] },
-            new() { Name = "Urn of Saint Viktor", BuffIds = [UrnOfSaintViktorBuff] },
-            new() { Name = "Shielding Hands", BuffIds = [ShieldingHandsBuff] },
-            new() { Name = "Shadow Shroud", BuffIds = [ShadowShroud] },
-        ];
 
         double barrierSeconds = GetBarrierPresenceSeconds(player, log, start, end);
         if (barrierSeconds > 0)
@@ -2278,7 +2383,7 @@ internal static class CombatReplayAnalysisBuilder
             });
         }
 
-        foreach (TrackedMitigationBuff trackedBuff in trackedMitigationBuffs)
+        foreach (TrackedMitigationBuff trackedBuff in CombatReplayMitigationDefinitions.TrackedEffects)
         {
             double seconds = GetBuffPresenceSeconds(player, log, trackedBuff.BuffIds, start, end);
             if (seconds <= 0)
@@ -2297,6 +2402,32 @@ internal static class CombatReplayAnalysisBuilder
         return [.. effects
             .OrderByDescending(effect => effect.Seconds)
             .ThenBy(effect => effect.Name, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private static (int HealthPoolUsed, bool Estimated) GetMitigationHealthPool(
+        SingleActor player,
+        ParsedEvtcLog log)
+    {
+        int actualHealthPool = player.GetHealth(log.CombatData);
+        if (actualHealthPool > 0)
+        {
+            return (actualHealthPool, false);
+        }
+
+        int estimatedHealthPool = player.Spec switch
+        {
+            GW2EIEvtcParser.ParserHelper.Spec.Firebrand => 21000,
+            GW2EIEvtcParser.ParserHelper.Spec.Troubadour => 19000,
+            GW2EIEvtcParser.ParserHelper.Spec.Evoker => 17000,
+            GW2EIEvtcParser.ParserHelper.Spec.Untamed => 18000,
+            GW2EIEvtcParser.ParserHelper.Spec.Druid => 19000,
+            GW2EIEvtcParser.ParserHelper.Spec.Berserker => 22000,
+            GW2EIEvtcParser.ParserHelper.Spec.Dragonhunter => 19000,
+            GW2EIEvtcParser.ParserHelper.Spec.Holosmith => 19000,
+            GW2EIEvtcParser.ParserHelper.Spec.Amalgam => 19000,
+            _ => CombatReplayDefenseMitigationEventDto.EstimatedPlayerMaxHealth,
+        };
+        return (estimatedHealthPool, true);
     }
 
     private static string GetMitigationEffectIcon(ParsedEvtcLog log, IReadOnlyList<long> buffIds)
@@ -2389,7 +2520,7 @@ internal static class CombatReplayAnalysisBuilder
         return mergedRanges;
     }
 
-    private static double GetEstimatedProtectionMitigation(
+    private static (double EstimatedMitigation, List<string> UsedEffects) GetEstimatedStrikeMitigation(
         SingleActor player,
         ParsedEvtcLog log,
         long start,
@@ -2397,31 +2528,49 @@ internal static class CombatReplayAnalysisBuilder
     {
         if (end <= start)
         {
-            return 0.0;
+            return (0.0, []);
         }
 
-        List<(long Start, long End)> protectionRanges = GetMergedBuffPresenceRanges(player, log, [Protection, ProtectionUnstrippable], start, end);
-        if (protectionRanges.Count == 0)
+        Dictionary<string, List<(long Start, long End)>> reductionRanges = CombatReplayMitigationDefinitions.StrikeReductions
+            .Select(effect => (Effect: effect, Ranges: GetMergedBuffPresenceRanges(player, log, effect.BuffIds, start, end)))
+            .Where(entry => entry.Ranges.Count > 0)
+            .ToDictionary(entry => entry.Effect.Name, entry => entry.Ranges, StringComparer.OrdinalIgnoreCase);
+        if (reductionRanges.Count == 0)
         {
-            return 0.0;
+            return (0.0, []);
         }
 
         double preventedDamage = 0.0;
+        var usedEffects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (HealthDamageEvent damageEvent in player.GetDamageTakenEvents(null, log, start, end))
         {
             if (!damageEvent.HasHit || damageEvent.HealthDamage <= 0 || damageEvent.ConditionDamageBased(log))
             {
                 continue;
             }
-            if (!protectionRanges.Any(range => damageEvent.Time >= range.Start && damageEvent.Time < range.End))
+
+            List<TrackedMitigationReduction> activeEffects = [.. CombatReplayMitigationDefinitions.StrikeReductions
+                .Where(effect => reductionRanges.TryGetValue(effect.Name, out List<(long Start, long End)>? ranges)
+                    && ranges.Any(range => damageEvent.Time >= range.Start && damageEvent.Time < range.End))];
+            if (activeEffects.Count == 0)
             {
                 continue;
             }
 
-            preventedDamage += damageEvent.HealthDamage * (0.33 / 0.67);
+            double combinedMultiplier = activeEffects.Aggregate(1.0, (current, effect) => current * (1.0 - effect.StrikeReduction));
+            if (combinedMultiplier <= 0 || combinedMultiplier >= 1.0)
+            {
+                continue;
+            }
+
+            preventedDamage += damageEvent.HealthDamage * ((1.0 / combinedMultiplier) - 1.0);
+            foreach (TrackedMitigationReduction effect in activeEffects)
+            {
+                usedEffects.Add(effect.Name);
+            }
         }
 
-        return Math.Round(preventedDamage, 1);
+        return (Math.Round(preventedDamage, 1), [.. usedEffects.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)]);
     }
 
     private static double GetBarrierPresenceSeconds(

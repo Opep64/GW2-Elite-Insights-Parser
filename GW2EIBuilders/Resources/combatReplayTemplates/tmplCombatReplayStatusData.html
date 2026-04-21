@@ -3265,8 +3265,8 @@
                         </div>
                         <div class="combat-replay-wvw-analysis-metric">
                             <div class="combat-replay-wvw-analysis-label">Lowest Health</div>
-                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(defenseAnalysis.savedPlayersSummary.averageLowestHealthPercent)}}%</div>
-                            <div class="combat-replay-wvw-analysis-detail">{{formatAmount(defenseAnalysis.savedPlayersSummary.lowestLowestHealthPercent)}}% lowest qualifying health</div>
+                            <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">Lowest Average Health: {{formatAmount(defenseAnalysis.savedPlayersSummary.averageLowestHealthPercent)}}%</div>
+                            <div class="combat-replay-wvw-analysis-detail">Closest to down: {{formatAmount(defenseAnalysis.savedPlayersSummary.lowestLowestHealthPercent)}}%</div>
                         </div>
                     </div>
                     <div class="row">
@@ -3419,7 +3419,7 @@
                             </div>
                         </div>
                         <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.35rem 0.5rem; min-width: 0;">
-                            <div v-if="event.barrierAbsorbedToLowest > 0" class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
+                            <div class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
                                 <div class="combat-replay-wvw-analysis-label" style="margin-bottom: 0.15rem;">Barrier absorbed</div>
                                 <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatAmount(event.barrierAbsorbedToLowest)}}</div>
                             </div>
@@ -3427,7 +3427,7 @@
                                 <div class="combat-replay-wvw-analysis-label" style="margin-bottom: 0.15rem;">Health at lowest point</div>
                                 <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatPercent(event.lowestHealthPercent)}}</div>
                             </div>
-                            <div v-if="event.estimatedMitigation > 0" class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
+                            <div class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
                                 <div class="combat-replay-wvw-analysis-label" style="margin-bottom: 0.15rem;">Estimated mitigation</div>
                                 <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatAmount(event.estimatedMitigation)}}</div>
                             </div>
