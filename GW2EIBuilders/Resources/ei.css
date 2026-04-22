@@ -2138,11 +2138,129 @@ h6.actor-shorten-cr-compact {
     gap: 0.9rem;
 }
 
+.wvw-summary-boons-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
 .wvw-summary-spec-detail {
     margin-top: 0.45rem;
     font-size: 0.84rem;
     line-height: 1.45;
     color: rgba(217, 226, 232, 0.84);
+}
+
+.wvw-summary-boon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 1rem;
+}
+
+.wvw-summary-boon-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.wvw-summary-boon-card-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-height: 9.4rem;
+}
+
+.wvw-summary-boon-card-detail {
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: rgba(217, 226, 232, 0.8);
+}
+
+.wvw-summary-boon-subtitle-placeholder {
+    visibility: hidden;
+}
+
+.wvw-summary-boon-card-body {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.95fr) minmax(0, 1.05fr);
+    gap: 0.85rem;
+    align-items: start;
+}
+
+.wvw-summary-boon-chart-wrap {
+    min-height: 240px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+.wvw-summary-boon-chart {
+    width: min(240px, 100%);
+    height: 240px;
+    min-height: 240px;
+    flex: 0 0 auto;
+}
+
+.wvw-summary-boon-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.wvw-summary-boon-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid rgba(124, 130, 136, 0.14);
+}
+
+.wvw-summary-boon-legend-row:last-child {
+    border-bottom: none;
+}
+
+.wvw-summary-boon-legend-swatch {
+    width: 0.78rem;
+    height: 0.78rem;
+    border-radius: 999px;
+    flex: 0 0 auto;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.wvw-summary-boon-legend-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 auto;
+}
+
+.wvw-summary-boon-legend-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.wvw-summary-boon-legend-value {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: rgba(217, 226, 232, 0.84);
+}
+
+@media (max-width: 900px) {
+    .wvw-summary-boon-card-body {
+        grid-template-columns: 1fr;
+    }
+
+    .wvw-summary-boon-chart-wrap,
+    .wvw-summary-boon-chart {
+        min-height: 220px;
+    }
 }
 
 .wvw-summary-execution-layout {

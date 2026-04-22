@@ -44,6 +44,10 @@
                     @click="setSummarySubTab('specs')">
                     Specs
                 </button>
+                <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'boons'}"
+                    @click="setSummarySubTab('boons')">
+                    Boons
+                </button>
                 <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'metrics'}"
                     @click="setSummarySubTab('metrics')">
                     Metrics
@@ -559,6 +563,50 @@
                     </div>
                 </div>
             </div>
+            <div v-if="activeSummaryTab === 'boons'" class="wvw-summary-boons-layout">
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Weighted Boon Sources</div>
+                    <div class="wvw-summary-side-panel-subtitle">Weighted uptime comes from the same replay-backed data used by Analysis -> Weighted Boon Battle Summary. Pie slices aggregate outgoing squad boon generation on allies by spec for this phase.</div>
+                    <div class="wvw-summary-spec-detail">Alacrity is intentionally excluded here. Legend percentages show normalized spec contribution within each boon, and stack-based boons also show their average stack count from Analysis.</div>
+                </div>
+                <div v-if="weightedBoonProviderSections.length > 0" class="wvw-summary-boon-grid">
+                    <div v-for="section in weightedBoonProviderSections" :key="'wvw-summary-boon-source-' + section.buffId" class="wvw-summary-side-panel wvw-summary-boon-card">
+                        <div class="wvw-summary-side-panel-title wvw-summary-boon-panel-title">
+                            <img :src="section.icon" :alt="section.name" class="icon icon-hover">
+                            <span>{{section.name}}</span>
+                        </div>
+                        <div class="wvw-summary-boon-card-copy">
+                            <div class="wvw-summary-side-panel-subtitle">{{formatPercent(section.summaryCoverage)}} weighted uptime from Analysis Weighted Boon Battle Summary.</div>
+                            <div
+                                class="wvw-summary-side-panel-subtitle"
+                                :class="{ 'wvw-summary-boon-subtitle-placeholder': !section.stacking }"
+                                :aria-hidden="section.stacking ? null : 'true'">
+                                {{formatAverageStacks(section.summaryAverageStacks)}} average stacks from Analysis Weighted Boon Battle Summary.
+                            </div>
+                            <div class="wvw-summary-boon-card-detail">Outgoing squad boon generation on allies is aggregated by spec below. Legend percentages are normalized within this boon so they add to the full pie.</div>
+                        </div>
+                        <div v-if="section.providers.length > 0" class="wvw-summary-boon-card-body">
+                            <div class="wvw-summary-boon-chart-wrap">
+                                <wvw-summary-boon-pie-chart :entries="section.providers"></wvw-summary-boon-pie-chart>
+                            </div>
+                            <div class="wvw-summary-boon-legend">
+                                <div v-for="provider in section.providers" :key="'wvw-summary-boon-provider-' + section.buffId + '-' + provider.key" class="wvw-summary-boon-legend-row">
+                                    <span class="wvw-summary-boon-legend-swatch" :style="{ backgroundColor: provider.color }"></span>
+                                    <img v-if="provider.icon" :src="provider.icon" :alt="provider.label" class="icon wvw-summary-boon-legend-icon">
+                                    <span class="wvw-summary-boon-legend-label">{{provider.label}}</span>
+                                    <span class="wvw-summary-boon-legend-value">{{formatPercent(provider.sharePercent)}}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="wvw-summary-side-panel-empty">
+                            No outgoing squad boon generation was recorded for {{section.name}} in this phase.
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="wvw-summary-side-panel-empty">
+                    Weighted boon replay data or outgoing squad boon generation data is unavailable for this phase.
+                </div>
+            </div>
             <div v-if="activeSummaryTab === 'metrics'" class="wvw-summary-layout">
                 <div class="wvw-summary-table-wrap">
                     <table class="table table-sm table-striped table-hover wvw-summary-table" cellspacing="0" width="100%">
@@ -969,6 +1017,84 @@
 </template>
 
 <script>
+    Vue.component("wvw-summary-boon-pie-chart", {
+        props: ["entries"],
+        template: '<div ref="chart" class="wvw-summary-boon-chart"></div>',
+        mounted: function() {
+            this.renderChart();
+            if (typeof window !== "undefined") {
+                window.addEventListener("resize", this.handleResize);
+            }
+        },
+        beforeDestroy: function() {
+            if (typeof window !== "undefined") {
+                window.removeEventListener("resize", this.handleResize);
+            }
+            if (typeof Plotly !== "undefined" && this.$refs && this.$refs.chart) {
+                Plotly.purge(this.$refs.chart);
+            }
+        },
+        watch: {
+            entries: {
+                handler: function() {
+                    this.$nextTick(this.renderChart);
+                },
+                deep: true,
+            },
+        },
+        methods: {
+            renderChart: function() {
+                if (typeof Plotly === "undefined" || !this.$refs || !this.$refs.chart) {
+                    return;
+                }
+                const chart = this.$refs.chart;
+                const entries = Array.isArray(this.entries) ? this.entries.filter(entry => entry && entry.amount > 0) : [];
+                if (entries.length === 0) {
+                    Plotly.purge(chart);
+                    chart.innerHTML = "";
+                    return;
+                }
+                Plotly.react(
+                    chart,
+                    [{
+                        type: "pie",
+                        values: entries.map(entry => entry.amount),
+                        labels: entries.map(entry => entry.label),
+                        customdata: entries.map(entry => [entry.sharePercent]),
+                        marker: {
+                            colors: entries.map(entry => entry.color),
+                            line: {
+                                color: "rgba(13, 17, 23, 0.88)",
+                                width: 1,
+                            },
+                        },
+                        sort: false,
+                        direction: "clockwise",
+                        hole: 0.34,
+                        textinfo: "none",
+                        hovertemplate: "%{label}<br>%{customdata[0]:.1f}% contribution<extra></extra>",
+                        showlegend: false,
+                    }],
+                    {
+                        margin: { t: 0, r: 0, b: 0, l: 0 },
+                        height: 240,
+                        paper_bgcolor: "rgba(0,0,0,0)",
+                        plot_bgcolor: "rgba(0,0,0,0)",
+                    },
+                    {
+                        displayModeBar: false,
+                        responsive: true,
+                    }
+                );
+            },
+            handleResize: function() {
+                if (typeof Plotly !== "undefined" && Plotly.Plots && this.$refs && this.$refs.chart) {
+                    Plotly.Plots.resize(this.$refs.chart);
+                }
+            },
+        },
+    });
+
     Vue.component("wvw-summary-component", {
         props: ["phaseindex"],
         template: `${template}`,
@@ -1030,6 +1156,12 @@
                 }
                 return this.round1(value) + "%";
             },
+            formatAverageStacks: function(value) {
+                if (value == null || isNaN(value)) {
+                    return "0.0";
+                }
+                return this.round1(value).toString();
+            },
             formatEffectiveCount: function(value) {
                 if (value == null || isNaN(value)) {
                     return "0";
@@ -1043,6 +1175,16 @@
                     return Number.isInteger(value) ? this.integerWithSpaces(value) : this.round1(value).toString();
                 }
                 return this.round1(value) + "%";
+            },
+            getBoonProviderColor: function(label) {
+                const text = label || "Unknown";
+                let hash = 0;
+                for (let i = 0; i < text.length; i++) {
+                    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+                    hash |= 0;
+                }
+                const hue = Math.abs(hash) % 360;
+                return "hsl(" + hue + ", 58%, 56%)";
             },
             formatRowValue: function(value, row) {
                 if (row.equalValues) {
@@ -1981,6 +2123,81 @@
                     }
                     return left.label.localeCompare(right.label);
                 });
+            },
+            weightedBoonProviderSections: function() {
+                const analysis = typeof crData !== "undefined" && crData && crData.analysis ? crData.analysis : null;
+                const threatBoons = analysis && analysis.threatBoons ? analysis.threatBoons : null;
+                if (!threatBoons || !threatBoons.boons || !this.phase || !this.phase.buffsStatContainer || !logData || !logData.boons) {
+                    return [];
+                }
+
+                const players = getActiveNonFakePlayersForPhase(this.encounterPhase);
+                const squadStats = this.phase.buffsStatContainer.boonGenSquadStats || [];
+                const buffIndexById = new Map();
+                for (let i = 0; i < logData.boons.length; i++) {
+                    buffIndexById.set(logData.boons[i], i);
+                }
+
+                return threatBoons.boons
+                    .filter(boon => boon && boon.name !== "Alacrity")
+                    .map(boon => {
+                        const buffIndex = buffIndexById.has(boon.id) ? buffIndexById.get(boon.id) : -1;
+                        const providersBySpec = new Map();
+
+                        if (buffIndex >= 0) {
+                            for (let i = 0; i < players.length && i < squadStats.length; i++) {
+                                const player = players[i];
+                                if (!player || player.notInSquad) {
+                                    continue;
+                                }
+
+                                const playerBuffData = squadStats[i] && squadStats[i].data ? squadStats[i].data[buffIndex] : null;
+                                const amount = this.getBoonGenerationValue(playerBuffData);
+                                if (amount <= 0) {
+                                    continue;
+                                }
+
+                                const key = player.profession || "Unknown";
+                                if (!providersBySpec.has(key)) {
+                                    providersBySpec.set(key, {
+                                        key: key,
+                                        label: key,
+                                        icon: player.icon || "",
+                                        amount: 0,
+                                    });
+                                }
+                                providersBySpec.get(key).amount += amount;
+                            }
+                        }
+
+                        const sectionShape = { stacking: !!boon.stackBased };
+                        const providers = Array.from(providersBySpec.values())
+                            .sort((left, right) => {
+                                if (right.amount !== left.amount) {
+                                    return right.amount - left.amount;
+                                }
+                                return left.label.localeCompare(right.label);
+                            });
+                        const totalAmount = providers.reduce((sum, provider) => sum + provider.amount, 0);
+
+                        return {
+                            buffId: boon.id,
+                            name: boon.name,
+                            icon: boon.icon,
+                            stacking: !!boon.stackBased,
+                            summaryCoverage: boon.summaryCoverage || 0,
+                            summaryAverageStacks: boon.summaryAverageStacks || 0,
+                            providers: providers.map(provider => ({
+                                key: provider.key,
+                                label: provider.label,
+                                icon: provider.icon,
+                                amount: provider.amount,
+                                formattedAmount: this.formatBoonGenerationValue(sectionShape, provider.amount),
+                                sharePercent: totalAmount > 0 ? (provider.amount * 100.0 / totalAmount) : 0,
+                                color: this.getBoonProviderColor(provider.label),
+                            })),
+                        };
+                    });
             },
             fightDemandSummary: function() {
                 if (!this.fightDemand || !this.fightDemand.lanes || this.fightDemand.lanes.length === 0) {
