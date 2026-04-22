@@ -2163,6 +2163,38 @@ h6.actor-shorten-cr-compact {
     gap: 0.65rem;
 }
 
+.wvw-summary-boon-view-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.7rem;
+    flex-wrap: wrap;
+}
+
+.wvw-summary-boon-view-button {
+    border: 1px solid rgba(124, 130, 136, 0.34);
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(217, 226, 232, 0.84);
+    border-radius: 999px;
+    padding: 0.28rem 0.8rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.wvw-summary-boon-view-button:hover,
+.wvw-summary-boon-view-button:focus {
+    border-color: rgba(97, 168, 255, 0.45);
+    color: #eef7ff;
+    outline: none;
+}
+
+.wvw-summary-boon-view-button-active {
+    border-color: rgba(97, 168, 255, 0.6);
+    background: rgba(50, 105, 175, 0.22);
+    color: #eef7ff;
+}
+
 .wvw-summary-boon-card-copy {
     display: flex;
     flex-direction: column;
@@ -2250,6 +2282,159 @@ h6.actor-shorten-cr-compact {
     font-size: 0.78rem;
     font-weight: 700;
     color: rgba(217, 226, 232, 0.84);
+}
+
+.wvw-summary-boon-provider-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.wvw-summary-boon-provider-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.75rem;
+}
+
+.wvw-summary-boon-provider-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid rgba(124, 130, 136, 0.34);
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(217, 226, 232, 0.86);
+    border-radius: 999px;
+    padding: 0.32rem 0.78rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.wvw-summary-boon-provider-chip:hover,
+.wvw-summary-boon-provider-chip:focus {
+    border-color: rgba(97, 168, 255, 0.45);
+    color: #eef7ff;
+    outline: none;
+}
+
+.wvw-summary-boon-provider-chip-active {
+    border-color: rgba(97, 168, 255, 0.6);
+    background: rgba(50, 105, 175, 0.22);
+    color: #eef7ff;
+}
+
+.wvw-summary-boon-provider-chip-icon {
+    width: 1rem;
+    height: 1rem;
+}
+
+.wvw-summary-boon-provider-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.wvw-summary-boon-provider-summary {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: rgba(217, 226, 232, 0.82);
+}
+
+.wvw-summary-boon-provider-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.85rem;
+}
+
+.wvw-summary-boon-provider-legend-entry {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: rgba(217, 226, 232, 0.86);
+}
+
+.wvw-summary-boon-provider-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.wvw-summary-boon-provider-bar-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+}
+
+.wvw-summary-boon-provider-bar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.wvw-summary-boon-provider-bar-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: rgba(217, 226, 232, 0.9);
+}
+
+.wvw-summary-boon-provider-bar-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 auto;
+}
+
+.wvw-summary-boon-provider-bar-value {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: rgba(217, 226, 232, 0.84);
+}
+
+.wvw-summary-boon-provider-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin-left: 1.45rem;
+}
+
+.wvw-summary-boon-provider-entry-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.wvw-summary-boon-provider-entry-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    min-width: 0;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: rgba(217, 226, 232, 0.8);
+}
+
+.wvw-summary-boon-provider-bar-track {
+    position: relative;
+    height: 0.72rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    overflow: hidden;
+}
+
+.wvw-summary-boon-provider-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    min-width: 0;
 }
 
 @media (max-width: 900px) {

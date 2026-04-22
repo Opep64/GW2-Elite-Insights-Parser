@@ -568,8 +568,24 @@
                     <div class="wvw-summary-side-panel-title">Weighted Boon Sources</div>
                     <div class="wvw-summary-side-panel-subtitle">Weighted uptime comes from the same replay-backed data used by Analysis -> Weighted Boon Battle Summary. Pie slices aggregate outgoing squad boon generation on allies by spec for this phase.</div>
                     <div class="wvw-summary-spec-detail">Alacrity is intentionally excluded here. Legend percentages show normalized spec contribution within each boon, and stack-based boons also show their average stack count from Analysis.</div>
+                    <div class="wvw-summary-boon-view-switch" role="tablist" aria-label="Boon source view">
+                        <button
+                            type="button"
+                            class="wvw-summary-boon-view-button"
+                            :class="{ 'wvw-summary-boon-view-button-active': activeBoonsView === 'byBoon' }"
+                            @click="setActiveBoonsView('byBoon')">
+                            By Boon
+                        </button>
+                        <button
+                            type="button"
+                            class="wvw-summary-boon-view-button"
+                            :class="{ 'wvw-summary-boon-view-button-active': activeBoonsView === 'bySpec' }"
+                            @click="setActiveBoonsView('bySpec')">
+                            By Spec
+                        </button>
+                    </div>
                 </div>
-                <div v-if="weightedBoonProviderSections.length > 0" class="wvw-summary-boon-grid">
+                <div v-if="activeBoonsView === 'byBoon' && weightedBoonProviderSections.length > 0" class="wvw-summary-boon-grid">
                     <div v-for="section in weightedBoonProviderSections" :key="'wvw-summary-boon-source-' + section.buffId" class="wvw-summary-side-panel wvw-summary-boon-card">
                         <div class="wvw-summary-side-panel-title wvw-summary-boon-panel-title">
                             <img :src="section.icon" :alt="section.name" class="icon icon-hover">
@@ -600,6 +616,99 @@
                         </div>
                         <div v-else class="wvw-summary-side-panel-empty">
                             No outgoing squad boon generation was recorded for {{section.name}} in this phase.
+                        </div>
+                    </div>
+                </div>
+                <div v-else-if="activeBoonsView === 'bySpec' && boonProviderProfiles.length > 0" class="wvw-summary-boon-provider-layout">
+                    <div class="wvw-summary-side-panel">
+                        <div class="wvw-summary-side-panel-title">Spec Contribution Coverage</div>
+                        <div class="wvw-summary-side-panel-subtitle">Select a spec to see how much of each displayed boon it provided. This view is meant to answer “what boons do I need to replace if I remove this spec?”</div>
+                        <div class="wvw-summary-boon-provider-selector">
+                            <button
+                                v-for="profile in boonProviderProfiles"
+                                :key="'wvw-summary-boon-provider-profile-' + profile.key"
+                                type="button"
+                                class="wvw-summary-boon-provider-chip"
+                                :class="{ 'wvw-summary-boon-provider-chip-active': selectedBoonProviderProfiles.some(selectedProfile => selectedProfile.key === profile.key) }"
+                                @click="toggleBoonProviderProfile(profile.key)">
+                                <img v-if="profile.icon" :src="profile.icon" :alt="profile.label" class="icon wvw-summary-boon-provider-chip-icon">
+                                <span>{{profile.label}}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div v-if="selectedBoonProviderProfiles.length > 0" class="wvw-summary-side-panel wvw-summary-boon-provider-card">
+                        <div class="wvw-summary-side-panel-title">Selected Spec Comparison</div>
+                        <div class="wvw-summary-side-panel-subtitle">Each grouped bar shows normalized contribution share within that boon for the selected specs.</div>
+                        <div class="wvw-summary-boon-provider-legend">
+                            <div
+                                v-for="profile in selectedBoonProviderProfiles"
+                                :key="'wvw-summary-boon-provider-legend-' + profile.key"
+                                class="wvw-summary-boon-provider-legend-entry">
+                                <span class="wvw-summary-boon-legend-swatch" :style="{ backgroundColor: getBoonProviderColor(profile.label) }"></span>
+                                <img v-if="profile.icon" :src="profile.icon" :alt="profile.label" class="icon wvw-summary-boon-provider-chip-icon">
+                                <span>{{profile.label}}</span>
+                            </div>
+                        </div>
+                        <div v-if="selectedBoonProviderProfiles.length === 1 && selectedBoonProviderProfiles[0].topBoons.length > 0" class="wvw-summary-boon-provider-summary">
+                            Largest visible gaps if removed:
+                            {{selectedBoonProviderProfiles[0].topBoons.map(boon => boon.name + ' ' + formatPercent(boon.sharePercent)).join(', ')}}
+                        </div>
+                        <div class="wvw-summary-boon-provider-bars">
+                            <div
+                                v-for="boon in boonProviderComparisonRows"
+                                :key="'wvw-summary-boon-provider-compare-bar-' + boon.buffId"
+                                class="wvw-summary-boon-provider-bar-row">
+                                <div class="wvw-summary-boon-provider-bar-header">
+                                    <div class="wvw-summary-boon-provider-bar-label">
+                                        <img :src="boon.icon" :alt="boon.name" class="icon wvw-summary-boon-provider-bar-icon">
+                                        <span>{{boon.name}}</span>
+                                    </div>
+                                    <span class="wvw-summary-boon-provider-bar-value">Top {{formatPercent(boon.maxSharePercent)}}</span>
+                                </div>
+                                <div
+                                    v-for="entry in boon.entries"
+                                    :key="'wvw-summary-boon-provider-compare-entry-' + boon.buffId + '-' + entry.key"
+                                    class="wvw-summary-boon-provider-entry">
+                                    <div class="wvw-summary-boon-provider-entry-header">
+                                        <div class="wvw-summary-boon-provider-entry-label">
+                                            <img v-if="entry.icon" :src="entry.icon" :alt="entry.label" class="icon wvw-summary-boon-provider-chip-icon">
+                                            <span>{{entry.label}}</span>
+                                        </div>
+                                        <span class="wvw-summary-boon-provider-bar-value">{{formatPercent(entry.sharePercent)}}</span>
+                                    </div>
+                                    <div class="wvw-summary-boon-provider-bar-track">
+                                        <div class="wvw-summary-boon-provider-bar-fill" :style="getBoonContributionBarStyle(entry)"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="selectedBoonProviderProfile" class="wvw-summary-side-panel wvw-summary-boon-provider-card" style="display: none;">
+                        <div class="wvw-summary-side-panel-title wvw-summary-boon-panel-title">
+                            <img v-if="selectedBoonProviderProfile.icon" :src="selectedBoonProviderProfile.icon" :alt="selectedBoonProviderProfile.label" class="icon icon-hover">
+                            <span>{{selectedBoonProviderProfile.label}}</span>
+                        </div>
+                        <div class="wvw-summary-side-panel-subtitle">Each bar shows this spec's normalized contribution share within that boon.</div>
+                        <div v-if="selectedBoonProviderProfile.topBoons.length > 0" class="wvw-summary-boon-provider-summary">
+                            Largest visible gaps if removed:
+                            {{selectedBoonProviderProfile.topBoons.map(boon => boon.name + ' ' + formatPercent(boon.sharePercent)).join(', ')}}
+                        </div>
+                        <div class="wvw-summary-boon-provider-bars">
+                            <div
+                                v-for="boon in selectedBoonProviderProfile.boons"
+                                :key="'wvw-summary-boon-provider-bar-' + selectedBoonProviderProfile.key + '-' + boon.buffId"
+                                class="wvw-summary-boon-provider-bar-row">
+                                <div class="wvw-summary-boon-provider-bar-header">
+                                    <div class="wvw-summary-boon-provider-bar-label">
+                                        <img :src="boon.icon" :alt="boon.name" class="icon wvw-summary-boon-provider-bar-icon">
+                                        <span>{{boon.name}}</span>
+                                    </div>
+                                    <span class="wvw-summary-boon-provider-bar-value">{{formatPercent(boon.sharePercent)}}</span>
+                                </div>
+                                <div class="wvw-summary-boon-provider-bar-track">
+                                    <div class="wvw-summary-boon-provider-bar-fill" :style="getBoonContributionBarStyle(boon)"></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1108,10 +1217,13 @@
         data: function() {
             return {
                 activeSummaryTab: "overview",
+                activeBoonsView: "byBoon",
                 crowdControlPopup: null,
                 downDetailPopup: null,
                 downsOutcomePopup: null,
                 hoveredMomentIndex: null,
+                selectedBoonProviderKeys: [],
+                selectedBoonProviderKey: null,
                 specPlayerCompareModal: null,
                 specLaneDetailModal: null,
                 showStandoutsHelp: false,
@@ -1131,6 +1243,26 @@
                     this.closeSpecLaneDetail();
                     this.closeSpecPlayerCompare();
                 }
+            },
+            setActiveBoonsView: function(view) {
+                this.activeBoonsView = view;
+            },
+            toggleBoonProviderProfile: function(key) {
+                const selectedKeys = Array.isArray(this.selectedBoonProviderKeys) ? [...this.selectedBoonProviderKeys] : [];
+                const existingIndex = selectedKeys.indexOf(key);
+                if (existingIndex !== -1) {
+                    if (selectedKeys.length === 1) {
+                        return;
+                    }
+                    selectedKeys.splice(existingIndex, 1);
+                } else {
+                    selectedKeys.push(key);
+                }
+                this.selectedBoonProviderKeys = selectedKeys;
+                this.selectedBoonProviderKey = selectedKeys.length > 0 ? selectedKeys[0] : null;
+            },
+            selectBoonProviderProfile: function(key) {
+                this.selectedBoonProviderKey = key;
             },
             getBoonGenerationValue: function(buffData) {
                 if (buffData instanceof Array) {
@@ -1175,6 +1307,13 @@
                     return Number.isInteger(value) ? this.integerWithSpaces(value) : this.round1(value).toString();
                 }
                 return this.round1(value) + "%";
+            },
+            getBoonContributionBarStyle: function(boon) {
+                const width = Math.max(0, Math.min(100, boon && boon.sharePercent ? boon.sharePercent : 0));
+                return {
+                    width: width + "%",
+                    background: this.getBoonProviderColor(boon ? (boon.label || boon.name) : "Unknown"),
+                };
             },
             getBoonProviderColor: function(label) {
                 const text = label || "Unknown";
@@ -2198,6 +2337,120 @@
                             })),
                         };
                     });
+            },
+            boonProviderProfiles: function() {
+                if (!this.weightedBoonProviderSections || this.weightedBoonProviderSections.length === 0) {
+                    return [];
+                }
+                const profilesByKey = new Map();
+                const boonOrder = new Map();
+                this.weightedBoonProviderSections.forEach((section, index) => {
+                    boonOrder.set(section.buffId, index);
+                    section.providers.forEach(provider => {
+                        if (!profilesByKey.has(provider.key)) {
+                            profilesByKey.set(provider.key, {
+                                key: provider.key,
+                                label: provider.label,
+                                icon: provider.icon,
+                                totalSharePercent: 0,
+                                boonsById: new Map(),
+                            });
+                        }
+                        const profile = profilesByKey.get(provider.key);
+                        profile.totalSharePercent += provider.sharePercent;
+                        profile.boonsById.set(section.buffId, {
+                            buffId: section.buffId,
+                            name: section.name,
+                            icon: section.icon,
+                            sharePercent: provider.sharePercent,
+                        });
+                    });
+                });
+
+                return Array.from(profilesByKey.values())
+                    .map(profile => {
+                        const boons = this.weightedBoonProviderSections
+                            .map(section => profile.boonsById.get(section.buffId) || {
+                                buffId: section.buffId,
+                                name: section.name,
+                                icon: section.icon,
+                                sharePercent: 0,
+                            })
+                            .sort((left, right) => {
+                                if (right.sharePercent !== left.sharePercent) {
+                                    return right.sharePercent - left.sharePercent;
+                                }
+                                return (boonOrder.get(left.buffId) || 0) - (boonOrder.get(right.buffId) || 0);
+                            });
+                        return {
+                            key: profile.key,
+                            label: profile.label,
+                            icon: profile.icon,
+                            totalSharePercent: profile.totalSharePercent,
+                            boons: boons,
+                            topBoons: boons.filter(boon => boon.sharePercent > 0).slice(0, 3),
+                        };
+                    })
+                    .sort((left, right) => {
+                        if (right.totalSharePercent !== left.totalSharePercent) {
+                            return right.totalSharePercent - left.totalSharePercent;
+                        }
+                        return left.label.localeCompare(right.label);
+                    });
+            },
+            selectedBoonProviderProfiles: function() {
+                if (!this.boonProviderProfiles || this.boonProviderProfiles.length === 0) {
+                    return [];
+                }
+                const selectedKeys = Array.isArray(this.selectedBoonProviderKeys) ? this.selectedBoonProviderKeys : [];
+                const selectedProfiles = this.boonProviderProfiles.filter(profile => selectedKeys.includes(profile.key));
+                return selectedProfiles.length > 0 ? selectedProfiles : [this.boonProviderProfiles[0]];
+            },
+            boonProviderComparisonRows: function() {
+                if (!this.selectedBoonProviderProfiles || this.selectedBoonProviderProfiles.length === 0) {
+                    return [];
+                }
+                return this.weightedBoonProviderSections
+                    .map(section => {
+                        const entries = this.selectedBoonProviderProfiles.map(profile => {
+                            const boon = profile.boons.find(candidate => candidate.buffId === section.buffId) || {
+                                buffId: section.buffId,
+                                name: section.name,
+                                icon: section.icon,
+                                sharePercent: 0,
+                            };
+                            return {
+                                key: profile.key,
+                                label: profile.label,
+                                icon: profile.icon,
+                                sharePercent: boon.sharePercent || 0,
+                            };
+                        });
+                        return {
+                            buffId: section.buffId,
+                            name: section.name,
+                            icon: section.icon,
+                            maxSharePercent: entries.reduce((maxValue, entry) => Math.max(maxValue, entry.sharePercent || 0), 0),
+                            entries: entries.sort((left, right) => {
+                                if (right.sharePercent !== left.sharePercent) {
+                                    return right.sharePercent - left.sharePercent;
+                                }
+                                return left.label.localeCompare(right.label);
+                            }),
+                        };
+                    })
+                    .sort((left, right) => {
+                        if (right.maxSharePercent !== left.maxSharePercent) {
+                            return right.maxSharePercent - left.maxSharePercent;
+                        }
+                        return left.name.localeCompare(right.name);
+                    });
+            },
+            selectedBoonProviderProfile: function() {
+                if (!this.boonProviderProfiles || this.boonProviderProfiles.length === 0) {
+                    return null;
+                }
+                return this.boonProviderProfiles.find(profile => profile.key === this.selectedBoonProviderKey) || this.boonProviderProfiles[0];
             },
             fightDemandSummary: function() {
                 if (!this.fightDemand || !this.fightDemand.lanes || this.fightDemand.lanes.length === 0) {
