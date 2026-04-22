@@ -55,10 +55,10 @@
                 return Math.abs(times[low] - time) < Math.abs(times[low - 1] - time) ? low : low - 1;
             },
             getPlayerByUniqueId: function (uniqueId) {
-                return logData.players.find(player => player.uniqueID === uniqueId) || null;
+                return logData.players.find(player => String(player.uniqueID) === String(uniqueId)) || null;
             },
             getTargetByUniqueId: function (uniqueId) {
-                return logData.targets.find(target => target.uniqueID === uniqueId) || null;
+                return logData.targets.find(target => String(target.uniqueID) === String(uniqueId)) || null;
             },
             getActorByUniqueId: function (uniqueId) {
                 return this.getPlayerByUniqueId(uniqueId) || this.getTargetByUniqueId(uniqueId);
@@ -178,6 +178,21 @@
         `,
     });
 
+    function getCombatReplayAnalysisNavigationState() {
+        if (!window.reactiveCombatReplayAnalysisNavigation && window.Vue && Vue.observable) {
+            window.reactiveCombatReplayAnalysisNavigation = Vue.observable({
+                overviewMode: null,
+                selectedActorId: null,
+                stickySelectedActorId: null,
+            });
+        }
+        return window.reactiveCombatReplayAnalysisNavigation || {
+            overviewMode: null,
+            selectedActorId: null,
+            stickySelectedActorId: null,
+        };
+    }
+
     Vue.component("combat-replay-analysis-panel-component", {
         props: ["time", "selectedactorid", "targetless", "hasanalysis"],
         template: `
@@ -269,13 +284,91 @@
         </div>
         `,
         data: function () {
+            const navigationState = getCombatReplayAnalysisNavigationState();
             return {
-                overviewMode: 0,
+                overviewMode: typeof navigationState.overviewMode === "number" ? navigationState.overviewMode : 0,
                 showOverviewHelp: false,
                 analysisScrollTopByMode: {},
             };
         },
+        computed: {
+            requestedOverviewMode: function () {
+                return getCombatReplayAnalysisNavigationState().overviewMode;
+            },
+            requestedSelectedActorId: function () {
+                return getCombatReplayAnalysisNavigationState().selectedActorId;
+            },
+        },
+        mounted: function () {
+            if (this.requestedSelectedActorId != null) {
+                this.applyRequestedSelectedActor(this.requestedSelectedActorId);
+            }
+        },
+        methods: {
+            applyRequestedSelectedActor: function (newActorId) {
+                if (newActorId == null) {
+                    return;
+                }
+                if (typeof reactiveAnimationData !== "undefined") {
+                    reactiveAnimationData.selectedActorID = newActorId;
+                }
+                this.$nextTick(function () {
+                    const navigationState = getCombatReplayAnalysisNavigationState();
+                    const trySelectActor = function (remainingAttempts) {
+                        if (!animator) {
+                            if (remainingAttempts > 0) {
+                                setTimeout(function () {
+                                    trySelectActor(remainingAttempts - 1);
+                                }, 50);
+                            }
+                            return;
+                        }
+                        const actorReady = typeof animator.getActorData !== "function" || !!animator.getActorData(newActorId);
+                        if (!actorReady) {
+                            if (remainingAttempts > 0) {
+                                setTimeout(function () {
+                                    trySelectActor(remainingAttempts - 1);
+                                }, 50);
+                            }
+                            return;
+                        }
+                        animator.stopAnimate(true);
+                        if (typeof animator.focusActorAtScale === "function") {
+                            animator.focusActorAtScale(newActorId, 179.7);
+                        } else if (typeof animator.selectActor === "function") {
+                            animator.selectActor(newActorId, true);
+                        }
+                        if (typeof animator.updateTextInput === "function") {
+                            animator.updateTextInput();
+                        }
+                        if (navigationState.selectedActorId === newActorId) {
+                            navigationState.selectedActorId = null;
+                        }
+                    };
+                    trySelectActor(20);
+                });
+            },
+            navigateToPlayer: function (actorId) {
+                this.overviewMode = 6;
+                this.applyRequestedSelectedActor(actorId);
+            },
+        },
         watch: {
+            requestedOverviewMode: function (newMode) {
+                if (typeof newMode !== "number") {
+                    return;
+                }
+                this.overviewMode = newMode;
+                this.$nextTick(function () {
+                    const navigationState = getCombatReplayAnalysisNavigationState();
+                    if (navigationState.overviewMode === newMode) {
+                        navigationState.overviewMode = null;
+                    }
+                });
+            },
+            requestedSelectedActorId: function (newActorId) {
+                this.applyRequestedSelectedActor(newActorId);
+            },
             overviewMode: function (newMode, oldMode) {
                 if (typeof oldMode === "number") {
                     this.$set(this.analysisScrollTopByMode, oldMode, window.pageYOffset || document.documentElement.scrollTop || 0);
@@ -4249,8 +4342,107 @@
                     : this.availablePlayers;
                 return players.slice(0, 12);
             },
+            debugRequestedActorId: function () {
+                return getCombatReplayAnalysisNavigationState().selectedActorId;
+            },
+            debugPendingActorId: function () {
+                let current = this.$parent;
+                while (current) {
+                    if (current.$data && Object.prototype.hasOwnProperty.call(current.$data, "pendingAnalysisPlayerId")) {
+                        return current.$data.pendingAnalysisPlayerId;
+                    }
+                    current = current.$parent;
+                }
+                return null;
+            },
+            debugReactiveSelectedActorId: function () {
+                return typeof reactiveAnimationData !== "undefined" ? reactiveAnimationData.selectedActorID : null;
+            },
+            debugStickyActorId: function () {
+                return getCombatReplayAnalysisNavigationState().stickySelectedActorId;
+            },
+            debugRequestedPlayerName: function () {
+                const player = this.debugRequestedActorId != null ? this.getPlayerByUniqueId(this.debugRequestedActorId) : null;
+                return player ? player.name : "no player match";
+            },
+            debugPendingPlayerName: function () {
+                const player = this.debugPendingActorId != null ? this.getPlayerByUniqueId(this.debugPendingActorId) : null;
+                return player ? player.name : "no player match";
+            },
+            debugReactivePlayerName: function () {
+                const player = this.debugReactiveSelectedActorId != null ? this.getPlayerByUniqueId(this.debugReactiveSelectedActorId) : null;
+                return player ? player.name : "no player match";
+            },
+            debugPropPlayerName: function () {
+                const player = this.selectedactorid != null ? this.getPlayerByUniqueId(this.selectedactorid) : null;
+                return player ? player.name : "no player match";
+            },
+            debugStickyPlayerName: function () {
+                const player = this.debugStickyActorId != null ? this.getPlayerByUniqueId(this.debugStickyActorId) : null;
+                return player ? player.name : "no player match";
+            },
+            debugRequestedReplayActorState: function () {
+                if (this.debugRequestedActorId == null) {
+                    return "no replay request";
+                }
+                if (!animator || typeof animator.getActorData !== "function") {
+                    return "animator unavailable";
+                }
+                return animator.getActorData(this.debugRequestedActorId) ? "replay actor ready" : "replay actor missing";
+            },
+            debugPendingReplayActorState: function () {
+                if (this.debugPendingActorId == null) {
+                    return "no pending actor";
+                }
+                if (!animator || typeof animator.getActorData !== "function") {
+                    return "animator unavailable";
+                }
+                return animator.getActorData(this.debugPendingActorId) ? "replay actor ready" : "replay actor missing";
+            },
+            debugReactiveReplayActorState: function () {
+                if (this.debugReactiveSelectedActorId == null) {
+                    return "no reactive actor";
+                }
+                if (!animator || typeof animator.getActorData !== "function") {
+                    return "animator unavailable";
+                }
+                return animator.getActorData(this.debugReactiveSelectedActorId) ? "replay actor ready" : "replay actor missing";
+            },
+            debugPropReplayActorState: function () {
+                if (this.selectedactorid == null) {
+                    return "no prop actor";
+                }
+                if (!animator || typeof animator.getActorData !== "function") {
+                    return "animator unavailable";
+                }
+                return animator.getActorData(this.selectedactorid) ? "replay actor ready" : "replay actor missing";
+            },
+            debugStickyReplayActorState: function () {
+                if (this.debugStickyActorId == null) {
+                    return "no sticky actor";
+                }
+                if (!animator || typeof animator.getActorData !== "function") {
+                    return "animator unavailable";
+                }
+                return animator.getActorData(this.debugStickyActorId) ? "replay actor ready" : "replay actor missing";
+            },
+            effectiveSelectedPlayerId: function () {
+                if (this.selectedactorid != null && this.getPlayerByUniqueId(this.selectedactorid)) {
+                    return this.selectedactorid;
+                }
+                if (this.debugPendingActorId != null && this.getPlayerByUniqueId(this.debugPendingActorId)) {
+                    return this.debugPendingActorId;
+                }
+                if (this.debugRequestedActorId != null && this.getPlayerByUniqueId(this.debugRequestedActorId)) {
+                    return this.debugRequestedActorId;
+                }
+                if (this.debugStickyActorId != null && this.getPlayerByUniqueId(this.debugStickyActorId)) {
+                    return this.debugStickyActorId;
+                }
+                return null;
+            },
             selectedPlayer: function () {
-                return this.selectedactorid != null ? this.getPlayerByUniqueId(this.selectedactorid) : null;
+                return this.effectiveSelectedPlayerId != null ? this.getPlayerByUniqueId(this.effectiveSelectedPlayerId) : null;
             },
             selectedPlayerEvaluation: function () {
                 if (!this.selectedPlayer || !this.crAnalysis || !this.crAnalysis.playerEvaluations) {
@@ -4378,6 +4570,8 @@
                 this.playerSearchQuery = "";
                 this.playerSearchOpen = false;
                 this.closePlayerEvaluationAreaDetail();
+                const navigationState = getCombatReplayAnalysisNavigationState();
+                navigationState.stickySelectedActorId = player.uniqueID;
                 this.selectReplayActor(player.uniqueID);
             },
             openPlayerEvaluationCompare: function () {

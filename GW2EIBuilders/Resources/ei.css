@@ -1071,6 +1071,18 @@ h6.actor-shorten-cr-compact {
     background: rgba(0, 0, 0, 0.1);
 }
 
+.combat-replay-spec-capability-card-button {
+    cursor: pointer;
+    transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.16s ease;
+}
+
+.combat-replay-spec-capability-card-button:hover,
+.combat-replay-spec-capability-card-button:focus-visible {
+    border-color: rgba(94, 190, 212, 0.42);
+    background: rgba(94, 190, 212, 0.08);
+    outline: none;
+}
+
 .combat-replay-spec-capability-card-selected {
     border-color: rgba(94, 190, 212, 0.42);
     background: rgba(94, 190, 212, 0.08);
@@ -1081,6 +1093,27 @@ h6.actor-shorten-cr-compact {
     align-items: flex-start;
     justify-content: space-between;
     gap: 0.5rem;
+}
+
+.combat-replay-spec-capability-action {
+    border: 1px solid rgba(94, 190, 212, 0.38);
+    border-radius: 999px;
+    padding: 0.28rem 0.62rem;
+    background: rgba(94, 190, 212, 0.1);
+    color: inherit;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.combat-replay-spec-capability-action:hover,
+.combat-replay-spec-capability-action:focus-visible {
+    border-color: rgba(94, 190, 212, 0.52);
+    background: rgba(94, 190, 212, 0.18);
+    outline: none;
 }
 
 .combat-replay-spec-capability-title-wrap {
@@ -1137,6 +1170,19 @@ h6.actor-shorten-cr-compact {
     border-radius: 0.36rem;
     padding: 0.48rem 0.52rem;
     background: rgba(255, 255, 255, 0.03);
+}
+
+.combat-replay-spec-capability-lane-button {
+    cursor: pointer;
+    color: inherit;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.combat-replay-spec-capability-lane-button:hover,
+.combat-replay-spec-capability-lane-button:focus-visible {
+    border-color: rgba(94, 190, 212, 0.46);
+    background: rgba(94, 190, 212, 0.08);
+    outline: none;
 }
 
 .combat-replay-spec-capability-lane-header {

@@ -7,6 +7,7 @@
         </div>
         <div class="d-flex flex-column align-items-stretch ml-3" style="flex: 1 1 66%; min-width: 480px; max-width: 1280px; margin-right: auto;">
             <combat-replay-analysis-panel-component
+                ref="analysisPanel"
                 :time="animationStatus.time"
                 :selectedactorid="animationStatus.selectedActorID"
                 :targetless="targetless"
@@ -39,6 +40,7 @@
                 analysisFocusUnits: 179.7,
                 selectionMode: 0,
                 targetless: logData.targetless,
+                pendingAnalysisPlayerId: null,
             };
         },
         computed: {
@@ -46,8 +48,87 @@
                 return !!(crData && crData.analysis);
             },
         },
+        methods: {
+            getWindowPendingAnalysisPlayerId: function () {
+                if (typeof window === "undefined") {
+                    return null;
+                }
+                return window.pendingCombatReplayAnalysisPlayerId != null
+                    ? window.pendingCombatReplayAnalysisPlayerId
+                    : null;
+            },
+            clearWindowPendingAnalysisPlayerId: function (actorId) {
+                if (typeof window === "undefined") {
+                    return;
+                }
+                if (actorId == null || String(window.pendingCombatReplayAnalysisPlayerId) === String(actorId)) {
+                    window.pendingCombatReplayAnalysisPlayerId = null;
+                }
+            },
+            syncWindowPendingAnalysisPlayer: function () {
+                const actorId = this.getWindowPendingAnalysisPlayerId();
+                if (actorId == null) {
+                    return;
+                }
+                const navigationState = typeof getCombatReplayAnalysisNavigationState === "function"
+                    ? getCombatReplayAnalysisNavigationState()
+                    : null;
+                if (navigationState) {
+                    navigationState.overviewMode = 6;
+                    navigationState.selectedActorId = actorId;
+                    navigationState.stickySelectedActorId = actorId;
+                }
+                this.pendingAnalysisPlayerId = actorId;
+                this.animationStatus.selectedActorID = actorId;
+            },
+            applyPendingAnalysisPlayer: function (remainingAttempts) {
+                this.syncWindowPendingAnalysisPlayer();
+                if (!this.analysisview || this.pendingAnalysisPlayerId == null) {
+                    return;
+                }
+                const actorId = this.pendingAnalysisPlayerId;
+                this.animationStatus.selectedActorID = actorId;
+                if (this.$refs.analysisPanel && this.$refs.analysisPanel.navigateToPlayer) {
+                    this.$refs.analysisPanel.navigateToPlayer(actorId);
+                    if (this.$refs.analysisPanel.selectedPlayer && String(this.$refs.analysisPanel.selectedPlayer.uniqueID) === String(actorId)) {
+                        this.pendingAnalysisPlayerId = null;
+                        this.clearWindowPendingAnalysisPlayerId(actorId);
+                        return;
+                    }
+                }
+                if (remainingAttempts > 0) {
+                    setTimeout(() => {
+                        this.applyPendingAnalysisPlayer(remainingAttempts - 1);
+                    }, 50);
+                }
+            },
+            navigateToAnalysisPlayer: function (actorId) {
+                if (actorId == null) {
+                    return;
+                }
+                const navigationState = typeof getCombatReplayAnalysisNavigationState === "function"
+                    ? getCombatReplayAnalysisNavigationState()
+                    : null;
+                if (navigationState) {
+                    navigationState.stickySelectedActorId = actorId;
+                }
+                if (typeof window !== "undefined") {
+                    window.pendingCombatReplayAnalysisPlayerId = actorId;
+                }
+                this.pendingAnalysisPlayerId = actorId;
+                this.animationStatus.selectedActorID = actorId;
+                this.$nextTick(() => this.applyPendingAnalysisPlayer(30));
+            },
+        },
         watch: {
             analysisview: function (value) {
+                if (value) {
+                    this.syncWindowPendingAnalysisPlayer();
+                }
+                if (value && this.pendingAnalysisPlayerId != null) {
+                    this.$nextTick(() => this.applyPendingAnalysisPlayer(30));
+                    return;
+                }
                 if (value && this.animationStatus.selectedActorID != null && animator != null) {
                     animator.focusActorAtScale(this.animationStatus.selectedActorID, this.analysisFocusUnits);
                 }
@@ -60,10 +141,16 @@
         },
         created() {
             animator = new Animator(crData);
+            this.syncWindowPendingAnalysisPlayer();
         },
         activated() {
+            this.syncWindowPendingAnalysisPlayer();
             if (this.animationStatus.animated && animator != null) {
                 animator.startAnimate(false);
+            }
+            if (this.analysisview && this.pendingAnalysisPlayerId != null) {
+                this.$nextTick(() => this.applyPendingAnalysisPlayer(30));
+                return;
             }
             if (this.analysisview && this.animationStatus.selectedActorID != null && animator != null) {
                 animator.focusActorAtScale(this.animationStatus.selectedActorID, this.analysisFocusUnits);

@@ -44,7 +44,7 @@
 
         <keep-alive>
             <wvw-summary-component v-if="tab === 8" :key="'wvw-summary'"
-                :phaseindex="activePhase" @select-player="showPlayerSummary"
+                :phaseindex="activePhase" @select-player="showAnalysisPlayerSummary"
                 @select-player-support="showSupportSummary"
                 @select-player-healing="showHealingSummary"
                 @select-player-boon-generation="showBoonGenerationSummary"
@@ -113,10 +113,54 @@
         data: function () {
             return {
                 tab: getDefaultMainSubComponent(),
-                reactiveLogdata: reactiveLogdata
+                reactiveLogdata: reactiveLogdata,
+                summaryScrollTop: null,
             };
         },
         methods: {
+            getWindowScrollTop: function() {
+                if (typeof window === "undefined") {
+                    return 0;
+                }
+                return window.pageYOffset
+                    || document.documentElement.scrollTop
+                    || document.body.scrollTop
+                    || 0;
+            },
+            getElementDocumentTop: function(element) {
+                if (!element || typeof element.getBoundingClientRect !== "function") {
+                    return null;
+                }
+                return element.getBoundingClientRect().top + this.getWindowScrollTop();
+            },
+            captureSummaryScrollPosition: function() {
+                if (this.tab !== 8) {
+                    return;
+                }
+                if (typeof window !== "undefined" && window.pendingStatisticsSummaryScrollTop != null) {
+                    return;
+                }
+                this.summaryScrollTop = this.getWindowScrollTop();
+                if (typeof window !== "undefined") {
+                    window.pendingStatisticsSummaryScrollTop = this.summaryScrollTop;
+                }
+            },
+            restoreSummaryScrollPosition: function() {
+                if (this.tab !== 8 || typeof window === "undefined") {
+                    return;
+                }
+                var pendingScrollTop = window.pendingStatisticsSummaryScrollTop;
+                var scrollTop = pendingScrollTop != null ? pendingScrollTop : this.summaryScrollTop;
+                if (scrollTop == null) {
+                    return;
+                }
+                this.summaryScrollTop = scrollTop;
+                this.$nextTick(function() {
+                    setTimeout(function() {
+                        window.scrollTo(0, scrollTop);
+                    }, 0);
+                });
+            },
             getActiveEncounterIndex: function() {
                 var activeEncounterIndex = 0;
                 for (var i = 0; i < this.reactiveLogdata.encounters.length; i++) {
@@ -138,6 +182,44 @@
                 this.selectPlayer(playerIndex);
                 this.tab = 6;
                 this.scrollStatisticsTabsIntoView();
+            },
+            showAnalysisPlayerSummary: function(playerIndex) {
+                this.selectPlayer(playerIndex);
+                var player = this.reactiveLogdata.players[playerIndex];
+                if (!player) {
+                    return;
+                }
+                if (!window.reactiveCombatReplayAnalysisNavigation && window.Vue && Vue.observable) {
+                    window.reactiveCombatReplayAnalysisNavigation = Vue.observable({
+                        overviewMode: null,
+                        selectedActorId: null,
+                        stickySelectedActorId: null,
+                    });
+                }
+                if (window.reactiveCombatReplayAnalysisNavigation) {
+                    window.reactiveCombatReplayAnalysisNavigation.overviewMode = 6;
+                    window.reactiveCombatReplayAnalysisNavigation.selectedActorId = player.uniqueID;
+                    window.reactiveCombatReplayAnalysisNavigation.stickySelectedActorId = player.uniqueID;
+                }
+                this.$root.mode = 2;
+                this.$root.$nextTick(function() {
+                    window.scrollTo(0, 0);
+                    var tryOpenAnalysisPlayer = function(remainingAttempts) {
+                        var combatReplayUI = this.$root && this.$root.$refs ? this.$root.$refs.combatReplayUI : null;
+                        if (combatReplayUI && combatReplayUI.navigateToAnalysisPlayer) {
+                            combatReplayUI.navigateToAnalysisPlayer(player.uniqueID);
+                            return;
+                        }
+                        if (remainingAttempts > 0) {
+                            setTimeout(function() {
+                                tryOpenAnalysisPlayer(remainingAttempts - 1);
+                            }, 50);
+                        }
+                    }.bind(this);
+                    setTimeout(function() {
+                        tryOpenAnalysisPlayer(20);
+                    }, 0);
+                });
             },
             showSupportSummary: function(playerIndex) {
                 var component = this;
@@ -187,6 +269,12 @@
                     }
                 });
             }
+        },
+        activated: function() {
+            this.restoreSummaryScrollPosition();
+        },
+        deactivated: function() {
+            this.captureSummaryScrollPosition();
         },
         computed: {
             activePhase: function () {

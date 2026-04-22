@@ -272,20 +272,20 @@
                     </div>
                 </div>
             </div>
-            <div v-if="activeSummaryTab === 'overview' && summary.playerStandouts && summary.playerStandouts.hasEntries" class="wvw-summary-side-panel wvw-summary-standouts-panel">
+            <div id="wvw-summary-player-standouts-panel" v-if="activeSummaryTab === 'overview' && overviewStandoutCards.length > 0" class="wvw-summary-side-panel wvw-summary-standouts-panel">
                 <div class="wvw-summary-standouts-header">
                     <div class="wvw-summary-side-panel-title">Player Standouts</div>
                     <button type="button" class="combat-replay-overview-help-button" title="Player standouts help" aria-label="Show player standouts help" @click="showStandoutsHelp = true">?</button>
                 </div>
-                <div class="wvw-summary-side-panel-subtitle">{{summary.playerStandouts.summary}}</div>
+                <div class="wvw-summary-side-panel-subtitle">{{overviewStandoutsSummary}}</div>
                 <div class="wvw-summary-standouts-grid">
-                    <div v-for="category in summary.playerStandouts.categories" :key="'standout-' + category.key" class="wvw-summary-standout-card">
+                    <div v-for="category in overviewStandoutCards" :key="'standout-' + category.key" class="wvw-summary-standout-card">
                         <div class="wvw-summary-standout-card-title">{{category.label}}</div>
                         <div class="wvw-summary-standout-card-detail">{{category.detail}}</div>
                         <button v-for="(entry, index) in category.entries" :key="'standout-entry-' + category.key + '-' + entry.playerIndex"
                             type="button"
                             class="wvw-summary-standout-entry"
-                            @click="openPlayerSummary(entry.playerIndex)">
+                            @click="openPlayerSummary(entry.playerIndex, 'wvw-summary-player-standouts-panel')">
                             <div class="wvw-summary-standout-entry-head">
                                 <div class="wvw-summary-top-player-rank">#{{index + 1}}</div>
                                 <img :src="entry.icon" :alt="entry.profession" class="icon"
@@ -310,42 +310,80 @@
                         <button type="button" class="wvw-summary-modal-close" aria-label="Close player standouts help" @click="showStandoutsHelp = false">&times;</button>
                         <div class="wvw-summary-modal-title">Player Standouts Help</div>
                         <div class="wvw-summary-modal-subtitle">
-                            Player standouts recognize who mattered most in the fight's key moments. These are timed, fight-context highlights, not raw-stat leaderboards and not player grades.
+                            Player standouts now surface replay-visible lane leaders. These cards are ordered by lane strength, while the visible top line shows squad share or total lane signal.
                         </div>
                         <div class="combat-replay-overview-help-section">
-                            <div class="combat-replay-overview-help-heading">Categories</div>
+                            <div class="combat-replay-overview-help-heading">Overall Impact</div>
                             <ul class="combat-replay-overview-help-list">
-                                <li><strong>Fight Impact</strong>: the most influential overall timed contribution across the fight's high-leverage windows</li>
-                                <li><strong>Offensive Impact</strong>: burst pressure, focus fire, and damage that mattered during successful pressure windows</li>
-                                <li><strong>Control Impact</strong>: boon strips and effective crowd control timed around conversions and swings</li>
-                                <li><strong>Support Impact</strong>: healing, cleanses, and rez contribution during pressure and stabilization windows</li>
-                                <li><strong>Hybrid Impact</strong>: meaningful combined value across multiple roles in the same fight</li>
+                                <li><strong>What it is</strong>: total visible contribution across all measured lanes in this fight</li>
+                                <li><strong>Top line</strong>: total lane signal, which is the sum of that player's lane strengths</li>
+                                <li><strong>Ordering</strong>: highest total lane signal first</li>
                             </ul>
                         </div>
                         <div class="combat-replay-overview-help-section">
-                            <div class="combat-replay-overview-help-heading">Entry Breakdown</div>
+                            <div class="combat-replay-overview-help-heading">Pressure</div>
                             <ul class="combat-replay-overview-help-list">
-                                <li><strong>Role label</strong> is inferred from what the player actually contributed in this fight, rather than from profession expectations</li>
-                                <li><strong>Why line</strong> is the short explanation for why the player stood out in that category</li>
-                                <li><strong>Evidence tags</strong> are compact clues about the types of moments the player influenced, such as key windows, bomb windows, conversion windows, or support stabilization</li>
+                                <li><strong>What it is</strong>: pre-down pressure on live targets before enemy players fell</li>
+                                <li><strong>Squad Share</strong>: share of squad pre-down contribution; fallback is live-target damage share if no pre-down contribution exists</li>
+                                <li><strong>Strength constants</strong>: LiveTargetDamage 0.31, EnemyDownContributionDamage 0.31, DownContribution 0.14, AverageTopTargetContribution 0.14, OffensiveConditionPressure 0.10</li>
                             </ul>
                         </div>
                         <div class="combat-replay-overview-help-section">
-                            <div class="combat-replay-overview-help-heading">Role Terms</div>
+                            <div class="combat-replay-overview-help-heading">Conversion</div>
                             <ul class="combat-replay-overview-help-list">
-                                <li><strong>Offense</strong>: timed damage pressure, focus fire, offensive conditions, and pressure that helped convert windows</li>
-                                <li><strong>Control</strong>: boon strips, effective crowd control, and control conditions such as Chill, Cripple, Immobilize, Fear, or Taunt that mattered around conversions</li>
-                                <li><strong>Support</strong>: healing, barrier, cleanses, rez, defensive boons, offensive boons for allies, and defensive conditions applied in pressure windows</li>
-                                <li><strong>Discipline</strong>: positioning and survivability context, especially staying with the commander and avoiding overextension during key moments</li>
-                                <li><strong>Hybrid</strong>: meaningful contribution across more than one of the role areas above in the same fight</li>
+                                <li><strong>What it is</strong>: visible contribution to turning enemy downs into kills</li>
+                                <li><strong>Squad Share</strong>: share of squad finish contribution; fallback is against-downed damage share</li>
+                                <li><strong>Strength constants</strong>: EnemyKillContributionDamage 0.46, AgainstDownedDamage 0.26, FastEnemyKillWindowsHit 0.12, EnemyKillWindowsHit 0.16</li>
                             </ul>
                         </div>
                         <div class="combat-replay-overview-help-section">
-                            <div class="combat-replay-overview-help-heading">Important Notes</div>
+                            <div class="combat-replay-overview-help-heading">Strip</div>
                             <ul class="combat-replay-overview-help-list">
-                                <li>Standouts are weighted toward contributions during important fight windows identified from the Moments timeline</li>
-                                <li>Players can appear in multiple categories if they both performed their role well and had broad fight impact</li>
-                                <li>Meaningless raw output is de-emphasized compared with timed contribution in the right windows</li>
+                                <li><strong>What it is</strong>: boon removal timed into pressure and conversion windows</li>
+                                <li><strong>Squad Share</strong>: share of squad down-linked strips; fallback is total strips share</li>
+                                <li><strong>Strength constants</strong>: StripDownContribution 0.44, StripsTotal 0.34, ControlContributionWindows 0.12, StripDownContributionTime 0.10</li>
+                            </ul>
+                        </div>
+                        <div class="combat-replay-overview-help-section">
+                            <div class="combat-replay-overview-help-heading">Control</div>
+                            <ul class="combat-replay-overview-help-list">
+                                <li><strong>What it is</strong>: effective crowd control and control conditions that disrupted enemy play</li>
+                                <li><strong>Squad Share</strong>: share of squad CC-linked downs; fallback is effective CC count share</li>
+                                <li><strong>Strength constants</strong>: CrowdControlDownContribution 0.25, EffectiveCrowdControlCount 0.20, EffectiveCrowdControlDuration 0.15, ControlConditionPressure 0.30, ControlContributionWindows 0.10</li>
+                            </ul>
+                        </div>
+                        <div class="combat-replay-overview-help-section">
+                            <div class="combat-replay-overview-help-heading">Boon Support</div>
+                            <ul class="combat-replay-overview-help-list">
+                                <li><strong>What it is</strong>: offensive and defensive boon-seconds in key windows</li>
+                                <li><strong>Squad Share</strong>: share of squad total boon-seconds</li>
+                                <li><strong>Strength constants</strong>: TotalBoonSupport 0.36, OffensiveBoonSupport 0.22, DefensiveBoonSupport 0.30, BoonContributionWindows 0.12</li>
+                            </ul>
+                        </div>
+                        <div class="combat-replay-overview-help-section">
+                            <div class="combat-replay-overview-help-heading">Recovery</div>
+                            <ul class="combat-replay-overview-help-list">
+                                <li><strong>What it is</strong>: cleanses, healing, and barrier during enemy pressure</li>
+                                <li><strong>Squad Share</strong>: weighted blend of Healing share 0.40, Barrier share 0.20, Cleanses share 0.25, DefensiveSupportWindows share 0.15, re-normalized over available inputs; if healing and barrier are both unavailable, Cleanses uses 0.50 and DefensiveSupportWindows uses 0.15</li>
+                                <li><strong>Strength constants</strong>: Healing 0.32, Barrier 0.18, Cleanses 0.24, DefensiveSupportWindows 0.16, DefensiveConditionPressure 0.10, re-normalized over available inputs; if healing and barrier are both unavailable, Cleanses uses 0.42</li>
+                            </ul>
+                        </div>
+                        <div class="combat-replay-overview-help-section">
+                            <div class="combat-replay-overview-help-heading">Rez</div>
+                            <ul class="combat-replay-overview-help-list">
+                                <li><strong>What it is</strong>: help on successful ally recoveries after downstate</li>
+                                <li><strong>Squad Share</strong>: share of squad successful recoveries helped; fallback is rez time share</li>
+                                <li><strong>Strength constants</strong>: SquadRecoveryWindowsHelped 0.42, DownedHealingOnRecoveries 0.28, RezTimeOnRecoveries 0.18, RezCountOnRecoveries 0.12</li>
+                            </ul>
+                        </div>
+                        <div class="combat-replay-overview-help-section">
+                            <div class="combat-replay-overview-help-heading">Card Notes</div>
+                            <ul class="combat-replay-overview-help-list">
+                                <li>These cards are built from replay player evaluations, so they only appear when replay analysis is available</li>
+                                <li>The cards are ordered by lane strength, not by the visible squad-share line</li>
+                                <li>Lane weights shown above are raw constants; when some inputs are unavailable, the remaining weights are re-normalized</li>
+                                <li>A player can appear in multiple lane cards if they were strong in multiple kinds of contribution</li>
+                                <li>Lane ordering is based on replay-visible contribution, not profession expectation or assignment intent</li>
                             </ul>
                         </div>
                     </div>
@@ -378,7 +416,12 @@
                     <div
                         v-for="spec in specCapabilities"
                         :key="'wvw-summary-spec-' + spec.key"
-                        class="combat-replay-spec-capability-card">
+                        class="combat-replay-spec-capability-card combat-replay-spec-capability-card-button"
+                        role="button"
+                        tabindex="0"
+                        @click="openSpecPlayerCompare(spec)"
+                        @keydown.enter.prevent="openSpecPlayerCompare(spec)"
+                        @keydown.space.prevent="openSpecPlayerCompare(spec)">
                         <div class="combat-replay-spec-capability-header">
                             <div class="combat-replay-spec-capability-title-wrap">
                                 <img :src="spec.icon" :alt="spec.label" class="combat-replay-spec-capability-icon">
@@ -387,15 +430,23 @@
                                     <div class="combat-replay-spec-capability-meta">{{spec.playerCount}} {{spec.playerCount === 1 ? 'player' : 'players'}} | {{round1(spec.activeSharePercent)}}% active share</div>
                                 </div>
                             </div>
+                            <button type="button" class="combat-replay-spec-capability-action" @click.stop="openSpecPlayerCompare(spec)">
+                                Compare players
+                            </button>
                         </div>
                         <div class="combat-replay-spec-capability-summary">{{spec.fitSummary}}</div>
                         <div v-if="spec.demandFitSummary" class="combat-replay-spec-capability-text">{{spec.demandFitSummary}}</div>
                         <div v-if="spec.dependencySummary" class="combat-replay-spec-capability-text combat-replay-spec-capability-text-secondary">{{spec.dependencySummary}}</div>
+                        <div class="combat-replay-player-evaluation-hint">Click card to compare players</div>
                         <div v-if="spec.lanes && spec.lanes.length > 0" class="combat-replay-spec-capability-lanes">
-                            <div
+                            <component
                                 v-for="lane in spec.lanes.slice(0, 4)"
                                 :key="'wvw-summary-spec-lane-' + spec.key + '-' + lane.key"
-                                class="combat-replay-spec-capability-lane">
+                                :is="lane.isInteractive ? 'button' : 'div'"
+                                :type="lane.isInteractive ? 'button' : null"
+                                class="combat-replay-spec-capability-lane"
+                                :class="{'combat-replay-spec-capability-lane-button': lane.isInteractive}"
+                                @click.stop="lane.isInteractive ? openSpecLaneDetail(spec, lane) : null">
                                 <div class="combat-replay-spec-capability-lane-header">
                                     <div class="combat-replay-spec-capability-lane-title">{{lane.label}}</div>
                                     <div class="combat-replay-spec-capability-lane-share">{{round1(lane.sharePercent)}}% share</div>
@@ -407,12 +458,105 @@
                                     <span v-if="lane.dependencyLabel" class="combat-replay-spec-capability-lane-chip" :class="getSpecCapabilityBadgeToneClass(lane.dependencyLabel)">{{lane.dependencyLabel}}</span>
                                 </div>
                                 <div class="combat-replay-spec-capability-lane-evidence">{{lane.evidenceLine}}</div>
-                            </div>
+                                <div v-if="lane.isInteractive" class="combat-replay-player-evaluation-hint">Click for detail</div>
+                            </component>
                         </div>
                     </div>
                 </div>
                 <div v-else class="wvw-summary-side-panel-empty">
                     Replay spec capability is unavailable for this fight.
+                </div>
+            </div>
+            <div v-if="specLaneDetailModal" class="wvw-summary-modal-backdrop" @click.self="closeSpecLaneDetail">
+                <div class="wvw-summary-modal combat-replay-player-evaluation-modal" role="dialog" aria-modal="true" :aria-label="specLaneDetailModal.title">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close spec lane detail" @click="closeSpecLaneDetail">&times;</button>
+                    <div class="wvw-summary-modal-title">{{specLaneDetailModal.title}}</div>
+                    <div v-if="specLaneDetailModal.subtitle" class="wvw-summary-modal-subtitle">
+                        <span>{{specLaneDetailModal.subtitle}}</span>
+                    </div>
+                    <div v-for="section in specLaneDetailModal.sections" :key="'spec-lane-detail-' + section.label" class="combat-replay-player-evaluation-detail-section">
+                        <div class="combat-replay-player-evaluation-detail-heading">{{section.label}}</div>
+                        <div class="wvw-summary-modal-list">
+                            <div v-for="entry in section.entries" :key="'spec-lane-detail-entry-' + section.label + '-' + entry.label" class="wvw-summary-modal-row">
+                                <div class="wvw-summary-modal-skill">
+                                    <span class="wvw-summary-modal-skill-name">{{entry.label}}</span>
+                                </div>
+                                <div class="wvw-summary-modal-values">
+                                    <span class="wvw-summary-modal-count">{{entry.value}}</span>
+                                    <span v-if="entry.secondary" class="wvw-summary-modal-secondary">{{entry.secondary}}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div v-if="specPlayerCompareModal" class="wvw-summary-modal-backdrop" @click.self="closeSpecPlayerCompare">
+                <div class="wvw-summary-modal combat-replay-player-compare-modal" role="dialog" aria-modal="true" :aria-label="specPlayerCompareModal.title">
+                    <button type="button" class="wvw-summary-modal-close" :aria-label="'Close ' + specPlayerCompareModal.spec.label + ' player comparison'" @click="closeSpecPlayerCompare">&times;</button>
+                    <div class="wvw-summary-modal-title">{{specPlayerCompareModal.title}}</div>
+                    <div class="wvw-summary-modal-subtitle">
+                        <span>{{specPlayerCompareModal.subtitle}}</span>
+                    </div>
+                    <div v-if="specPlayerCompareModal.players.length === 0" class="combat-replay-wvw-analysis-helper combat-replay-player-compare-empty">
+                        No player evaluations are available for this spec in the current log.
+                    </div>
+                    <div v-else class="combat-replay-player-compare-grid">
+                        <div v-for="(player, index) in specPlayerCompareModal.players" :key="'spec-player-compare-' + specPlayerCompareModal.spec.key + '-' + player.uniqueID" class="combat-replay-player-compare-column">
+                            <div class="combat-replay-player-compare-header">
+                                <img :src="player.icon" :alt="player.profession || player.name" class="combat-replay-player-compare-header-icon">
+                                <div class="combat-replay-player-compare-header-text">
+                                    <div class="combat-replay-player-compare-header-name">{{player.name}}</div>
+                                    <div class="combat-replay-player-compare-header-subtitle">#{{index + 1}} | {{player.profession || specPlayerCompareModal.spec.label}}</div>
+                                </div>
+                            </div>
+                            <div v-if="!player.evaluation" class="combat-replay-wvw-analysis-helper">
+                                Evaluation details are unavailable for this player in the current log.
+                            </div>
+                            <div v-else class="combat-replay-player-evaluation combat-replay-player-compare-evaluation">
+                                <div class="combat-replay-player-evaluation-summary">
+                                    <div class="combat-replay-player-evaluation-profile">{{player.evaluation.fitSummary || player.evaluation.contributionProfile}}</div>
+                                    <div v-if="player.evaluation.demandFitSummary || player.evaluation.keyContributionSummary" class="combat-replay-player-evaluation-text">
+                                        {{player.evaluation.demandFitSummary || player.evaluation.keyContributionSummary}}
+                                    </div>
+                                </div>
+
+                                <div v-if="player.evaluation.confidence" class="combat-replay-player-evaluation-confidence">
+                                    <div class="combat-replay-player-evaluation-confidence-header">
+                                        <span class="combat-replay-player-evaluation-confidence-badge">{{player.evaluation.confidence.label}} confidence</span>
+                                    </div>
+                                </div>
+
+                                <div v-if="player.evaluation.lanes && player.evaluation.lanes.length > 0" class="combat-replay-player-lane-list combat-replay-player-compare-lanes">
+                                    <div
+                                        v-for="lane in player.evaluation.lanes.slice(0, 4)"
+                                        :key="'spec-player-compare-lane-' + player.uniqueID + '-' + lane.key"
+                                        class="combat-replay-player-lane">
+                                        <div class="combat-replay-player-lane-header">
+                                            <div class="combat-replay-player-lane-title">{{lane.label}}</div>
+                                            <div class="combat-replay-player-lane-share">{{formatPercent(lane.sharePercent)}}</div>
+                                        </div>
+                                        <div class="combat-replay-player-lane-chips">
+                                            <span class="combat-replay-player-lane-chip combat-replay-player-lane-chip-strength">{{lane.rateBand}}</span>
+                                        </div>
+                                        <div class="combat-replay-player-lane-meta">
+                                            <span>{{lane.windowsHit}}/{{lane.windowsTotal}} {{lane.windowLabel}}</span>
+                                        </div>
+                                        <div class="combat-replay-player-lane-evidence">{{lane.evidenceLine}}</div>
+                                    </div>
+                                </div>
+
+                                <div v-if="player.evaluation.modifiers && player.evaluation.modifiers.length > 0" class="combat-replay-player-evaluation-modifier-list combat-replay-player-compare-modifiers">
+                                    <div v-for="modifier in player.evaluation.modifiers" :key="'spec-player-compare-modifier-' + player.uniqueID + '-' + modifier.label" class="combat-replay-player-evaluation-modifier">
+                                        <div class="combat-replay-player-evaluation-modifier-header">
+                                            <span class="combat-replay-player-evaluation-modifier-label">{{modifier.label}}</span>
+                                            <span class="combat-replay-player-evaluation-modifier-value">{{modifier.value}}</span>
+                                        </div>
+                                        <div class="combat-replay-player-evaluation-modifier-detail">{{modifier.detail}}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div v-if="activeSummaryTab === 'metrics'" class="wvw-summary-layout">
@@ -842,6 +986,8 @@
                 downDetailPopup: null,
                 downsOutcomePopup: null,
                 hoveredMomentIndex: null,
+                specPlayerCompareModal: null,
+                specLaneDetailModal: null,
                 showStandoutsHelp: false,
             };
         },
@@ -854,6 +1000,10 @@
                 if (tab !== "downs") {
                     this.closeDownDetailPopup();
                     this.closeDownsOutcomePopup();
+                }
+                if (tab !== "specs") {
+                    this.closeSpecLaneDetail();
+                    this.closeSpecPlayerCompare();
                 }
             },
             getBoonGenerationValue: function(buffData) {
@@ -873,6 +1023,12 @@
             },
             formatSeconds: function(value) {
                 return this.round1(value) + "s";
+            },
+            formatPercent: function(value) {
+                if (value == null || isNaN(value)) {
+                    return "0.0%";
+                }
+                return this.round1(value) + "%";
             },
             formatEffectiveCount: function(value) {
                 if (value == null || isNaN(value)) {
@@ -948,6 +1104,185 @@
                     return "";
                 }
                 return "combat-replay-spec-capability-lane-chip-" + value.toLowerCase().replace(/\s+/g, "-");
+            },
+            openSpecLaneDetail: function(spec, lane) {
+                if (!lane || !lane.isInteractive || !lane.detailSections || lane.detailSections.length === 0) {
+                    return;
+                }
+                this.specLaneDetailModal = {
+                    title: lane.drilldownTitle || ((spec ? spec.label + " " : "") + lane.label),
+                    subtitle: lane.drilldownSubtitle || "",
+                    sections: lane.detailSections,
+                };
+            },
+            closeSpecLaneDetail: function() {
+                this.specLaneDetailModal = null;
+            },
+            getPlayerContributionTotal: function(evaluation) {
+                if (!evaluation || !evaluation.lanes || evaluation.lanes.length === 0) {
+                    return 0;
+                }
+                return evaluation.lanes.reduce(function(total, lane) {
+                    return total + (lane && lane.strengthPercent ? lane.strengthPercent : 0);
+                }, 0);
+            },
+            getSpecComparisonPlayers: function(spec) {
+                const analysis = typeof crData !== "undefined" && crData && crData.analysis ? crData.analysis : null;
+                const evaluations = analysis && analysis.playerEvaluations ? analysis.playerEvaluations : null;
+                if (!spec || !logData || !logData.players) {
+                    return [];
+                }
+                const allPlayers = Array.from(logData.players || []);
+                const playerIds = spec.playerIds && spec.playerIds.length > 0
+                    ? spec.playerIds.map(function(id) { return Number(id); })
+                    : [];
+                const players = allPlayers.filter(player => {
+                    if (playerIds.length > 0) {
+                        return playerIds.indexOf(Number(player.uniqueID)) !== -1;
+                    }
+                    return player.profession === spec.label;
+                });
+                return players
+                    .map(player => {
+                        const evaluation = evaluations ? evaluations[player.uniqueID] || null : null;
+                        return {
+                            ...player,
+                            evaluation: evaluation,
+                            contributionTotal: this.getPlayerContributionTotal(evaluation),
+                        };
+                    })
+                    .sort((left, right) => {
+                        if (right.contributionTotal !== left.contributionTotal) {
+                            return right.contributionTotal - left.contributionTotal;
+                        }
+                        const leftLaneCount = left.evaluation && left.evaluation.lanes ? left.evaluation.lanes.length : 0;
+                        const rightLaneCount = right.evaluation && right.evaluation.lanes ? right.evaluation.lanes.length : 0;
+                        if (rightLaneCount !== leftLaneCount) {
+                            return rightLaneCount - leftLaneCount;
+                        }
+                        return (left.name || "").localeCompare(right.name || "");
+                    });
+            },
+            openSpecPlayerCompare: function(spec) {
+                if (!spec) {
+                    return;
+                }
+                const players = this.getSpecComparisonPlayers(spec);
+                this.closeSpecLaneDetail();
+                this.$set(this, "specPlayerCompareModal", {
+                    spec: spec,
+                    title: spec.label + " Player Comparison",
+                    subtitle: "Players are ordered by total visible contribution across all lanes for this fight. This view mirrors Analysis comparison cards without selection toggles.",
+                    players: players,
+                });
+                this.$forceUpdate();
+            },
+            closeSpecPlayerCompare: function() {
+                this.$set(this, "specPlayerCompareModal", null);
+                this.$forceUpdate();
+            },
+            getOverviewEvaluationPlayers: function() {
+                const analysis = typeof crData !== "undefined" && crData && crData.analysis ? crData.analysis : null;
+                const evaluations = analysis && analysis.playerEvaluations ? analysis.playerEvaluations : null;
+                if (!evaluations || !logData || !logData.players) {
+                    return [];
+                }
+                return Array.from(logData.players || [])
+                    .map((player, index) => ({
+                        playerIndex: index,
+                        name: player.name,
+                        account: player.acc || player.account || "",
+                        profession: player.profession || "",
+                        icon: player.icon || "",
+                        evaluation: evaluations[player.uniqueID] || null,
+                    }))
+                    .filter(player => !!player.evaluation);
+            },
+            getEvaluationLaneByKey: function(evaluation, laneKey) {
+                if (!evaluation || !evaluation.lanes) {
+                    return null;
+                }
+                return evaluation.lanes.find(lane => lane.key === laneKey) || null;
+            },
+            getOverviewStandoutEntriesForLane: function(laneKey) {
+                const players = this.getOverviewEvaluationPlayers()
+                    .map(player => {
+                        const lane = this.getEvaluationLaneByKey(player.evaluation, laneKey);
+                        if (!lane) {
+                            return null;
+                        }
+                        return {
+                            playerIndex: player.playerIndex,
+                            name: player.name,
+                            account: player.account,
+                            profession: player.profession,
+                            icon: player.icon,
+                            roleLabel: this.formatPercent(lane.sharePercent) + (laneKey === "pressure"
+                                ? " squad share down contribution"
+                                : " squad share"),
+                            whyLine: lane.evidenceLine,
+                            evidenceTags: [
+                                lane.rateBand,
+                                lane.windowsTotal > 0 ? (lane.windowsHit + "/" + lane.windowsTotal + " " + lane.windowLabel) : "",
+                            ].filter(tag => !!tag),
+                            strengthPercent: lane.strengthPercent || 0,
+                            sharePercent: lane.sharePercent || 0,
+                            windowsHit: lane.windowsHit || 0,
+                        };
+                    })
+                    .filter(entry => !!entry);
+                return players
+                    .sort((left, right) => {
+                        if (right.strengthPercent !== left.strengthPercent) {
+                            return right.strengthPercent - left.strengthPercent;
+                        }
+                        if (right.sharePercent !== left.sharePercent) {
+                            return right.sharePercent - left.sharePercent;
+                        }
+                        if (right.windowsHit !== left.windowsHit) {
+                            return right.windowsHit - left.windowsHit;
+                        }
+                        return (left.name || "").localeCompare(right.name || "");
+                    })
+                    .slice(0, 3);
+            },
+            getOverallImpactStandoutEntries: function() {
+                return this.getOverviewEvaluationPlayers()
+                    .map(player => {
+                        const lanes = player.evaluation && player.evaluation.lanes ? player.evaluation.lanes : [];
+                        const totalContribution = lanes.reduce((total, lane) => total + (lane && lane.strengthPercent ? lane.strengthPercent : 0), 0);
+                        const topLanes = [...lanes]
+                            .sort((left, right) => {
+                                if ((right.strengthPercent || 0) !== (left.strengthPercent || 0)) {
+                                    return (right.strengthPercent || 0) - (left.strengthPercent || 0);
+                                }
+                                return (right.sharePercent || 0) - (left.sharePercent || 0);
+                            })
+                            .slice(0, 2)
+                            .map(lane => lane.label);
+                        return {
+                            playerIndex: player.playerIndex,
+                            name: player.name,
+                            account: player.account,
+                            profession: player.profession,
+                            icon: player.icon,
+                            roleLabel: this.round1(totalContribution) + " total lane signal",
+                            whyLine: player.evaluation.fitSummary || player.evaluation.contributionProfile || "",
+                            evidenceTags: topLanes,
+                            totalContribution: totalContribution,
+                            topLaneStrength: lanes.length > 0 ? (lanes[0].strengthPercent || 0) : 0,
+                        };
+                    })
+                    .sort((left, right) => {
+                        if (right.totalContribution !== left.totalContribution) {
+                            return right.totalContribution - left.totalContribution;
+                        }
+                        if (right.topLaneStrength !== left.topLaneStrength) {
+                            return right.topLaneStrength - left.topLaneStrength;
+                        }
+                        return (left.name || "").localeCompare(right.name || "");
+                    })
+                    .slice(0, 3);
             },
             getExecutionMetricWeightLabel: function(pillar) {
                 if (!pillar || !pillar.metricCount) {
@@ -1144,8 +1479,64 @@
                     "wvw-summary-table-value-lead": (side === "squad" && squadLead) || (side === "enemy" && !squadLead),
                 };
             },
-            openPlayerSummary: function(playerIndex) {
-                this.$emit("select-player", playerIndex);
+            saveStatisticsSummaryScrollPosition: function(anchorId) {
+                if (typeof window === "undefined") {
+                    return;
+                }
+                const scrollTop = window.pageYOffset
+                    || document.documentElement.scrollTop
+                    || document.body.scrollTop
+                    || 0;
+                window.pendingStatisticsSummaryScrollTop = scrollTop;
+                window.pendingStatisticsSummaryScrollAnchorId = null;
+                window.pendingStatisticsSummaryScrollAnchorOffset = null;
+                if (anchorId) {
+                    const anchor = document.getElementById(anchorId);
+                    if (anchor && anchor.getBoundingClientRect) {
+                        const anchorTop = anchor.getBoundingClientRect().top + scrollTop;
+                        window.pendingStatisticsSummaryScrollAnchorId = anchorId;
+                        window.pendingStatisticsSummaryScrollAnchorOffset = scrollTop - anchorTop;
+                    }
+                }
+            },
+            openPlayerSummary: function(playerIndex, anchorId) {
+                const player = logData && logData.players ? logData.players[playerIndex] : null;
+                if (!player) {
+                    this.$emit("select-player", playerIndex);
+                    return;
+                }
+                this.saveStatisticsSummaryScrollPosition(anchorId);
+                if (typeof getCombatReplayAnalysisNavigationState === "function") {
+                    const navigationState = getCombatReplayAnalysisNavigationState();
+                    navigationState.overviewMode = 6;
+                    navigationState.selectedActorId = player.uniqueID;
+                    navigationState.stickySelectedActorId = player.uniqueID;
+                }
+                if (typeof window !== "undefined") {
+                    window.pendingCombatReplayAnalysisPlayerId = player.uniqueID;
+                }
+                if (typeof reactiveAnimationData !== "undefined" && reactiveAnimationData) {
+                    reactiveAnimationData.selectedActorID = player.uniqueID;
+                }
+                this.$root.mode = 2;
+                this.$root.$nextTick(() => {
+                    window.scrollTo(0, 0);
+                    const tryNavigate = (remainingAttempts) => {
+                        const combatReplayUI = this.$root && this.$root.$refs ? this.$root.$refs.combatReplayUI : null;
+                        if (combatReplayUI && combatReplayUI.navigateToAnalysisPlayer) {
+                            combatReplayUI.navigateToAnalysisPlayer(player.uniqueID);
+                            return;
+                        }
+                        if (remainingAttempts > 0) {
+                            setTimeout(() => {
+                                tryNavigate(remainingAttempts - 1);
+                            }, 50);
+                        }
+                    };
+                    setTimeout(() => {
+                        tryNavigate(40);
+                    }, 0);
+                });
             },
             openSupportSummary: function(playerIndex) {
                 this.$emit("select-player-support", playerIndex);
@@ -1490,6 +1881,7 @@
                     return;
                 }
                 const commanderId = this.getAnalysisCommanderId();
+                this.saveStatisticsSummaryScrollPosition();
                 this.$root.mode = 2;
                 this.$root.$nextTick(function() {
                     window.scrollTo(0, 0);
@@ -1534,6 +1926,45 @@
             },
             summary: function() {
                 return this.phase.wvwSummary;
+            },
+            overviewStandoutCards: function() {
+                const cards = [];
+                const overallEntries = this.getOverallImpactStandoutEntries();
+                if (overallEntries.length > 0) {
+                    cards.push({
+                        key: "overallImpact",
+                        label: "Overall Impact",
+                        detail: "Top total visible contribution across all replay contribution lanes in this fight.",
+                        entries: overallEntries,
+                    });
+                }
+                const laneCards = [
+                    { key: "pressure", label: "Pressure", detail: "Top pre-down pressure on live targets before enemy players fell." },
+                    { key: "conversion", label: "Conversion", detail: "Top visible contribution to turning enemy downs into kills." },
+                    { key: "strip", label: "Strip", detail: "Top boon removal timed into pressure and conversion windows." },
+                    { key: "control", label: "Control", detail: "Top effective crowd control and control-condition disruption." },
+                    { key: "boonSupport", label: "Boon Support", detail: "Top offensive and defensive boon support in key windows." },
+                    { key: "recovery", label: "Recovery", detail: "Top cleanses, healing, and barrier during enemy pressure." },
+                    { key: "rez", label: "Rez", detail: "Top help on successful ally recoveries after downstate." },
+                ];
+                laneCards.forEach(card => {
+                    const entries = this.getOverviewStandoutEntriesForLane(card.key);
+                    if (entries.length > 0) {
+                        cards.push({
+                            key: card.key,
+                            label: card.label,
+                            detail: card.detail,
+                            entries: entries,
+                        });
+                    }
+                });
+                return cards;
+            },
+            overviewStandoutsSummary: function() {
+                if (this.overviewStandoutCards.length === 0) {
+                    return "";
+                }
+                return "Top 3 players by replay-visible contribution lane, plus overall impact.";
             },
             fightDemand: function() {
                 const analysis = typeof crData !== "undefined" && crData && crData.analysis ? crData.analysis : null;

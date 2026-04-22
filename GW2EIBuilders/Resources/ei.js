@@ -227,6 +227,85 @@ function mainLoad() {
             reactiveLogdata: reactiveLogdata
         },
         methods: {
+            getWindowScrollTop: function () {
+                return window.pageYOffset
+                    || document.documentElement.scrollTop
+                    || document.body.scrollTop
+                    || 0;
+            },
+            getElementDocumentTop: function (element) {
+                if (!element || typeof element.getBoundingClientRect !== "function") {
+                    return null;
+                }
+                return element.getBoundingClientRect().top + this.getWindowScrollTop();
+            },
+            restorePendingStatisticsSummaryScroll: function () {
+                const pendingScrollTop = typeof window !== "undefined" ? window.pendingStatisticsSummaryScrollTop : null;
+                if (pendingScrollTop == null) {
+                    return;
+                }
+                this.$nextTick(() => {
+                    const applyScroll = (remainingAttempts) => {
+                        const mainView = this.$refs ? this.$refs.mainView : null;
+                        if (!mainView || mainView.tab !== 8) {
+                            if (remainingAttempts > 0) {
+                                setTimeout(() => {
+                                    applyScroll(remainingAttempts - 1);
+                                }, 50);
+                            }
+                            return;
+                        }
+                        const anchorId = window.pendingStatisticsSummaryScrollAnchorId;
+                        const anchorOffset = window.pendingStatisticsSummaryScrollAnchorOffset;
+                        let desiredScrollTop = pendingScrollTop;
+                        if (anchorId) {
+                            const anchor = document.getElementById(anchorId);
+                            if (!anchor) {
+                                if (remainingAttempts > 0) {
+                                    setTimeout(() => {
+                                        applyScroll(remainingAttempts - 1);
+                                    }, 50);
+                                }
+                                return;
+                            }
+                            const anchorTop = this.getElementDocumentTop(anchor);
+                            if (anchorTop != null) {
+                                desiredScrollTop = anchorTop + (Number(anchorOffset) || 0);
+                            }
+                        }
+                        const maxScrollTop = Math.max(
+                            (document.documentElement ? document.documentElement.scrollHeight : 0),
+                            (document.body ? document.body.scrollHeight : 0)
+                        ) - window.innerHeight;
+                        if (maxScrollTop + 4 < desiredScrollTop && remainingAttempts > 0) {
+                            setTimeout(() => {
+                                applyScroll(remainingAttempts - 1);
+                            }, 50);
+                            return;
+                        }
+                        const targetScrollTop = Math.max(0, Math.min(desiredScrollTop, maxScrollTop));
+                        window.scrollTo(0, targetScrollTop);
+                        if (remainingAttempts > 0 && Math.abs(this.getWindowScrollTop() - targetScrollTop) > 2) {
+                            setTimeout(() => {
+                                applyScroll(remainingAttempts - 1);
+                            }, 50);
+                            return;
+                        }
+                        if (remainingAttempts > 0 && maxScrollTop + 4 < desiredScrollTop) {
+                            setTimeout(() => {
+                                applyScroll(remainingAttempts - 1);
+                            }, 50);
+                            return;
+                        }
+                        window.pendingStatisticsSummaryScrollTop = null;
+                        window.pendingStatisticsSummaryScrollAnchorId = null;
+                        window.pendingStatisticsSummaryScrollAnchorOffset = null;
+                    };
+                    setTimeout(() => {
+                        applyScroll(20);
+                    }, 0);
+                });
+            },
             switchTheme: function (state) {
                 if (state === this.light) {
                     return;
@@ -277,6 +356,13 @@ function mainLoad() {
             },
             UIIcons: function () {
                 return UIIcons;
+            }
+        },
+        watch: {
+            mode: function (newMode) {
+                if (newMode === 0) {
+                    this.restorePendingStatisticsSummaryScroll();
+                }
             }
         },
         mounted() {

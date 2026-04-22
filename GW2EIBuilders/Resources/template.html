@@ -107,7 +107,7 @@
         <div>
             <keep-alive>
                 <main-view-component v-if="mode === 0" ref="mainView" :key="'main-view'" :light="light"></main-view-component>
-                <combat-replay-ui-component v-if="mode === 1 || mode === 2" :mode="mode" :analysisview="mode === 2" :key="'combat-replay-workspace'" :light="light"></combat-replay-ui-component>
+                <combat-replay-ui-component v-if="mode === 1 || mode === 2" ref="combatReplayUI" :mode="mode" :analysisview="mode === 2" :key="'combat-replay-workspace'" :light="light"></combat-replay-ui-component>
                 <healing-extension-view-component v-if="mode === 3" ref="healingExtensionView" :mode="mode" :key="'healing-extension'" :light="light"></healing-extension-view-component>
             </keep-alive>
             <div v-show="mode === 3 && !healingExt" class="mt-3 mb-3">

@@ -608,6 +608,7 @@ internal class CombatReplaySpecCapabilityDto
     public string Key { get; set; } = "";
     public string Label { get; set; } = "";
     public string Icon { get; set; } = "";
+    public List<int> PlayerIds { get; set; } = [];
     public int PlayerCount { get; set; }
     public double ActiveSharePercent { get; set; }
     public string FitSummary { get; set; } = "";
@@ -630,6 +631,10 @@ internal class CombatReplaySpecCapabilityLaneDto
     public string RateBand { get; set; } = "";
     public string DependencyLabel { get; set; } = "";
     public string EvidenceLine { get; set; } = "";
+    public bool IsInteractive { get; set; }
+    public string DrilldownTitle { get; set; } = "";
+    public string DrilldownSubtitle { get; set; } = "";
+    public List<CombatReplayPlayerEvaluationDetailSectionDto> DetailSections { get; set; } = [];
 }
 
 internal class CombatReplayFightDemandDto
@@ -774,6 +779,8 @@ internal class CombatReplayPlayerEvaluationAggregate
     public int KeyWindowsTotal { get; set; }
     public List<CombatReplayPlayerEvaluationDetailEntryDto> EffectiveCrowdControlSources { get; set; } = [];
     public List<CombatReplayPlayerEvaluationDetailEntryDto> ControlConditionSources { get; set; } = [];
+    public Dictionary<long, double> OffensiveBoonSupportByBuff { get; set; } = [];
+    public Dictionary<long, double> DefensiveBoonSupportByBuff { get; set; } = [];
 }
 
 internal class CombatReplayPlayerEvaluationMaximums
@@ -970,7 +977,11 @@ internal static class CombatReplayAnalysisBuilder
         double TopContributorSharePercent,
         string RateBand,
         string DependencyLabel,
-        string EvidenceLine);
+        string EvidenceLine,
+        bool IsInteractive,
+        string DrilldownTitle,
+        string DrilldownSubtitle,
+        List<CombatReplayPlayerEvaluationDetailSectionDto> DetailSections);
     private readonly record struct DownOutcomeInfo(string Outcome, long? TransitionTime);
     private readonly record struct DamageWindowSummary(
         int TotalDamageTaken,
@@ -1934,8 +1945,9 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayPlayerEvaluationTotals totals = BuildPlayerEvaluationTotals(aggregates, log.CombatData.HasEXTHealing, log.CombatData.HasEXTBarrier);
         Dictionary<int, CombatReplayPlayerEvaluationDto> playerEvaluations = aggregates.ToDictionary(
             aggregate => aggregate.PlayerId,
-            aggregate => BuildPlayerEvaluationDto(aggregate, maximums, totals, fightDemand, log.CombatData.HasEXTHealing, log.CombatData.HasEXTBarrier));
+            aggregate => BuildPlayerEvaluationDto(log, aggregate, maximums, totals, fightDemand, log.CombatData.HasEXTHealing, log.CombatData.HasEXTBarrier));
         List<CombatReplaySpecCapabilityDto> specCapabilities = BuildSpecCapabilities(
+            log,
             squadPlayers,
             aggregates,
             totals,
@@ -1992,6 +2004,8 @@ internal static class CombatReplayAnalysisBuilder
         Dictionary<long, double> controlConditionSourceContribution = ComputeConditionContributionByBuff(log, player, hostileTargets, conversionWindows, ControlConditionBuffIds);
         Dictionary<EvaluationWindow, double> offensiveBoonContribution = ComputeBoonSupportContributionByWindow(log, player, squadPlayers, offensiveConditionWindows, OffensiveSupportBoonIds);
         Dictionary<EvaluationWindow, double> defensiveBoonContribution = ComputeBoonSupportContributionByWindow(log, player, squadPlayers, defensiveResponseWindows, DefensiveSupportBoonIds);
+        Dictionary<long, double> offensiveBoonContributionByBuff = ComputeBoonSupportContributionByBuff(log, player, squadPlayers, offensiveConditionWindows, OffensiveSupportBoonIds);
+        Dictionary<long, double> defensiveBoonContributionByBuff = ComputeBoonSupportContributionByBuff(log, player, squadPlayers, defensiveResponseWindows, DefensiveSupportBoonIds);
         List<EvaluationWindow> boonWindows = MergeEvaluationWindows([.. offensiveConditionWindows, .. defensiveResponseWindows]);
         Dictionary<EvaluationWindow, double> mergedBoonContribution = ComputeBoonSupportContributionByWindow(
             log,
@@ -2079,10 +2093,13 @@ internal static class CombatReplayAnalysisBuilder
             KeyWindowsTotal = keyWindows.Count,
             EffectiveCrowdControlSources = BuildEffectiveCrowdControlSourceEntries(effectiveCrowdControlEvents),
             ControlConditionSources = BuildConditionSourceEntries(log, controlConditionSourceContribution),
+            OffensiveBoonSupportByBuff = offensiveBoonContributionByBuff,
+            DefensiveBoonSupportByBuff = defensiveBoonContributionByBuff,
         };
     }
 
     private static CombatReplayPlayerEvaluationDto BuildPlayerEvaluationDto(
+        ParsedEvtcLog log,
         CombatReplayPlayerEvaluationAggregate aggregate,
         CombatReplayPlayerEvaluationMaximums maximums,
         CombatReplayPlayerEvaluationTotals totals,
@@ -2096,7 +2113,7 @@ internal static class CombatReplayAnalysisBuilder
             BuildConversionLaneSnapshot(aggregate, maximums, totals),
             BuildStripLaneSnapshot(aggregate, maximums, totals),
             BuildControlLaneSnapshot(aggregate, maximums, totals),
-            BuildBoonSupportLaneSnapshot(aggregate, maximums, totals),
+            BuildBoonSupportLaneSnapshot(log, aggregate, maximums, totals),
             BuildRecoveryLaneSnapshot(aggregate, maximums, totals, hasHealingData, hasBarrierData),
             BuildRezLaneSnapshot(aggregate, maximums, totals),
         ];
@@ -2138,6 +2155,7 @@ internal static class CombatReplayAnalysisBuilder
     }
 
     private static List<CombatReplaySpecCapabilityDto> BuildSpecCapabilities(
+        ParsedEvtcLog log,
         IReadOnlyList<SingleActor> squadPlayers,
         IReadOnlyList<CombatReplayPlayerEvaluationAggregate> playerAggregates,
         CombatReplayPlayerEvaluationTotals totals,
@@ -2176,7 +2194,7 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayPlayerEvaluationMaximums maximums = BuildPlayerEvaluationMaximums([.. specAggregates.Select(spec => spec.Aggregate)]);
         Dictionary<string, double> perPlayerMaximums = BuildSpecPerPlayerMaximums(specAggregates, totals, hasHealingData, hasBarrierData);
         return [.. specAggregates
-            .Select(spec => BuildSpecCapabilityDto(spec, maximums, totals, perPlayerMaximums, totalActiveSeconds, fightDemand, hasHealingData, hasBarrierData))
+            .Select(spec => BuildSpecCapabilityDto(log, spec, maximums, totals, perPlayerMaximums, totalActiveSeconds, fightDemand, hasHealingData, hasBarrierData))
             .OrderByDescending(spec => spec.ActiveSharePercent)
             .ThenBy(spec => spec.Label, StringComparer.OrdinalIgnoreCase)];
     }
@@ -2243,10 +2261,13 @@ internal static class CombatReplayAnalysisBuilder
             CombatSeconds = Math.Round(players.Sum(player => player.CombatSeconds), 1),
             KeyWindowsHit = players.Max(player => player.KeyWindowsHit),
             KeyWindowsTotal = players.Max(player => player.KeyWindowsTotal),
+            OffensiveBoonSupportByBuff = MergeContributionDictionaries(players.Select(player => player.OffensiveBoonSupportByBuff)),
+            DefensiveBoonSupportByBuff = MergeContributionDictionaries(players.Select(player => player.DefensiveBoonSupportByBuff)),
         };
     }
 
     private static CombatReplaySpecCapabilityDto BuildSpecCapabilityDto(
+        ParsedEvtcLog log,
         CombatReplaySpecCapabilityAggregate spec,
         CombatReplayPlayerEvaluationMaximums maximums,
         CombatReplayPlayerEvaluationTotals totals,
@@ -2263,7 +2284,7 @@ internal static class CombatReplayAnalysisBuilder
             BuildSpecConversionLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
             BuildSpecStripLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
             BuildSpecControlLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
-            BuildSpecBoonSupportLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
+            BuildSpecBoonSupportLaneSnapshot(log, spec, maximums, totals, perPlayerMaximums, activeSharePercent),
             BuildSpecRecoveryLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent, hasHealingData, hasBarrierData),
             BuildSpecRezLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
         ];
@@ -2276,6 +2297,7 @@ internal static class CombatReplayAnalysisBuilder
             Key = spec.Key,
             Label = spec.Label,
             Icon = spec.Icon,
+            PlayerIds = [.. spec.Players.Select(player => player.PlayerId)],
             PlayerCount = spec.PlayerCount,
             ActiveSharePercent = activeSharePercent,
             FitSummary = BuildSpecFitSummary(laneSnapshots, fightDemand),
@@ -2294,6 +2316,10 @@ internal static class CombatReplayAnalysisBuilder
                 RateBand = snapshot.RateBand,
                 DependencyLabel = snapshot.DependencyLabel,
                 EvidenceLine = snapshot.EvidenceLine,
+                IsInteractive = snapshot.IsInteractive,
+                DrilldownTitle = snapshot.DrilldownTitle,
+                DrilldownSubtitle = snapshot.DrilldownSubtitle,
+                DetailSections = snapshot.DetailSections,
             })],
             EvidenceSnapshot = BuildSpecEvidenceSnapshot(spec, laneSnapshots),
         };
@@ -2368,13 +2394,14 @@ internal static class CombatReplayAnalysisBuilder
     }
 
     private static SpecLaneSnapshot BuildSpecBoonSupportLaneSnapshot(
+        ParsedEvtcLog log,
         CombatReplaySpecCapabilityAggregate spec,
         CombatReplayPlayerEvaluationMaximums maximums,
         CombatReplayPlayerEvaluationTotals totals,
         IReadOnlyDictionary<string, double> perPlayerMaximums,
         double activeSharePercent)
     {
-        PlayerLaneSnapshot baseLane = BuildBoonSupportLaneSnapshot(spec.Aggregate, maximums, totals);
+        PlayerLaneSnapshot baseLane = BuildBoonSupportLaneSnapshot(log, spec.Aggregate, maximums, totals);
         string boonLean = spec.Aggregate.DefensiveBoonSupport >= spec.Aggregate.OffensiveBoonSupport ? "Defensive" : "Offensive";
         return BuildSpecLaneSnapshot(
             spec,
@@ -2382,7 +2409,11 @@ internal static class CombatReplayAnalysisBuilder
             activeSharePercent,
             aggregate => GetSpecBoonSupportRawAmount(aggregate),
             perPlayerMaximums.GetValueOrDefault("boonSupport"),
-            $"{boonLean} boon coverage was most visible, with {FormatWholeNumber((long)Math.Round(spec.Aggregate.OffensiveBoonSupport + spec.Aggregate.DefensiveBoonSupport))} total boon-seconds in key windows.");
+            $"{boonLean} boon coverage was most visible, with {FormatWholeNumber((long)Math.Round(spec.Aggregate.OffensiveBoonSupport + spec.Aggregate.DefensiveBoonSupport))} total boon-seconds in key windows.",
+            true,
+            $"{spec.Label} Boon Support Detail",
+            "Shows offensive and defensive boon-seconds by boon for this spec in the fight's key windows. Stack boons stay labeled as stack-seconds in the breakdown.",
+            BuildBoonSupportDetailSections(log, spec.Aggregate));
     }
 
     private static SpecLaneSnapshot BuildSpecRecoveryLaneSnapshot(
@@ -2429,7 +2460,11 @@ internal static class CombatReplayAnalysisBuilder
         double activeSharePercent,
         Func<CombatReplayPlayerEvaluationAggregate, double> rawSelector,
         double averagePerPlayerMaximum,
-        string evidenceLine)
+        string evidenceLine,
+        bool isInteractive = false,
+        string? drilldownTitle = null,
+        string? drilldownSubtitle = null,
+        List<CombatReplayPlayerEvaluationDetailSectionDto>? detailSections = null)
     {
         double rawAmount = Math.Max(rawSelector(spec.Aggregate), 0.0);
         int playersContributing = CountPlayersContributing(spec.Players, rawSelector);
@@ -2448,7 +2483,11 @@ internal static class CombatReplayAnalysisBuilder
             topContributorSharePercent,
             GetRateBand(strengthPercent),
             dependencyLabel,
-            evidenceLine);
+            evidenceLine,
+            isInteractive,
+            drilldownTitle ?? "",
+            drilldownSubtitle ?? "",
+            detailSections ?? []);
     }
 
     private static string BuildSpecFitSummary(
@@ -2543,7 +2582,11 @@ internal static class CombatReplayAnalysisBuilder
         {
             return $"{dependencyCandidates[0].Lane.Label} value was concentrated in one player.";
         }
-        return $"{dependencyCandidates[0].Lane.Label} coverage leaned heavily on one player.";
+        if (dependencyCandidates[0].Score >= 45.0)
+        {
+            return $"{dependencyCandidates[0].Lane.Label} coverage leaned heavily on a smaller subset of players.";
+        }
+        return $"{dependencyCandidates[0].Lane.Label} value had some concentration, but coverage stayed fairly broad.";
     }
 
     private static Dictionary<string, double> BuildSpecPerPlayerMaximums(
@@ -2972,13 +3015,29 @@ internal static class CombatReplayAnalysisBuilder
             double windowTotal = 0.0;
             foreach (SingleActor recipient in recipients)
             {
-                IReadOnlyDictionary<long, BuffVolumeByActorStatistics> activeBuffVolumes = recipient.GetActiveBuffVolumesDictionary(log, window.Start, window.End);
+                if (recipient.UniqueID == provider.UniqueID)
+                {
+                    continue;
+                }
+
                 foreach (long boonId in boonIds)
                 {
-                    if (activeBuffVolumes.TryGetValue(boonId, out BuffVolumeByActorStatistics? stats) &&
-                        stats.IncomingBy.TryGetValue(provider, out double amount))
+                    if (!log.Buffs.BuffsByIDs.ContainsKey(boonId))
                     {
-                        windowTotal += amount;
+                        continue;
+                    }
+
+                    foreach (AbstractBuffApplyEvent applyEvent in recipient.GetBuffApplyEventsOnByID(log, window.Start, window.End, boonId, provider))
+                    {
+                        switch (applyEvent)
+                        {
+                            case BuffApplyEvent buffApplyEvent when buffApplyEvent.AppliedDuration < int.MaxValue:
+                                windowTotal += buffApplyEvent.AppliedDuration / 1000.0;
+                                break;
+                            case BuffExtensionEvent buffExtensionEvent:
+                                windowTotal += buffExtensionEvent.ExtendedDuration / 1000.0;
+                                break;
+                        }
                     }
                 }
             }
@@ -2989,6 +3048,102 @@ internal static class CombatReplayAnalysisBuilder
             }
         }
         return result;
+    }
+
+    private static Dictionary<long, double> ComputeBoonSupportContributionByBuff(
+        ParsedEvtcLog log,
+        SingleActor provider,
+        IReadOnlyList<SingleActor> recipients,
+        IReadOnlyList<EvaluationWindow> windows,
+        IReadOnlyList<long> boonIds)
+    {
+        var result = boonIds.ToDictionary(boonId => boonId, _ => 0.0);
+        foreach (EvaluationWindow window in windows)
+        {
+            foreach (SingleActor recipient in recipients)
+            {
+                if (recipient.UniqueID == provider.UniqueID)
+                {
+                    continue;
+                }
+
+                foreach (long boonId in boonIds)
+                {
+                    if (!log.Buffs.BuffsByIDs.ContainsKey(boonId))
+                    {
+                        continue;
+                    }
+
+                    foreach (AbstractBuffApplyEvent applyEvent in recipient.GetBuffApplyEventsOnByID(log, window.Start, window.End, boonId, provider))
+                    {
+                        switch (applyEvent)
+                        {
+                            case BuffApplyEvent buffApplyEvent when buffApplyEvent.AppliedDuration < int.MaxValue:
+                                result[boonId] += buffApplyEvent.AppliedDuration / 1000.0;
+                                break;
+                            case BuffExtensionEvent buffExtensionEvent:
+                                result[boonId] += buffExtensionEvent.ExtendedDuration / 1000.0;
+                                break;
+                        }
+                    }
+                }
+            }
+        }
+
+        return result
+            .Where(pair => pair.Value > 0.0)
+            .ToDictionary(pair => pair.Key, pair => Math.Round(pair.Value, 1));
+    }
+
+    private static Dictionary<long, double> MergeContributionDictionaries(IEnumerable<IReadOnlyDictionary<long, double>> dictionaries)
+    {
+        var result = new Dictionary<long, double>();
+        foreach (IReadOnlyDictionary<long, double> dictionary in dictionaries)
+        {
+            foreach (KeyValuePair<long, double> pair in dictionary)
+            {
+                result[pair.Key] = result.TryGetValue(pair.Key, out double existing)
+                    ? Math.Round(existing + pair.Value, 1)
+                    : Math.Round(pair.Value, 1);
+            }
+        }
+        return result;
+    }
+
+    private static List<CombatReplayPlayerEvaluationDetailSectionDto> BuildBoonSupportDetailSections(
+        ParsedEvtcLog log,
+        CombatReplayPlayerEvaluationAggregate aggregate)
+    {
+        var sections = new List<CombatReplayPlayerEvaluationDetailSectionDto>();
+        if (aggregate.OffensiveBoonSupportByBuff.Count > 0)
+        {
+            sections.Add(BuildDetailSection(
+                "Offensive Boon Breakdown",
+                BuildBoonSupportDetailEntries(log, aggregate.OffensiveBoonSupportByBuff)));
+        }
+        if (aggregate.DefensiveBoonSupportByBuff.Count > 0)
+        {
+            sections.Add(BuildDetailSection(
+                "Defensive Boon Breakdown",
+                BuildBoonSupportDetailEntries(log, aggregate.DefensiveBoonSupportByBuff)));
+        }
+        return sections;
+    }
+
+    private static IEnumerable<CombatReplayPlayerEvaluationDetailEntryDto> BuildBoonSupportDetailEntries(
+        ParsedEvtcLog log,
+        IReadOnlyDictionary<long, double> boonSupportByBuff)
+    {
+        return boonSupportByBuff
+            .Where(pair => log.Buffs.BuffsByIDs.ContainsKey(pair.Key))
+            .OrderByDescending(pair => pair.Value)
+            .ThenBy(pair => log.Buffs.BuffsByIDs[pair.Key].Name, StringComparer.OrdinalIgnoreCase)
+            .Select(pair =>
+            {
+                Buff buff = log.Buffs.BuffsByIDs[pair.Key];
+                string unit = buff.Type == Buff.BuffType.Intensity ? "stack-seconds" : "seconds";
+                return BuildDetailEntry(buff.Name, FormatOneDecimal(pair.Value), unit);
+            });
     }
 
     private static int CountKeyContributionWindows(
@@ -3018,8 +3173,8 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayPlayerEvaluationTotals totals)
     {
         double strengthPercent = ComputeWeightedScore(
-            (NormalizeValue(aggregate.LiveTargetDamage, maximums.LiveTargetDamage), 0.34),
-            (NormalizeValue(aggregate.EnemyDownContributionDamage, maximums.EnemyDownContributionDamage), maximums.EnemyDownContributionDamage > 0.0 ? 0.28 : 0.0),
+            (NormalizeValue(aggregate.LiveTargetDamage, maximums.LiveTargetDamage), 0.31),
+            (NormalizeValue(aggregate.EnemyDownContributionDamage, maximums.EnemyDownContributionDamage), maximums.EnemyDownContributionDamage > 0.0 ? 0.31 : 0.0),
             (NormalizeValue(aggregate.DownContribution, maximums.DownContribution), maximums.DownContribution > 0 ? 0.14 : 0.0),
             (NormalizeValue(aggregate.AverageTopTargetContribution, maximums.AverageTopTargetContribution), 0.14),
             (NormalizeValue(aggregate.OffensiveConditionPressure, maximums.OffensiveConditionPressure), maximums.OffensiveConditionPressure > 0.0 ? 0.10 : 0.0));
@@ -3138,10 +3293,10 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayPlayerEvaluationTotals totals)
     {
         double strengthPercent = ComputeWeightedScore(
-            (NormalizeValue(aggregate.CrowdControlDownContribution, maximums.CrowdControlDownContribution), maximums.CrowdControlDownContribution > 0 ? 0.34 : 0.0),
-            (NormalizeValue(aggregate.EffectiveCrowdControlCount, maximums.EffectiveCrowdControlCount), 0.28),
-            (NormalizeValue(aggregate.EffectiveCrowdControlDuration, maximums.EffectiveCrowdControlDuration), maximums.EffectiveCrowdControlDuration > 0.0 ? 0.20 : 0.0),
-            (NormalizeValue(aggregate.ControlConditionPressure, maximums.ControlConditionPressure), maximums.ControlConditionPressure > 0.0 ? 0.08 : 0.0),
+            (NormalizeValue(aggregate.CrowdControlDownContribution, maximums.CrowdControlDownContribution), maximums.CrowdControlDownContribution > 0 ? 0.25 : 0.0),
+            (NormalizeValue(aggregate.EffectiveCrowdControlCount, maximums.EffectiveCrowdControlCount), 0.20),
+            (NormalizeValue(aggregate.EffectiveCrowdControlDuration, maximums.EffectiveCrowdControlDuration), maximums.EffectiveCrowdControlDuration > 0.0 ? 0.15 : 0.0),
+            (NormalizeValue(aggregate.ControlConditionPressure, maximums.ControlConditionPressure), maximums.ControlConditionPressure > 0.0 ? 0.30 : 0.0),
             (NormalizeValue(aggregate.ControlContributionWindows, maximums.ControlContributionWindows), 0.10));
         double sharePercent = totals.CrowdControlDownContribution > 0
             ? aggregate.CrowdControlDownContribution * 100.0 / totals.CrowdControlDownContribution
@@ -3174,6 +3329,7 @@ internal static class CombatReplayAnalysisBuilder
     }
 
     private static PlayerLaneSnapshot BuildBoonSupportLaneSnapshot(
+        ParsedEvtcLog log,
         CombatReplayPlayerEvaluationAggregate aggregate,
         CombatReplayPlayerEvaluationMaximums maximums,
         CombatReplayPlayerEvaluationTotals totals)
@@ -3191,11 +3347,12 @@ internal static class CombatReplayAnalysisBuilder
         [
             BuildDetailSection("Boon Support Metrics",
             [
-                BuildDetailEntry("Total boon support", FormatWholeNumber((long)Math.Round(totalBoonSupport)), "offensive + defensive boon-seconds"),
-                BuildDetailEntry("Offensive boon support", FormatWholeNumber((long)Math.Round(aggregate.OffensiveBoonSupport)), BuildPluralizedLabel(aggregate.OffensiveBoonWindows, "offensive boon window", "offensive boon windows")),
-                BuildDetailEntry("Defensive boon support", FormatWholeNumber((long)Math.Round(aggregate.DefensiveBoonSupport)), BuildPluralizedLabel(aggregate.DefensiveBoonWindows, "defensive boon window", "defensive boon windows"))
+                BuildDetailEntry("Total boon-seconds", FormatWholeNumber((long)Math.Round(totalBoonSupport)), "stack boons stay labeled as stack-seconds in the boon breakdown"),
+                BuildDetailEntry("Offensive boon-seconds", FormatWholeNumber((long)Math.Round(aggregate.OffensiveBoonSupport)), BuildPluralizedLabel(aggregate.OffensiveBoonWindows, "offensive boon window", "offensive boon windows")),
+                BuildDetailEntry("Defensive boon-seconds", FormatWholeNumber((long)Math.Round(aggregate.DefensiveBoonSupport)), BuildPluralizedLabel(aggregate.DefensiveBoonWindows, "defensive boon window", "defensive boon windows"))
             ])
         ];
+        detailSections.AddRange(BuildBoonSupportDetailSections(log, aggregate));
         string boonLean = aggregate.DefensiveBoonSupport >= aggregate.OffensiveBoonSupport ? "defensive" : "offensive";
         return new PlayerLaneSnapshot(
             "boonSupport",
@@ -3209,7 +3366,7 @@ internal static class CombatReplayAnalysisBuilder
             $"{boonLean.Substring(0, 1).ToUpperInvariant()}{boonLean[1..]} boon coverage was most visible, with {FormatWholeNumber((long)Math.Round(totalBoonSupport))} total boon-seconds in key windows.",
             true,
             "Boon Support Detail",
-            "Boon Support tracks offensive and defensive boon-seconds applied in the fight's key windows.",
+            "Boon Support tracks offensive and defensive boon-seconds in the fight's key windows. Stack boons stay labeled as stack-seconds in the boon breakdown.",
             detailSections);
     }
 
