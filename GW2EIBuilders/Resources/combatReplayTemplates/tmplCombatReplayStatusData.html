@@ -3924,29 +3924,75 @@
                     </div>
                     <div v-else class="combat-replay-player-evaluation">
                         <div class="combat-replay-player-evaluation-summary">
-                            <div class="combat-replay-player-evaluation-profile">{{selectedPlayerEvaluation.contributionProfile}}</div>
-                            <div class="combat-replay-player-evaluation-text">{{selectedPlayerEvaluation.keyContributionSummary}}</div>
-                        </div>
-                        <div v-if="selectedPlayerEvaluation.roleMix && selectedPlayerEvaluation.roleMix.length > 0" class="combat-replay-player-evaluation-role-mix">
-                            <div v-for="role in selectedPlayerEvaluation.roleMix" :key="'player-role-mix-' + role.label" class="combat-replay-player-evaluation-role">
-                                <span class="combat-replay-player-evaluation-role-label">{{role.label}}</span>
-                                <span class="combat-replay-player-evaluation-role-value">{{formatPercent(role.percent)}}</span>
+                            <div class="combat-replay-player-evaluation-profile">{{selectedPlayerEvaluation.fitSummary || selectedPlayerEvaluation.contributionProfile}}</div>
+                            <div v-if="selectedPlayerEvaluation.demandFitSummary || selectedPlayerEvaluation.keyContributionSummary" class="combat-replay-player-evaluation-text">
+                                {{selectedPlayerEvaluation.demandFitSummary || selectedPlayerEvaluation.keyContributionSummary}}
                             </div>
                         </div>
-                        <div v-if="selectedPlayerEvaluation.areas && selectedPlayerEvaluation.areas.length > 0" class="combat-replay-wvw-analysis-grid">
+
+                        <div v-if="selectedPlayerEvaluation.confidence" class="combat-replay-player-evaluation-confidence">
+                            <div class="combat-replay-player-evaluation-confidence-header">
+                                <span class="combat-replay-player-evaluation-confidence-badge">{{selectedPlayerEvaluation.confidence.label}} confidence</span>
+                                <span v-if="selectedPlayerEvaluation.confidence.detail" class="combat-replay-player-evaluation-confidence-detail">{{selectedPlayerEvaluation.confidence.detail}}</span>
+                            </div>
+                            <div v-if="selectedPlayerEvaluation.confidence.caveats && selectedPlayerEvaluation.confidence.caveats.length > 0" class="combat-replay-player-evaluation-caveats">
+                                <span v-for="caveat in selectedPlayerEvaluation.confidence.caveats" :key="'player-caveat-' + caveat" class="combat-replay-player-evaluation-caveat">{{caveat}}</span>
+                            </div>
+                        </div>
+
+                        <div v-if="crAnalysis && crAnalysis.fightDemand && crAnalysis.fightDemand.lanes && crAnalysis.fightDemand.lanes.length > 0" class="combat-replay-fight-demand">
+                            <div class="combat-replay-fight-demand-title">Fight Demand</div>
+                            <div class="combat-replay-fight-demand-summary">{{crAnalysis.fightDemand.summary}}</div>
+                            <div class="combat-replay-fight-demand-lanes">
+                                <div v-for="lane in crAnalysis.fightDemand.lanes" :key="'fight-demand-' + lane.key" class="combat-replay-fight-demand-pill">
+                                    <span class="combat-replay-fight-demand-pill-label">{{lane.label}}</span>
+                                    <span class="combat-replay-fight-demand-pill-value">{{lane.demandLabel}}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedPlayerEvaluation.lanes && selectedPlayerEvaluation.lanes.length > 0" class="combat-replay-player-lane-list">
                             <component
-                                v-for="area in selectedPlayerEvaluation.areas"
-                                :key="'player-evaluation-area-' + area.label"
-                                :is="area.isInteractive ? 'button' : 'div'"
-                                :type="area.isInteractive ? 'button' : null"
-                                class="combat-replay-wvw-analysis-metric"
-                                :class="{'combat-replay-wvw-analysis-metric-button': area.isInteractive}"
-                                @click="area.isInteractive ? openPlayerEvaluationAreaDetail(area) : null">
-                                <div class="combat-replay-wvw-analysis-label">{{area.label}}</div>
-                                <div class="combat-replay-wvw-analysis-value">{{area.value}}</div>
-                                <div class="combat-replay-wvw-analysis-detail">{{area.detail}}</div>
-                                <div v-if="area.isInteractive" class="combat-replay-player-evaluation-hint">Click for detail</div>
+                                v-for="lane in selectedPlayerEvaluation.lanes"
+                                :key="'player-evaluation-lane-' + lane.key"
+                                :is="lane.isInteractive ? 'button' : 'div'"
+                                :type="lane.isInteractive ? 'button' : null"
+                                class="combat-replay-player-lane"
+                                :class="{'combat-replay-player-lane-button': lane.isInteractive}"
+                                @click="lane.isInteractive ? openPlayerEvaluationAreaDetail(lane) : null">
+                                <div class="combat-replay-player-lane-header">
+                                    <div class="combat-replay-player-lane-title">{{lane.label}}</div>
+                                    <div class="combat-replay-player-lane-share">{{formatPercent(lane.sharePercent)}} squad share</div>
+                                </div>
+                                <div class="combat-replay-player-lane-chips">
+                                    <span class="combat-replay-player-lane-chip combat-replay-player-lane-chip-strength">{{lane.rateBand}}</span>
+                                </div>
+                                <div class="combat-replay-player-lane-meta">
+                                    <span>{{lane.windowsHit}}/{{lane.windowsTotal}} {{lane.windowLabel}}</span>
+                                </div>
+                                <div class="combat-replay-player-lane-evidence">{{lane.evidenceLine}}</div>
+                                <div v-if="lane.isInteractive" class="combat-replay-player-evaluation-hint">Click for detail</div>
                             </component>
+                        </div>
+
+                        <div v-if="selectedPlayerEvaluation.modifiers && selectedPlayerEvaluation.modifiers.length > 0" class="combat-replay-player-evaluation-modifiers">
+                            <div class="combat-replay-player-evaluation-section-heading">Reliability Context</div>
+                            <div class="combat-replay-player-evaluation-modifier-list">
+                                <div v-for="modifier in selectedPlayerEvaluation.modifiers" :key="'player-modifier-' + modifier.label" class="combat-replay-player-evaluation-modifier">
+                                    <div class="combat-replay-player-evaluation-modifier-header">
+                                        <span class="combat-replay-player-evaluation-modifier-label">{{modifier.label}}</span>
+                                        <span class="combat-replay-player-evaluation-modifier-value">{{modifier.value}}</span>
+                                    </div>
+                                    <div class="combat-replay-player-evaluation-modifier-detail">{{modifier.detail}}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedPlayerEvaluation.evidenceSnapshot && selectedPlayerEvaluation.evidenceSnapshot.length > 0" class="combat-replay-player-evaluation-evidence">
+                            <div class="combat-replay-player-evaluation-section-heading">Evidence Snapshot</div>
+                            <ul class="combat-replay-player-evaluation-evidence-list">
+                                <li v-for="entry in selectedPlayerEvaluation.evidenceSnapshot" :key="'player-evidence-' + entry" class="combat-replay-player-evaluation-evidence-item">{{entry}}</li>
+                            </ul>
                         </div>
                     </div>
                 </div>
@@ -4111,23 +4157,44 @@
                             </div>
                             <div v-else class="combat-replay-player-evaluation combat-replay-player-compare-evaluation">
                                 <div class="combat-replay-player-evaluation-summary">
-                                    <div class="combat-replay-player-evaluation-profile">{{player.evaluation.contributionProfile}}</div>
-                                    <div class="combat-replay-player-evaluation-text">{{player.evaluation.keyContributionSummary}}</div>
-                                </div>
-                                <div v-if="player.evaluation.roleMix && player.evaluation.roleMix.length > 0" class="combat-replay-player-evaluation-role-mix">
-                                    <div v-for="role in player.evaluation.roleMix" :key="'player-compare-role-' + player.uniqueID + '-' + role.label" class="combat-replay-player-evaluation-role">
-                                        <span class="combat-replay-player-evaluation-role-label">{{role.label}}</span>
-                                        <span class="combat-replay-player-evaluation-role-value">{{formatPercent(role.percent)}}</span>
+                                    <div class="combat-replay-player-evaluation-profile">{{player.evaluation.fitSummary || player.evaluation.contributionProfile}}</div>
+                                    <div v-if="player.evaluation.demandFitSummary || player.evaluation.keyContributionSummary" class="combat-replay-player-evaluation-text">
+                                        {{player.evaluation.demandFitSummary || player.evaluation.keyContributionSummary}}
                                     </div>
                                 </div>
-                                <div v-if="player.evaluation.areas && player.evaluation.areas.length > 0" class="combat-replay-wvw-analysis-grid combat-replay-player-compare-area-grid">
+
+                                <div v-if="player.evaluation.confidence" class="combat-replay-player-evaluation-confidence">
+                                    <div class="combat-replay-player-evaluation-confidence-header">
+                                        <span class="combat-replay-player-evaluation-confidence-badge">{{player.evaluation.confidence.label}} confidence</span>
+                                    </div>
+                                </div>
+
+                                <div v-if="player.evaluation.lanes && player.evaluation.lanes.length > 0" class="combat-replay-player-lane-list combat-replay-player-compare-lanes">
                                     <div
-                                        v-for="area in player.evaluation.areas"
-                                        :key="'player-compare-area-' + player.uniqueID + '-' + area.label"
-                                        class="combat-replay-wvw-analysis-metric">
-                                        <div class="combat-replay-wvw-analysis-label">{{area.label}}</div>
-                                        <div class="combat-replay-wvw-analysis-value">{{area.value}}</div>
-                                        <div class="combat-replay-wvw-analysis-detail">{{area.detail}}</div>
+                                        v-for="lane in player.evaluation.lanes.slice(0, 4)"
+                                        :key="'player-compare-lane-' + player.uniqueID + '-' + lane.key"
+                                        class="combat-replay-player-lane">
+                                        <div class="combat-replay-player-lane-header">
+                                            <div class="combat-replay-player-lane-title">{{lane.label}}</div>
+                                            <div class="combat-replay-player-lane-share">{{formatPercent(lane.sharePercent)}}</div>
+                                        </div>
+                                        <div class="combat-replay-player-lane-chips">
+                                            <span class="combat-replay-player-lane-chip combat-replay-player-lane-chip-strength">{{lane.rateBand}}</span>
+                                        </div>
+                                        <div class="combat-replay-player-lane-meta">
+                                            <span>{{lane.windowsHit}}/{{lane.windowsTotal}} {{lane.windowLabel}}</span>
+                                        </div>
+                                        <div class="combat-replay-player-lane-evidence">{{lane.evidenceLine}}</div>
+                                    </div>
+                                </div>
+
+                                <div v-if="player.evaluation.modifiers && player.evaluation.modifiers.length > 0" class="combat-replay-player-evaluation-modifier-list combat-replay-player-compare-modifiers">
+                                    <div v-for="modifier in player.evaluation.modifiers" :key="'player-compare-modifier-' + player.uniqueID + '-' + modifier.label" class="combat-replay-player-evaluation-modifier">
+                                        <div class="combat-replay-player-evaluation-modifier-header">
+                                            <span class="combat-replay-player-evaluation-modifier-label">{{modifier.label}}</span>
+                                            <span class="combat-replay-player-evaluation-modifier-value">{{modifier.value}}</span>
+                                        </div>
+                                        <div class="combat-replay-player-evaluation-modifier-detail">{{modifier.detail}}</div>
                                     </div>
                                 </div>
                             </div>

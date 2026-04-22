@@ -23,7 +23,9 @@ internal class CombatReplayAnalysisDto
     public CombatReplayPositioningAnalysisDto Positioning { get; set; } = new();
     public CombatReplayEventAnalysisDto Events { get; set; } = new();
     public CombatReplayDefenseAnalysisDto Defense { get; set; } = new();
+    public CombatReplayFightDemandDto FightDemand { get; set; } = new();
     public Dictionary<int, CombatReplayPlayerEvaluationDto> PlayerEvaluations { get; set; } = [];
+    public List<CombatReplaySpecCapabilityDto> SpecCapabilities { get; set; } = [];
 }
 
 internal class CombatReplayTeamAnalysisDto
@@ -589,10 +591,92 @@ internal class CombatReplayConditionConversionEventDto
 
 internal class CombatReplayPlayerEvaluationDto
 {
+    public string FitSummary { get; set; } = "";
+    public string DemandFitSummary { get; set; } = "";
+    public CombatReplayContributionConfidenceDto Confidence { get; set; } = new();
+    public List<CombatReplayPlayerContributionLaneDto> Lanes { get; set; } = [];
+    public List<CombatReplayPlayerEvaluationModifierDto> Modifiers { get; set; } = [];
+    public List<string> EvidenceSnapshot { get; set; } = [];
     public string ContributionProfile { get; set; } = "";
     public string KeyContributionSummary { get; set; } = "";
     public List<CombatReplayPlayerRoleMixEntryDto> RoleMix { get; set; } = [];
     public List<CombatReplayPlayerEvaluationAreaDto> Areas { get; set; } = [];
+}
+
+internal class CombatReplaySpecCapabilityDto
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public int PlayerCount { get; set; }
+    public double ActiveSharePercent { get; set; }
+    public string FitSummary { get; set; } = "";
+    public string DemandFitSummary { get; set; } = "";
+    public string DependencySummary { get; set; } = "";
+    public List<CombatReplaySpecCapabilityLaneDto> Lanes { get; set; } = [];
+    public List<string> EvidenceSnapshot { get; set; } = [];
+}
+
+internal class CombatReplaySpecCapabilityLaneDto
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public double StrengthPercent { get; set; }
+    public double SharePercent { get; set; }
+    public double PerSlotEfficiency { get; set; }
+    public int PlayersContributing { get; set; }
+    public int PlayerCount { get; set; }
+    public double TopContributorSharePercent { get; set; }
+    public string RateBand { get; set; } = "";
+    public string DependencyLabel { get; set; } = "";
+    public string EvidenceLine { get; set; } = "";
+}
+
+internal class CombatReplayFightDemandDto
+{
+    public string Summary { get; set; } = "";
+    public List<CombatReplayFightDemandLaneDto> Lanes { get; set; } = [];
+}
+
+internal class CombatReplayFightDemandLaneDto
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public double DemandScorePercent { get; set; }
+    public string DemandLabel { get; set; } = "";
+    public double WeightMultiplier { get; set; }
+    public string EvidenceLine { get; set; } = "";
+}
+
+internal class CombatReplayContributionConfidenceDto
+{
+    public string Label { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public List<string> Caveats { get; set; } = [];
+}
+
+internal class CombatReplayPlayerContributionLaneDto
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public double StrengthPercent { get; set; }
+    public double SharePercent { get; set; }
+    public int WindowsHit { get; set; }
+    public int WindowsTotal { get; set; }
+    public string WindowLabel { get; set; } = "";
+    public string RateBand { get; set; } = "";
+    public string EvidenceLine { get; set; } = "";
+    public bool IsInteractive { get; set; }
+    public string DrilldownTitle { get; set; } = "";
+    public string DrilldownSubtitle { get; set; } = "";
+    public List<CombatReplayPlayerEvaluationDetailSectionDto> DetailSections { get; set; } = [];
+}
+
+internal class CombatReplayPlayerEvaluationModifierDto
+{
+    public string Label { get; set; } = "";
+    public string Value { get; set; } = "";
+    public string Detail { get; set; } = "";
 }
 
 internal class CombatReplayPlayerRoleMixEntryDto
@@ -629,29 +713,65 @@ internal class CombatReplayPlayerEvaluationAggregate
 {
     public int PlayerId { get; set; }
     public long DamageTotal { get; set; }
+    public long LiveTargetDamage { get; set; }
+    public int AgainstDownedDamage { get; set; }
+    public int DownContribution { get; set; }
+    public double EnemyDownContributionDamage { get; set; }
+    public int EnemyDownWindowsHit { get; set; }
+    public int EnemyDownWindowsTotal { get; set; }
+    public double EnemyKillContributionDamage { get; set; }
+    public int EnemyKillWindowsHit { get; set; }
+    public int EnemyKillWindowsTotal { get; set; }
+    public int FastEnemyKillWindowsHit { get; set; }
     public double AverageTopTargetContribution { get; set; }
     public double OffensiveConditionPressure { get; set; }
     public double ControlConditionPressure { get; set; }
     public int StripsTotal { get; set; }
+    public int StripDownContribution { get; set; }
+    public double StripDownContributionTime { get; set; }
     public long HealingTotal { get; set; }
     public long BarrierTotal { get; set; }
     public int CleansesTotal { get; set; }
     public int ResurrectsTotal { get; set; }
+    public double ResurrectTime { get; set; }
+    public int OffensiveBoonWindows { get; set; }
+    public int DefensiveBoonWindows { get; set; }
+    public int BoonContributionWindows { get; set; }
     public double OffensiveBoonSupport { get; set; }
     public double DefensiveBoonSupport { get; set; }
     public double DefensiveConditionPressure { get; set; }
     public int EffectiveCrowdControlCount { get; set; }
     public double EffectiveCrowdControlDuration { get; set; }
+    public int CrowdControlDownContribution { get; set; }
+    public double CrowdControlDurationDownContribution { get; set; }
     public int BurstContributionWindows { get; set; }
+    public int BurstWindowsTotal { get; set; }
     public int ConversionContributionWindows { get; set; }
+    public int ConversionWindowsTotal { get; set; }
     public int ControlContributionWindows { get; set; }
+    public int ControlWindowsTotal { get; set; }
     public int DefensiveSupportWindows { get; set; }
+    public int DefensiveSupportWindowsTotal { get; set; }
+    public int SquadRecoveryWindowsHelped { get; set; }
+    public int SquadRecoveryWindowsTotal { get; set; }
+    public double DownedHealingOnRecoveries { get; set; }
+    public double RezCountOnRecoveries { get; set; }
+    public double RezTimeOnRecoveries { get; set; }
+    public int BoonWindowsTotal { get; set; }
     public bool HasPositioningData { get; set; }
     public int PositioningSamples { get; set; }
     public double InPositionRate { get; set; }
     public double TooFarRate { get; set; }
     public double OverextendedRate { get; set; }
     public double LateralRiskRate { get; set; }
+    public int Downs { get; set; }
+    public int Deaths { get; set; }
+    public int Recoveries { get; set; }
+    public double FightDurationSeconds { get; set; }
+    public double ActiveSeconds { get; set; }
+    public double CombatSeconds { get; set; }
+    public int KeyWindowsHit { get; set; }
+    public int KeyWindowsTotal { get; set; }
     public List<CombatReplayPlayerEvaluationDetailEntryDto> EffectiveCrowdControlSources { get; set; } = [];
     public List<CombatReplayPlayerEvaluationDetailEntryDto> ControlConditionSources { get; set; } = [];
 }
@@ -659,23 +779,74 @@ internal class CombatReplayPlayerEvaluationAggregate
 internal class CombatReplayPlayerEvaluationMaximums
 {
     public long DamageTotal { get; set; }
+    public long LiveTargetDamage { get; set; }
+    public int AgainstDownedDamage { get; set; }
+    public int DownContribution { get; set; }
+    public double EnemyDownContributionDamage { get; set; }
+    public double EnemyKillContributionDamage { get; set; }
     public double AverageTopTargetContribution { get; set; }
     public double OffensiveConditionPressure { get; set; }
     public double ControlConditionPressure { get; set; }
     public int StripsTotal { get; set; }
+    public int StripDownContribution { get; set; }
     public long HealingTotal { get; set; }
     public long BarrierTotal { get; set; }
     public int CleansesTotal { get; set; }
     public int ResurrectsTotal { get; set; }
+    public double TotalBoonSupport { get; set; }
     public double OffensiveBoonSupport { get; set; }
     public double DefensiveBoonSupport { get; set; }
     public double DefensiveConditionPressure { get; set; }
     public int EffectiveCrowdControlCount { get; set; }
     public double EffectiveCrowdControlDuration { get; set; }
+    public int CrowdControlDownContribution { get; set; }
     public int BurstContributionWindows { get; set; }
+    public int BurstWindowsTotal { get; set; }
     public int ConversionContributionWindows { get; set; }
+    public int ConversionWindowsTotal { get; set; }
     public int ControlContributionWindows { get; set; }
+    public int ControlWindowsTotal { get; set; }
     public int DefensiveSupportWindows { get; set; }
+    public int DefensiveSupportWindowsTotal { get; set; }
+    public int OffensiveBoonWindows { get; set; }
+    public int DefensiveBoonWindows { get; set; }
+    public int BoonContributionWindows { get; set; }
+    public int BoonWindowsTotal { get; set; }
+    public int SquadRecoveryWindowsHelped { get; set; }
+    public double DownedHealingOnRecoveries { get; set; }
+    public double RezTimeOnRecoveries { get; set; }
+    public int KeyWindowsHit { get; set; }
+}
+
+internal class CombatReplayPlayerEvaluationTotals
+{
+    public double PressureContribution { get; set; }
+    public long LiveTargetDamage { get; set; }
+    public double ConversionContribution { get; set; }
+    public int AgainstDownedDamage { get; set; }
+    public int StripDownContribution { get; set; }
+    public int StripsTotal { get; set; }
+    public int CrowdControlDownContribution { get; set; }
+    public int EffectiveCrowdControlCount { get; set; }
+    public double TotalBoonSupport { get; set; }
+    public long HealingTotal { get; set; }
+    public long BarrierTotal { get; set; }
+    public int CleansesTotal { get; set; }
+    public int DefensiveSupportWindows { get; set; }
+    public int SquadRecoveryWindowsHelped { get; set; }
+    public double RezTimeOnRecoveries { get; set; }
+}
+
+internal class CombatReplaySpecCapabilityAggregate
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public int PlayerCount { get; set; }
+    public double ActiveSeconds { get; set; }
+    public double FightDurationSeconds { get; set; }
+    public CombatReplayPlayerEvaluationAggregate Aggregate { get; set; } = new();
+    public List<CombatReplayPlayerEvaluationAggregate> Players { get; set; } = [];
 }
 
 internal static class CombatReplayAnalysisBuilder
@@ -769,6 +940,37 @@ internal static class CombatReplayAnalysisBuilder
     private readonly record struct CleanseRecord(long Time, int AttackerUniqueId);
     private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId);
     private readonly record struct EvaluationWindow(long Start, long End);
+    private readonly record struct PlayerEventContributionSummary(double TotalAmount, int WindowsHit, int WindowsTotal, int FastWindowsHit);
+    private readonly record struct PlayerRecoveryContributionSummary(int WindowsHit, int WindowsTotal, double DownedHealing, double RezCasts, double RezTime);
+    private readonly record struct EvaluationBuildResult(
+        Dictionary<int, CombatReplayPlayerEvaluationDto> PlayerEvaluations,
+        List<CombatReplaySpecCapabilityDto> SpecCapabilities);
+    private readonly record struct PlayerLaneSnapshot(
+        string Key,
+        string Label,
+        double StrengthPercent,
+        double SharePercent,
+        int WindowsHit,
+        int WindowsTotal,
+        string WindowLabel,
+        string RateBand,
+        string EvidenceLine,
+        bool IsInteractive,
+        string DrilldownTitle,
+        string DrilldownSubtitle,
+        List<CombatReplayPlayerEvaluationDetailSectionDto> DetailSections);
+    private readonly record struct SpecLaneSnapshot(
+        string Key,
+        string Label,
+        double StrengthPercent,
+        double SharePercent,
+        double PerSlotEfficiency,
+        int PlayersContributing,
+        int PlayerCount,
+        double TopContributorSharePercent,
+        string RateBand,
+        string DependencyLabel,
+        string EvidenceLine);
     private readonly record struct DownOutcomeInfo(string Outcome, long? TransitionTime);
     private readonly record struct DamageWindowSummary(
         int TotalDamageTaken,
@@ -827,6 +1029,19 @@ internal static class CombatReplayAnalysisBuilder
         Player? commander = log.PlayerList.FirstOrDefault(player => !player.IsFakeActor && player.IsCommander(log));
         var threatAnalysis = BuildThreatBoonAnalysis(log, squadPlayers, times, pollingRate, squadAnalysis);
         var positioningAnalysis = BuildPositioningAnalysis(log, squadPlayers, hostileTargets, commander, times);
+        CombatReplayEventAnalysisDto eventAnalysis = BuildEventAnalysis(log, squadPlayers, hostileTargets);
+        CombatReplayDefenseAnalysisDto defenseAnalysis = BuildDefenseAnalysis(log, squadPlayers, enemyAnalysis, times);
+        CombatReplayFightDemandDto fightDemand = BuildFightDemand(squadAnalysis, enemyAnalysis, eventAnalysis, defenseAnalysis, times);
+        EvaluationBuildResult evaluationData = BuildEvaluationData(
+            log,
+            squadPlayers,
+            hostileTargets,
+            squadAnalysis,
+            enemyAnalysis,
+            positioningAnalysis,
+            eventAnalysis,
+            fightDemand,
+            times);
 
         return new CombatReplayAnalysisDto
         {
@@ -837,9 +1052,11 @@ internal static class CombatReplayAnalysisBuilder
             Enemy = enemyAnalysis,
             ThreatBoons = threatAnalysis,
             Positioning = positioningAnalysis,
-            Events = BuildEventAnalysis(log, squadPlayers, hostileTargets),
-            Defense = BuildDefenseAnalysis(log, squadPlayers, enemyAnalysis, times),
-            PlayerEvaluations = BuildPlayerEvaluations(log, squadPlayers, hostileTargets, squadAnalysis, enemyAnalysis, positioningAnalysis, times),
+            Events = eventAnalysis,
+            Defense = defenseAnalysis,
+            FightDemand = fightDemand,
+            PlayerEvaluations = evaluationData.PlayerEvaluations,
+            SpecCapabilities = evaluationData.SpecCapabilities,
         };
     }
 
@@ -1664,46 +1881,68 @@ internal static class CombatReplayAnalysisBuilder
         return times[candidateIndex] < times[currentBestIndex];
     }
 
-    private static Dictionary<int, CombatReplayPlayerEvaluationDto> BuildPlayerEvaluations(
+    private static EvaluationBuildResult BuildEvaluationData(
         ParsedEvtcLog log,
         IReadOnlyList<SingleActor> squadPlayers,
         IReadOnlyList<SingleActor> hostileTargets,
         CombatReplayTeamAnalysisDto squadAnalysis,
         CombatReplayTeamAnalysisDto enemyAnalysis,
         CombatReplayPositioningAnalysisDto positioningAnalysis,
+        CombatReplayEventAnalysisDto eventAnalysis,
+        CombatReplayFightDemandDto fightDemand,
         IReadOnlyList<long> times)
     {
+        List<EvaluationWindow> burstWindows = BuildBurstWindows(squadAnalysis, times);
+        List<EvaluationWindow> conversionWindows = BuildConversionWindows(squadAnalysis, times, log.LogData.LogEnd);
+        List<EvaluationWindow> defensiveResponseWindows = BuildBurstWindows(enemyAnalysis, times);
+        List<EvaluationWindow> offensiveConditionWindows = MergeEvaluationWindows([.. burstWindows, .. conversionWindows]);
+        List<EvaluationWindow> keyWindows = MergeEvaluationWindows([.. offensiveConditionWindows, .. defensiveResponseWindows]);
+        Dictionary<int, PlayerEventContributionSummary> enemyDownContributions = BuildPlayerEventContributionSummaries(
+            [.. eventAnalysis.Downs.Events.Where(evt => evt.IsEnemy)],
+            downEvent => downEvent.Contributors,
+            contributor => contributor.Amount);
+        Dictionary<int, PlayerEventContributionSummary> enemyKillContributions = BuildPlayerEventContributionSummaries(
+            [.. eventAnalysis.Kills.Events.Where(evt => evt.IsEnemy)],
+            killEvent => killEvent.Contributors,
+            contributor => contributor.Amount,
+            killEvent => killEvent.OutcomeTime.HasValue && killEvent.OutcomeTime.Value - killEvent.WindowStart <= 5000);
+        Dictionary<int, PlayerRecoveryContributionSummary> squadRecoveryContributions = BuildPlayerRecoveryContributionSummaries(
+            [.. eventAnalysis.Recovered.Events.Where(evt => !evt.IsEnemy && evt.UsesSupportView)]);
         var aggregates = new List<CombatReplayPlayerEvaluationAggregate>(squadPlayers.Count);
         foreach (SingleActor player in squadPlayers)
         {
-            aggregates.Add(BuildPlayerEvaluationAggregate(log, player, squadPlayers, hostileTargets, squadAnalysis, enemyAnalysis, positioningAnalysis, times));
+            aggregates.Add(BuildPlayerEvaluationAggregate(
+                log,
+                player,
+                squadPlayers,
+                hostileTargets,
+                squadAnalysis,
+                enemyAnalysis,
+                positioningAnalysis,
+                burstWindows,
+                conversionWindows,
+                defensiveResponseWindows,
+                offensiveConditionWindows,
+                keyWindows,
+                enemyDownContributions,
+                enemyKillContributions,
+                squadRecoveryContributions,
+                times));
         }
 
-        CombatReplayPlayerEvaluationMaximums maximums = new()
-        {
-            DamageTotal = aggregates.Max(aggregate => aggregate.DamageTotal),
-            AverageTopTargetContribution = aggregates.Max(aggregate => aggregate.AverageTopTargetContribution),
-            OffensiveConditionPressure = aggregates.Max(aggregate => aggregate.OffensiveConditionPressure),
-            ControlConditionPressure = aggregates.Max(aggregate => aggregate.ControlConditionPressure),
-            StripsTotal = aggregates.Max(aggregate => aggregate.StripsTotal),
-            HealingTotal = aggregates.Max(aggregate => aggregate.HealingTotal),
-            BarrierTotal = aggregates.Max(aggregate => aggregate.BarrierTotal),
-            CleansesTotal = aggregates.Max(aggregate => aggregate.CleansesTotal),
-            ResurrectsTotal = aggregates.Max(aggregate => aggregate.ResurrectsTotal),
-            OffensiveBoonSupport = aggregates.Max(aggregate => aggregate.OffensiveBoonSupport),
-            DefensiveBoonSupport = aggregates.Max(aggregate => aggregate.DefensiveBoonSupport),
-            DefensiveConditionPressure = aggregates.Max(aggregate => aggregate.DefensiveConditionPressure),
-            EffectiveCrowdControlCount = aggregates.Max(aggregate => aggregate.EffectiveCrowdControlCount),
-            EffectiveCrowdControlDuration = aggregates.Max(aggregate => aggregate.EffectiveCrowdControlDuration),
-            BurstContributionWindows = aggregates.Max(aggregate => aggregate.BurstContributionWindows),
-            ConversionContributionWindows = aggregates.Max(aggregate => aggregate.ConversionContributionWindows),
-            ControlContributionWindows = aggregates.Max(aggregate => aggregate.ControlContributionWindows),
-            DefensiveSupportWindows = aggregates.Max(aggregate => aggregate.DefensiveSupportWindows),
-        };
-
-        return aggregates.ToDictionary(
+        CombatReplayPlayerEvaluationMaximums maximums = BuildPlayerEvaluationMaximums(aggregates);
+        CombatReplayPlayerEvaluationTotals totals = BuildPlayerEvaluationTotals(aggregates, log.CombatData.HasEXTHealing, log.CombatData.HasEXTBarrier);
+        Dictionary<int, CombatReplayPlayerEvaluationDto> playerEvaluations = aggregates.ToDictionary(
             aggregate => aggregate.PlayerId,
-            aggregate => BuildPlayerEvaluationDto(aggregate, maximums, log.CombatData.HasEXTHealing, log.CombatData.HasEXTBarrier));
+            aggregate => BuildPlayerEvaluationDto(aggregate, maximums, totals, fightDemand, log.CombatData.HasEXTHealing, log.CombatData.HasEXTBarrier));
+        List<CombatReplaySpecCapabilityDto> specCapabilities = BuildSpecCapabilities(
+            squadPlayers,
+            aggregates,
+            totals,
+            fightDemand,
+            log.CombatData.HasEXTHealing,
+            log.CombatData.HasEXTBarrier);
+        return new EvaluationBuildResult(playerEvaluations, specCapabilities);
     }
 
     private static CombatReplayPlayerEvaluationAggregate BuildPlayerEvaluationAggregate(
@@ -1714,15 +1953,21 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayTeamAnalysisDto squadAnalysis,
         CombatReplayTeamAnalysisDto enemyAnalysis,
         CombatReplayPositioningAnalysisDto positioningAnalysis,
+        IReadOnlyList<EvaluationWindow> burstWindows,
+        IReadOnlyList<EvaluationWindow> conversionWindows,
+        IReadOnlyList<EvaluationWindow> defensiveResponseWindows,
+        IReadOnlyList<EvaluationWindow> offensiveConditionWindows,
+        IReadOnlyList<EvaluationWindow> keyWindows,
+        IReadOnlyDictionary<int, PlayerEventContributionSummary> enemyDownContributions,
+        IReadOnlyDictionary<int, PlayerEventContributionSummary> enemyKillContributions,
+        IReadOnlyDictionary<int, PlayerRecoveryContributionSummary> squadRecoveryContributions,
         IReadOnlyList<long> times)
     {
         CombatReplayAnalysisAttackerTimelineDto? attackerTimeline = squadAnalysis.Attackers.GetValueOrDefault(player.UniqueID);
         CombatReplayPositioningPlayerTimelineDto? positioningTimeline = positioningAnalysis.Players.GetValueOrDefault(player.UniqueID);
         SupportStatistics supportStats = player.GetToAllySupportStats(log, 0, log.LogData.LogEnd);
-        List<EvaluationWindow> burstWindows = BuildBurstWindows(squadAnalysis, times);
-        List<EvaluationWindow> conversionWindows = BuildConversionWindows(squadAnalysis, times, log.LogData.LogEnd);
-        List<EvaluationWindow> defensiveResponseWindows = BuildBurstWindows(enemyAnalysis, times);
-        List<EvaluationWindow> offensiveConditionWindows = MergeEvaluationWindows([.. burstWindows, .. conversionWindows]);
+        OffensiveStatistics offensiveStats = player.GetOffensiveStats(null, log, 0, log.LogData.LogEnd);
+        DefenseAllStatistics defenseStats = player.GetDefenseStats(log, 0, log.LogData.LogEnd);
         long wholeFightDamageToPlayers = 0;
         foreach (SingleActor target in hostileTargets)
         {
@@ -1745,36 +1990,93 @@ internal static class CombatReplayAnalysisBuilder
         Dictionary<EvaluationWindow, double> controlConditionContribution = ComputeConditionContributionByWindow(log, player, hostileTargets, conversionWindows, ControlConditionBuffIds);
         Dictionary<EvaluationWindow, double> defensiveConditionContribution = ComputeConditionContributionByWindow(log, player, hostileTargets, defensiveResponseWindows, DefensiveConditionBuffIds);
         Dictionary<long, double> controlConditionSourceContribution = ComputeConditionContributionByBuff(log, player, hostileTargets, conversionWindows, ControlConditionBuffIds);
-        double offensiveBoonSupport = ComputeBoonSupportByWindow(log, player, squadPlayers, offensiveConditionWindows, OffensiveSupportBoonIds);
-        double defensiveBoonSupport = ComputeBoonSupportByWindow(log, player, squadPlayers, defensiveResponseWindows, DefensiveSupportBoonIds);
+        Dictionary<EvaluationWindow, double> offensiveBoonContribution = ComputeBoonSupportContributionByWindow(log, player, squadPlayers, offensiveConditionWindows, OffensiveSupportBoonIds);
+        Dictionary<EvaluationWindow, double> defensiveBoonContribution = ComputeBoonSupportContributionByWindow(log, player, squadPlayers, defensiveResponseWindows, DefensiveSupportBoonIds);
+        List<EvaluationWindow> boonWindows = MergeEvaluationWindows([.. offensiveConditionWindows, .. defensiveResponseWindows]);
+        Dictionary<EvaluationWindow, double> mergedBoonContribution = ComputeBoonSupportContributionByWindow(
+            log,
+            player,
+            squadPlayers,
+            boonWindows,
+            [.. OffensiveSupportBoonIds.Union(DefensiveSupportBoonIds)]);
+        double offensiveBoonSupport = Math.Round(offensiveBoonContribution.Values.Sum(), 1);
+        double defensiveBoonSupport = Math.Round(defensiveBoonContribution.Values.Sum(), 1);
+        enemyDownContributions.TryGetValue(player.UniqueID, out PlayerEventContributionSummary enemyDownContribution);
+        enemyKillContributions.TryGetValue(player.UniqueID, out PlayerEventContributionSummary enemyKillContribution);
+        squadRecoveryContributions.TryGetValue(player.UniqueID, out PlayerRecoveryContributionSummary squadRecoveryContribution);
 
         return new CombatReplayPlayerEvaluationAggregate
         {
             PlayerId = player.UniqueID,
             DamageTotal = wholeFightDamageToPlayers,
+            LiveTargetDamage = Math.Max(wholeFightDamageToPlayers - offensiveStats.AgainstDownedDamage, 0),
+            AgainstDownedDamage = offensiveStats.AgainstDownedDamage,
+            DownContribution = offensiveStats.DownContribution,
+            EnemyDownContributionDamage = Math.Round(enemyDownContribution.TotalAmount, 1),
+            EnemyDownWindowsHit = enemyDownContribution.WindowsHit,
+            EnemyDownWindowsTotal = enemyDownContribution.WindowsTotal,
+            EnemyKillContributionDamage = Math.Round(enemyKillContribution.TotalAmount, 1),
+            EnemyKillWindowsHit = enemyKillContribution.WindowsHit,
+            EnemyKillWindowsTotal = enemyKillContribution.WindowsTotal,
+            FastEnemyKillWindowsHit = enemyKillContribution.FastWindowsHit,
             AverageTopTargetContribution = ComputeAverageContribution(attackerTimeline?.TopTargetContribution, attackerTimeline?.Damage),
             OffensiveConditionPressure = Math.Round(offensiveConditionContribution.Values.Sum(), 1),
             ControlConditionPressure = Math.Round(controlConditionContribution.Values.Sum(), 1),
             StripsTotal = supportStats.BoonStripCount,
+            StripDownContribution = supportStats.BoonStripDownContribution,
+            StripDownContributionTime = supportStats.BoonStripDownContributionTime,
             HealingTotal = wholeFightHealing,
             BarrierTotal = wholeFightBarrier,
             CleansesTotal = supportStats.ConditionCleanseCount,
             ResurrectsTotal = supportStats.ResurrectCount,
+            ResurrectTime = supportStats.ResurrectTime,
+            OffensiveBoonWindows = offensiveBoonContribution.Count,
+            DefensiveBoonWindows = defensiveBoonContribution.Count,
+            BoonContributionWindows = mergedBoonContribution.Count,
             OffensiveBoonSupport = offensiveBoonSupport,
             DefensiveBoonSupport = defensiveBoonSupport,
             DefensiveConditionPressure = Math.Round(defensiveConditionContribution.Values.Sum(), 1),
             EffectiveCrowdControlCount = effectiveCount,
             EffectiveCrowdControlDuration = effectiveDuration,
+            CrowdControlDownContribution = offensiveStats.AppliedCrowdControlDownContribution,
+            CrowdControlDurationDownContribution = Math.Round(offensiveStats.AppliedCrowdControlDurationDownContribution / 1000.0, 1),
             BurstContributionWindows = CountBurstContributionWindows(attackerTimeline, burstWindows, times, burstOffensiveConditionContribution),
+            BurstWindowsTotal = burstWindows.Count,
             ConversionContributionWindows = CountOffensiveConversionWindows(attackerTimeline, conversionWindows, times, conversionOffensiveConditionContribution),
+            ConversionWindowsTotal = conversionWindows.Count,
             ControlContributionWindows = CountControlContributionWindows(attackerTimeline, conversionWindows, times, effectiveCrowdControlEvents, controlConditionContribution),
+            ControlWindowsTotal = conversionWindows.Count,
             DefensiveSupportWindows = CountDefensiveSupportWindows(attackerTimeline, defensiveResponseWindows, times, defensiveConditionContribution),
+            DefensiveSupportWindowsTotal = defensiveResponseWindows.Count,
+            SquadRecoveryWindowsHelped = squadRecoveryContribution.WindowsHit,
+            SquadRecoveryWindowsTotal = squadRecoveryContribution.WindowsTotal,
+            DownedHealingOnRecoveries = Math.Round(squadRecoveryContribution.DownedHealing, 1),
+            RezCountOnRecoveries = Math.Round(squadRecoveryContribution.RezCasts, 1),
+            RezTimeOnRecoveries = Math.Round(squadRecoveryContribution.RezTime, 1),
+            BoonWindowsTotal = boonWindows.Count,
             HasPositioningData = positioningTimeline != null && positioningTimeline.Eligible.Any(sample => sample),
             PositioningSamples = CountEligibleSamples(positioningTimeline),
             InPositionRate = ComputeEligibleRate(positioningTimeline, timeline => timeline.InPosition),
             TooFarRate = ComputeEligibleRate(positioningTimeline, timeline => timeline.TooFar),
             OverextendedRate = ComputeEligibleRate(positioningTimeline, timeline => timeline.Overextended),
             LateralRiskRate = ComputeEligibleRate(positioningTimeline, timeline => timeline.LateralRisk),
+            Downs = defenseStats.DownCount,
+            Deaths = defenseStats.DeadCount,
+            Recoveries = BuildPlayerRecoveryCount(log, player),
+            FightDurationSeconds = Math.Round((log.LogData.LogEnd - log.LogData.LogStart) / 1000.0, 1),
+            ActiveSeconds = Math.Round(player.GetActiveDuration(log, 0, log.LogData.LogEnd) / 1000.0, 1),
+            CombatSeconds = Math.Round(player.GetTimeSpentInCombat(log, 0, log.LogData.LogEnd) / 1000.0, 1),
+            KeyWindowsHit = CountKeyContributionWindows(
+                keyWindows,
+                times,
+                attackerTimeline,
+                effectiveCrowdControlEvents,
+                offensiveConditionContribution,
+                controlConditionContribution,
+                defensiveConditionContribution,
+                offensiveBoonContribution,
+                defensiveBoonContribution),
+            KeyWindowsTotal = keyWindows.Count,
             EffectiveCrowdControlSources = BuildEffectiveCrowdControlSourceEntries(effectiveCrowdControlEvents),
             ControlConditionSources = BuildConditionSourceEntries(log, controlConditionSourceContribution),
         };
@@ -1783,112 +2085,543 @@ internal static class CombatReplayAnalysisBuilder
     private static CombatReplayPlayerEvaluationDto BuildPlayerEvaluationDto(
         CombatReplayPlayerEvaluationAggregate aggregate,
         CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        CombatReplayFightDemandDto fightDemand,
         bool hasHealingData,
         bool hasBarrierData)
     {
-        double offenseScore = ComputeWeightedScore(
-            (NormalizeValue(aggregate.DamageTotal, maximums.DamageTotal), 0.45),
-            (NormalizeValue(aggregate.AverageTopTargetContribution, maximums.AverageTopTargetContribution), 0.20),
-            (NormalizeValue(aggregate.OffensiveConditionPressure, maximums.OffensiveConditionPressure), maximums.OffensiveConditionPressure > 0.0 ? 0.12 : 0.0),
-            (NormalizeValue(aggregate.BurstContributionWindows, maximums.BurstContributionWindows), 0.13),
-            (NormalizeValue(aggregate.ConversionContributionWindows, maximums.ConversionContributionWindows), 0.10));
-
-        double controlScore = ComputeWeightedScore(
-            (NormalizeValue(aggregate.StripsTotal, maximums.StripsTotal), 0.32),
-            (NormalizeValue(aggregate.EffectiveCrowdControlCount, maximums.EffectiveCrowdControlCount), 0.26),
-            (NormalizeValue(aggregate.EffectiveCrowdControlDuration, maximums.EffectiveCrowdControlDuration), 0.16),
-            (NormalizeValue(aggregate.ControlConditionPressure, maximums.ControlConditionPressure), maximums.ControlConditionPressure > 0.0 ? 0.14 : 0.0),
-            (NormalizeValue(aggregate.ControlContributionWindows, maximums.ControlContributionWindows), 0.12));
-
-        double supportScore = ComputeWeightedScore(
-            (hasHealingData ? NormalizeValue(aggregate.HealingTotal, maximums.HealingTotal) : 0.0, hasHealingData ? 0.22 : 0.0),
-            (hasBarrierData ? NormalizeValue(aggregate.BarrierTotal, maximums.BarrierTotal) : 0.0, hasBarrierData ? 0.14 : 0.0),
-            (NormalizeValue(aggregate.CleansesTotal, maximums.CleansesTotal), hasHealingData || hasBarrierData ? 0.16 : 0.28),
-            (NormalizeValue(aggregate.OffensiveBoonSupport, maximums.OffensiveBoonSupport), maximums.OffensiveBoonSupport > 0.0 ? 0.08 : 0.0),
-            (NormalizeValue(aggregate.DefensiveBoonSupport, maximums.DefensiveBoonSupport), maximums.DefensiveBoonSupport > 0.0 ? 0.12 : 0.0),
-            (NormalizeValue(aggregate.DefensiveConditionPressure, maximums.DefensiveConditionPressure), maximums.DefensiveConditionPressure > 0.0 ? 0.10 : 0.0),
-            (NormalizeValue(aggregate.DefensiveSupportWindows, maximums.DefensiveSupportWindows), hasHealingData || hasBarrierData ? 0.10 : 0.20),
-            (NormalizeValue(aggregate.ResurrectsTotal, maximums.ResurrectsTotal), hasHealingData || hasBarrierData ? 0.08 : 0.16));
-
-        double positioningScore = aggregate.HasPositioningData
-            ? Math.Clamp(
-                aggregate.InPositionRate * 0.55 +
-                (100.0 - aggregate.TooFarRate) * 0.15 +
-                (100.0 - aggregate.OverextendedRate) * 0.15 +
-                (100.0 - aggregate.LateralRiskRate) * 0.15,
-                0.0,
-                100.0)
-            : 0.0;
-
-        List<(string Label, double Score)> rankedRoles =
+        List<PlayerLaneSnapshot> laneSnapshots =
         [
-            ("Offense", offenseScore),
-            ("Control", controlScore),
-            ("Support", supportScore),
+            BuildPressureLaneSnapshot(aggregate, maximums, totals),
+            BuildConversionLaneSnapshot(aggregate, maximums, totals),
+            BuildStripLaneSnapshot(aggregate, maximums, totals),
+            BuildControlLaneSnapshot(aggregate, maximums, totals),
+            BuildBoonSupportLaneSnapshot(aggregate, maximums, totals),
+            BuildRecoveryLaneSnapshot(aggregate, maximums, totals, hasHealingData, hasBarrierData),
+            BuildRezLaneSnapshot(aggregate, maximums, totals),
         ];
-        rankedRoles = [.. rankedRoles.OrderByDescending(role => role.Score)];
-        double roleScoreTotal = rankedRoles.Sum(role => role.Score);
-        string contributionProfile = rankedRoles[1].Score >= rankedRoles[0].Score * 0.6
-            ? $"{rankedRoles[0].Label} + {rankedRoles[1].Label}"
-            : rankedRoles[0].Label;
-        List<CombatReplayPlayerEvaluationDetailSectionDto> controlTimingDetailSections = BuildControlTimingDetailSections(aggregate);
+        laneSnapshots = [.. laneSnapshots.OrderByDescending(lane => lane.StrengthPercent).ThenByDescending(lane => lane.SharePercent).ThenBy(lane => lane.Label)];
+        CombatReplayContributionConfidenceDto confidence = BuildPlayerEvaluationConfidence(aggregate, hasHealingData, hasBarrierData);
+        string fitSummary = BuildPlayerFitSummary(aggregate, laneSnapshots, fightDemand, confidence);
+        string demandFitSummary = BuildPlayerDemandFitSummary(aggregate, laneSnapshots, fightDemand, confidence);
+        string contributionProfile = BuildLegacyContributionProfile(laneSnapshots);
+        string keyContributionSummary = demandFitSummary;
 
         return new CombatReplayPlayerEvaluationDto
         {
+            FitSummary = fitSummary,
+            DemandFitSummary = demandFitSummary,
+            Confidence = confidence,
+            Lanes = [.. laneSnapshots.Select(snapshot => new CombatReplayPlayerContributionLaneDto
+            {
+                Key = snapshot.Key,
+                Label = snapshot.Label,
+                StrengthPercent = snapshot.StrengthPercent,
+                SharePercent = snapshot.SharePercent,
+                WindowsHit = snapshot.WindowsHit,
+                WindowsTotal = snapshot.WindowsTotal,
+                WindowLabel = snapshot.WindowLabel,
+                RateBand = snapshot.RateBand,
+                EvidenceLine = snapshot.EvidenceLine,
+                IsInteractive = snapshot.IsInteractive,
+                DrilldownTitle = snapshot.DrilldownTitle,
+                DrilldownSubtitle = snapshot.DrilldownSubtitle,
+                DetailSections = snapshot.DetailSections,
+            })],
+            Modifiers = BuildPlayerModifiers(aggregate),
+            EvidenceSnapshot = BuildEvidenceSnapshot(aggregate, laneSnapshots, hasHealingData, hasBarrierData),
             ContributionProfile = contributionProfile,
-            KeyContributionSummary = BuildPlayerContributionSummary(aggregate, rankedRoles[0].Label, rankedRoles[1].Label),
-            RoleMix =
-            [
-                new CombatReplayPlayerRoleMixEntryDto
-                {
-                    Label = "Offense",
-                    Percent = roleScoreTotal > 0.0 ? Math.Round(offenseScore * 100.0 / roleScoreTotal, 1) : 0.0,
-                },
-                new CombatReplayPlayerRoleMixEntryDto
-                {
-                    Label = "Control",
-                    Percent = roleScoreTotal > 0.0 ? Math.Round(controlScore * 100.0 / roleScoreTotal, 1) : 0.0,
-                },
-                new CombatReplayPlayerRoleMixEntryDto
-                {
-                    Label = "Support",
-                    Percent = roleScoreTotal > 0.0 ? Math.Round(supportScore * 100.0 / roleScoreTotal, 1) : 0.0,
-                },
-            ],
-            Areas =
-            [
-                new CombatReplayPlayerEvaluationAreaDto
-                {
-                    Label = "Offensive Presence",
-                    Value = BuildPluralizedLabel(aggregate.BurstContributionWindows, "burst window", "burst windows"),
-                    Detail = $"{FormatWholeNumber(aggregate.DamageTotal)} whole-fight damage to enemy players, {FormatOneDecimal(aggregate.AverageTopTargetContribution)}% average top-target contribution, {FormatWholeNumber((long)Math.Round(aggregate.OffensiveConditionPressure))} offensive condition pressure in key windows, impact in {BuildPluralizedLabel(aggregate.ConversionContributionWindows, "conversion window", "conversion windows")}",
-                },
-                new CombatReplayPlayerEvaluationAreaDto
-                {
-                    Label = "Control Timing",
-                    Value = BuildPluralizedLabel(aggregate.ControlContributionWindows, "control window", "control windows"),
-                    Detail = $"{FormatWholeNumber(aggregate.StripsTotal)} strips, {FormatWholeNumber(aggregate.EffectiveCrowdControlCount)} effective CC, {FormatOneDecimal(aggregate.EffectiveCrowdControlDuration)}s total control, {FormatWholeNumber((long)Math.Round(aggregate.ControlConditionPressure))} control condition pressure",
-                    IsInteractive = controlTimingDetailSections.Count > 0,
-                    DrilldownTitle = "Control Timing Detail",
-                    DrilldownSubtitle = "Shows the effective crowd control skills and control-condition types that fed this player's Control Timing result when that source data is available.",
-                    DetailSections = controlTimingDetailSections,
-                },
-                new CombatReplayPlayerEvaluationAreaDto
-                {
-                    Label = "Support Under Pressure",
-                    Value = BuildPluralizedLabel(aggregate.DefensiveSupportWindows, "response window", "response windows"),
-                    Detail = BuildSupportDetail(aggregate, hasHealingData, hasBarrierData),
-                },
-                new CombatReplayPlayerEvaluationAreaDto
-                {
-                    Label = "Positioning Context",
-                    Value = aggregate.HasPositioningData ? $"{FormatOneDecimal(aggregate.InPositionRate)}% in position" : "No positioning samples",
-                    Detail = aggregate.HasPositioningData
-                        ? $"{FormatOneDecimal(aggregate.TooFarRate)}% too far, {FormatOneDecimal(aggregate.OverextendedRate)}% overextended, {FormatOneDecimal(aggregate.LateralRiskRate)}% left/right exposed"
-                        : "Commander-relative positioning could not be evaluated for this player.",
-                },
-            ],
+            KeyContributionSummary = keyContributionSummary,
+            RoleMix = [],
+            Areas = [],
         };
+    }
+
+    private static List<CombatReplaySpecCapabilityDto> BuildSpecCapabilities(
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<CombatReplayPlayerEvaluationAggregate> playerAggregates,
+        CombatReplayPlayerEvaluationTotals totals,
+        CombatReplayFightDemandDto fightDemand,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        if (playerAggregates.Count == 0)
+        {
+            return [];
+        }
+
+        Dictionary<int, SingleActor> playersById = squadPlayers.ToDictionary(player => player.UniqueID);
+        double totalActiveSeconds = Math.Max(playerAggregates.Sum(aggregate => aggregate.ActiveSeconds), 0.1);
+        List<CombatReplaySpecCapabilityAggregate> specAggregates =
+        [
+            .. playerAggregates
+                .GroupBy(aggregate => playersById[aggregate.PlayerId].Spec.ToString(), StringComparer.Ordinal)
+                .Select(group =>
+                {
+                    List<CombatReplayPlayerEvaluationAggregate> specPlayers = [.. group];
+                    SingleActor actor = playersById[group.First().PlayerId];
+                    return new CombatReplaySpecCapabilityAggregate
+                    {
+                        Key = actor.Spec.ToString(),
+                        Label = actor.Spec.ToString(),
+                        Icon = actor.GetIcon(),
+                        PlayerCount = specPlayers.Count,
+                        ActiveSeconds = Math.Round(specPlayers.Sum(player => player.ActiveSeconds), 1),
+                        FightDurationSeconds = specPlayers.Max(player => player.FightDurationSeconds),
+                        Aggregate = BuildSpecAggregate(specPlayers),
+                        Players = specPlayers,
+                    };
+                }),
+        ];
+        CombatReplayPlayerEvaluationMaximums maximums = BuildPlayerEvaluationMaximums([.. specAggregates.Select(spec => spec.Aggregate)]);
+        Dictionary<string, double> perPlayerMaximums = BuildSpecPerPlayerMaximums(specAggregates, totals, hasHealingData, hasBarrierData);
+        return [.. specAggregates
+            .Select(spec => BuildSpecCapabilityDto(spec, maximums, totals, perPlayerMaximums, totalActiveSeconds, fightDemand, hasHealingData, hasBarrierData))
+            .OrderByDescending(spec => spec.ActiveSharePercent)
+            .ThenBy(spec => spec.Label, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private static CombatReplayPlayerEvaluationAggregate BuildSpecAggregate(IReadOnlyList<CombatReplayPlayerEvaluationAggregate> players)
+    {
+        return new CombatReplayPlayerEvaluationAggregate
+        {
+            DamageTotal = players.Sum(player => player.DamageTotal),
+            LiveTargetDamage = players.Sum(player => player.LiveTargetDamage),
+            AgainstDownedDamage = players.Sum(player => player.AgainstDownedDamage),
+            DownContribution = players.Sum(player => player.DownContribution),
+            EnemyDownContributionDamage = Math.Round(players.Sum(player => player.EnemyDownContributionDamage), 1),
+            EnemyDownWindowsHit = players.Max(player => player.EnemyDownWindowsHit),
+            EnemyDownWindowsTotal = players.Max(player => player.EnemyDownWindowsTotal),
+            EnemyKillContributionDamage = Math.Round(players.Sum(player => player.EnemyKillContributionDamage), 1),
+            EnemyKillWindowsHit = players.Max(player => player.EnemyKillWindowsHit),
+            EnemyKillWindowsTotal = players.Max(player => player.EnemyKillWindowsTotal),
+            FastEnemyKillWindowsHit = players.Max(player => player.FastEnemyKillWindowsHit),
+            AverageTopTargetContribution = ComputeAverageContribution(
+                [.. players.Select(player => player.AverageTopTargetContribution)],
+                [.. players.Select(player => player.LiveTargetDamage)]),
+            OffensiveConditionPressure = Math.Round(players.Sum(player => player.OffensiveConditionPressure), 1),
+            ControlConditionPressure = Math.Round(players.Sum(player => player.ControlConditionPressure), 1),
+            StripsTotal = players.Sum(player => player.StripsTotal),
+            StripDownContribution = players.Sum(player => player.StripDownContribution),
+            StripDownContributionTime = Math.Round(players.Sum(player => player.StripDownContributionTime), 1),
+            HealingTotal = players.Sum(player => player.HealingTotal),
+            BarrierTotal = players.Sum(player => player.BarrierTotal),
+            CleansesTotal = players.Sum(player => player.CleansesTotal),
+            ResurrectsTotal = players.Sum(player => player.ResurrectsTotal),
+            ResurrectTime = Math.Round(players.Sum(player => player.ResurrectTime), 1),
+            OffensiveBoonWindows = players.Max(player => player.OffensiveBoonWindows),
+            DefensiveBoonWindows = players.Max(player => player.DefensiveBoonWindows),
+            BoonContributionWindows = players.Max(player => player.BoonContributionWindows),
+            OffensiveBoonSupport = Math.Round(players.Sum(player => player.OffensiveBoonSupport), 1),
+            DefensiveBoonSupport = Math.Round(players.Sum(player => player.DefensiveBoonSupport), 1),
+            DefensiveConditionPressure = Math.Round(players.Sum(player => player.DefensiveConditionPressure), 1),
+            EffectiveCrowdControlCount = players.Sum(player => player.EffectiveCrowdControlCount),
+            EffectiveCrowdControlDuration = Math.Round(players.Sum(player => player.EffectiveCrowdControlDuration), 1),
+            CrowdControlDownContribution = players.Sum(player => player.CrowdControlDownContribution),
+            CrowdControlDurationDownContribution = Math.Round(players.Sum(player => player.CrowdControlDurationDownContribution), 1),
+            BurstContributionWindows = players.Max(player => player.BurstContributionWindows),
+            BurstWindowsTotal = players.Max(player => player.BurstWindowsTotal),
+            ConversionContributionWindows = players.Max(player => player.ConversionContributionWindows),
+            ConversionWindowsTotal = players.Max(player => player.ConversionWindowsTotal),
+            ControlContributionWindows = players.Max(player => player.ControlContributionWindows),
+            ControlWindowsTotal = players.Max(player => player.ControlWindowsTotal),
+            DefensiveSupportWindows = players.Max(player => player.DefensiveSupportWindows),
+            DefensiveSupportWindowsTotal = players.Max(player => player.DefensiveSupportWindowsTotal),
+            SquadRecoveryWindowsHelped = players.Max(player => player.SquadRecoveryWindowsHelped),
+            SquadRecoveryWindowsTotal = players.Max(player => player.SquadRecoveryWindowsTotal),
+            DownedHealingOnRecoveries = Math.Round(players.Sum(player => player.DownedHealingOnRecoveries), 1),
+            RezCountOnRecoveries = Math.Round(players.Sum(player => player.RezCountOnRecoveries), 1),
+            RezTimeOnRecoveries = Math.Round(players.Sum(player => player.RezTimeOnRecoveries), 1),
+            BoonWindowsTotal = players.Max(player => player.BoonWindowsTotal),
+            HasPositioningData = players.Any(player => player.HasPositioningData),
+            PositioningSamples = players.Sum(player => player.PositioningSamples),
+            Downs = players.Sum(player => player.Downs),
+            Deaths = players.Sum(player => player.Deaths),
+            Recoveries = players.Sum(player => player.Recoveries),
+            FightDurationSeconds = players.Max(player => player.FightDurationSeconds),
+            ActiveSeconds = Math.Round(players.Sum(player => player.ActiveSeconds), 1),
+            CombatSeconds = Math.Round(players.Sum(player => player.CombatSeconds), 1),
+            KeyWindowsHit = players.Max(player => player.KeyWindowsHit),
+            KeyWindowsTotal = players.Max(player => player.KeyWindowsTotal),
+        };
+    }
+
+    private static CombatReplaySpecCapabilityDto BuildSpecCapabilityDto(
+        CombatReplaySpecCapabilityAggregate spec,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        IReadOnlyDictionary<string, double> perPlayerMaximums,
+        double totalActiveSeconds,
+        CombatReplayFightDemandDto fightDemand,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        double activeSharePercent = ComputePercent(spec.ActiveSeconds, totalActiveSeconds);
+        List<SpecLaneSnapshot> laneSnapshots =
+        [
+            BuildSpecPressureLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
+            BuildSpecConversionLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
+            BuildSpecStripLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
+            BuildSpecControlLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
+            BuildSpecBoonSupportLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
+            BuildSpecRecoveryLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent, hasHealingData, hasBarrierData),
+            BuildSpecRezLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
+        ];
+        laneSnapshots = [.. laneSnapshots
+            .OrderByDescending(lane => lane.StrengthPercent)
+            .ThenByDescending(lane => lane.SharePercent)
+            .ThenBy(lane => lane.Label, StringComparer.OrdinalIgnoreCase)];
+        return new CombatReplaySpecCapabilityDto
+        {
+            Key = spec.Key,
+            Label = spec.Label,
+            Icon = spec.Icon,
+            PlayerCount = spec.PlayerCount,
+            ActiveSharePercent = activeSharePercent,
+            FitSummary = BuildSpecFitSummary(laneSnapshots, fightDemand),
+            DemandFitSummary = BuildSpecDemandFitSummary(laneSnapshots, fightDemand),
+            DependencySummary = BuildSpecDependencySummary(spec, laneSnapshots),
+            Lanes = [.. laneSnapshots.Select(snapshot => new CombatReplaySpecCapabilityLaneDto
+            {
+                Key = snapshot.Key,
+                Label = snapshot.Label,
+                StrengthPercent = snapshot.StrengthPercent,
+                SharePercent = snapshot.SharePercent,
+                PerSlotEfficiency = snapshot.PerSlotEfficiency,
+                PlayersContributing = snapshot.PlayersContributing,
+                PlayerCount = snapshot.PlayerCount,
+                TopContributorSharePercent = snapshot.TopContributorSharePercent,
+                RateBand = snapshot.RateBand,
+                DependencyLabel = snapshot.DependencyLabel,
+                EvidenceLine = snapshot.EvidenceLine,
+            })],
+            EvidenceSnapshot = BuildSpecEvidenceSnapshot(spec, laneSnapshots),
+        };
+    }
+
+    private static SpecLaneSnapshot BuildSpecPressureLaneSnapshot(
+        CombatReplaySpecCapabilityAggregate spec,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        IReadOnlyDictionary<string, double> perPlayerMaximums,
+        double activeSharePercent)
+    {
+        PlayerLaneSnapshot baseLane = BuildPressureLaneSnapshot(spec.Aggregate, maximums, totals);
+        return BuildSpecLaneSnapshot(
+            spec,
+            baseLane,
+            activeSharePercent,
+            aggregate => GetSpecPressureRawAmount(aggregate, totals),
+            perPlayerMaximums.GetValueOrDefault("pressure"),
+            $"{FormatWholeNumber(spec.Aggregate.LiveTargetDamage)} live-target damage and {FormatWholeNumber((long)Math.Round(spec.Aggregate.EnemyDownContributionDamage))} pre-down pressure made {spec.Label} visible before enemy downs.");
+    }
+
+    private static SpecLaneSnapshot BuildSpecConversionLaneSnapshot(
+        CombatReplaySpecCapabilityAggregate spec,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        IReadOnlyDictionary<string, double> perPlayerMaximums,
+        double activeSharePercent)
+    {
+        PlayerLaneSnapshot baseLane = BuildConversionLaneSnapshot(spec.Aggregate, maximums, totals);
+        return BuildSpecLaneSnapshot(
+            spec,
+            baseLane,
+            activeSharePercent,
+            aggregate => GetSpecConversionRawAmount(aggregate, totals),
+            perPlayerMaximums.GetValueOrDefault("conversion"),
+            $"{FormatWholeNumber((long)Math.Round(spec.Aggregate.EnemyKillContributionDamage))} finish contribution and {FormatWholeNumber(spec.Aggregate.AgainstDownedDamage)} against-downed damage helped this spec close conversions.");
+    }
+
+    private static SpecLaneSnapshot BuildSpecStripLaneSnapshot(
+        CombatReplaySpecCapabilityAggregate spec,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        IReadOnlyDictionary<string, double> perPlayerMaximums,
+        double activeSharePercent)
+    {
+        PlayerLaneSnapshot baseLane = BuildStripLaneSnapshot(spec.Aggregate, maximums, totals);
+        return BuildSpecLaneSnapshot(
+            spec,
+            baseLane,
+            activeSharePercent,
+            aggregate => GetSpecStripRawAmount(aggregate, totals),
+            perPlayerMaximums.GetValueOrDefault("strip"),
+            $"{FormatWholeNumber(spec.Aggregate.StripsTotal)} strips and {FormatWholeNumber(spec.Aggregate.StripDownContribution)} down-linked strips show where {spec.Label} cracked enemy boon cover.");
+    }
+
+    private static SpecLaneSnapshot BuildSpecControlLaneSnapshot(
+        CombatReplaySpecCapabilityAggregate spec,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        IReadOnlyDictionary<string, double> perPlayerMaximums,
+        double activeSharePercent)
+    {
+        PlayerLaneSnapshot baseLane = BuildControlLaneSnapshot(spec.Aggregate, maximums, totals);
+        return BuildSpecLaneSnapshot(
+            spec,
+            baseLane,
+            activeSharePercent,
+            aggregate => GetSpecControlRawAmount(aggregate, totals),
+            perPlayerMaximums.GetValueOrDefault("control"),
+            $"{FormatWholeNumber(spec.Aggregate.EffectiveCrowdControlCount)} effective CC events and {FormatWholeNumber(spec.Aggregate.CrowdControlDownContribution)} CC-linked downs show the visible control footprint for {spec.Label}.");
+    }
+
+    private static SpecLaneSnapshot BuildSpecBoonSupportLaneSnapshot(
+        CombatReplaySpecCapabilityAggregate spec,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        IReadOnlyDictionary<string, double> perPlayerMaximums,
+        double activeSharePercent)
+    {
+        PlayerLaneSnapshot baseLane = BuildBoonSupportLaneSnapshot(spec.Aggregate, maximums, totals);
+        string boonLean = spec.Aggregate.DefensiveBoonSupport >= spec.Aggregate.OffensiveBoonSupport ? "Defensive" : "Offensive";
+        return BuildSpecLaneSnapshot(
+            spec,
+            baseLane,
+            activeSharePercent,
+            aggregate => GetSpecBoonSupportRawAmount(aggregate),
+            perPlayerMaximums.GetValueOrDefault("boonSupport"),
+            $"{boonLean} boon coverage was most visible, with {FormatWholeNumber((long)Math.Round(spec.Aggregate.OffensiveBoonSupport + spec.Aggregate.DefensiveBoonSupport))} total boon-seconds in key windows.");
+    }
+
+    private static SpecLaneSnapshot BuildSpecRecoveryLaneSnapshot(
+        CombatReplaySpecCapabilityAggregate spec,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        IReadOnlyDictionary<string, double> perPlayerMaximums,
+        double activeSharePercent,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        PlayerLaneSnapshot baseLane = BuildRecoveryLaneSnapshot(spec.Aggregate, maximums, totals, hasHealingData, hasBarrierData);
+        string healingText = hasHealingData ? $", {FormatWholeNumber(spec.Aggregate.HealingTotal)} healing" : "";
+        string barrierText = hasBarrierData ? $", and {FormatWholeNumber(spec.Aggregate.BarrierTotal)} barrier" : "";
+        return BuildSpecLaneSnapshot(
+            spec,
+            baseLane,
+            activeSharePercent,
+            aggregate => GetSpecRecoveryRawAmount(aggregate, hasHealingData, hasBarrierData),
+            perPlayerMaximums.GetValueOrDefault("recovery"),
+            $"{FormatWholeNumber(spec.Aggregate.CleansesTotal)} cleanses{healingText}{barrierText} gave {spec.Label} a visible recovery footprint.");
+    }
+
+    private static SpecLaneSnapshot BuildSpecRezLaneSnapshot(
+        CombatReplaySpecCapabilityAggregate spec,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        IReadOnlyDictionary<string, double> perPlayerMaximums,
+        double activeSharePercent)
+    {
+        PlayerLaneSnapshot baseLane = BuildRezLaneSnapshot(spec.Aggregate, maximums, totals);
+        return BuildSpecLaneSnapshot(
+            spec,
+            baseLane,
+            activeSharePercent,
+            aggregate => GetSpecRezRawAmount(aggregate, totals),
+            perPlayerMaximums.GetValueOrDefault("rez"),
+            $"{BuildPluralizedLabel(spec.Aggregate.SquadRecoveryWindowsHelped, "successful recovery", "successful recoveries")} were supported with {FormatOneDecimal(spec.Aggregate.RezTimeOnRecoveries)}s of rez time from {spec.Label}.");
+    }
+
+    private static SpecLaneSnapshot BuildSpecLaneSnapshot(
+        CombatReplaySpecCapabilityAggregate spec,
+        PlayerLaneSnapshot baseLane,
+        double activeSharePercent,
+        Func<CombatReplayPlayerEvaluationAggregate, double> rawSelector,
+        double averagePerPlayerMaximum,
+        string evidenceLine)
+    {
+        double rawAmount = Math.Max(rawSelector(spec.Aggregate), 0.0);
+        int playersContributing = CountPlayersContributing(spec.Players, rawSelector);
+        double topContributorSharePercent = ComputeTopContributorSharePercent(spec.Players, rawSelector, rawAmount);
+        double perSlotEfficiency = ComputeSpecPerSlotEfficiency(baseLane.SharePercent, activeSharePercent);
+        double strengthPercent = ComputeSpecLaneStrength(rawAmount, averagePerPlayerMaximum, baseLane.SharePercent, perSlotEfficiency, playersContributing, spec.PlayerCount);
+        string dependencyLabel = GetDependencyLabel(baseLane.SharePercent, playersContributing, spec.PlayerCount, topContributorSharePercent);
+        return new SpecLaneSnapshot(
+            baseLane.Key,
+            baseLane.Label,
+            strengthPercent,
+            baseLane.SharePercent,
+            perSlotEfficiency,
+            playersContributing,
+            spec.PlayerCount,
+            topContributorSharePercent,
+            GetRateBand(strengthPercent),
+            dependencyLabel,
+            evidenceLine);
+    }
+
+    private static string BuildSpecFitSummary(
+        IReadOnlyList<SpecLaneSnapshot> laneSnapshots,
+        CombatReplayFightDemandDto fightDemand)
+    {
+        if (laneSnapshots.Count == 0)
+        {
+            return "Observed spec contribution was too thin to summarize.";
+        }
+
+        SpecLaneSnapshot primaryLane = laneSnapshots[0];
+        SpecLaneSnapshot? secondaryLane = SelectSecondarySpecLane(laneSnapshots);
+        var alignedLanes = laneSnapshots
+            .Select(lane => new
+            {
+                Lane = lane,
+                Score = lane.StrengthPercent * GetDemandScore(fightDemand, lane.Key),
+                Demand = GetDemandScore(fightDemand, lane.Key),
+            })
+            .OrderByDescending(entry => entry.Score)
+            .ThenByDescending(entry => entry.Demand)
+            .ToList();
+        var alignedPrimary = alignedLanes[0];
+        if (alignedPrimary.Demand >= 0.55 && alignedPrimary.Score >= primaryLane.StrengthPercent * 0.35)
+        {
+            SpecLaneSnapshot? alignedSecondary = alignedLanes.Count > 1 && alignedLanes[1].Score >= alignedLanes[0].Score * 0.60
+                ? alignedLanes[1].Lane
+                : null;
+            string alignedSecondaryText = alignedSecondary != null ? $" + {alignedSecondary.Value.Label}" : "";
+            return $"This spec fit the fight through {alignedPrimary.Lane.Label}{alignedSecondaryText}.";
+        }
+
+        string secondaryText = secondaryLane != null ? $" + {secondaryLane.Value.Label}" : "";
+        return $"This spec contributed most through {primaryLane.Label}{secondaryText}.";
+    }
+
+    private static string BuildSpecDemandFitSummary(
+        IReadOnlyList<SpecLaneSnapshot> laneSnapshots,
+        CombatReplayFightDemandDto fightDemand)
+    {
+        if (laneSnapshots.Count == 0)
+        {
+            return "Fight demand was too thin to frame this spec cleanly.";
+        }
+
+        List<CombatReplayFightDemandLaneDto> demandedLanes = [.. fightDemand.Lanes.Where(lane => lane.DemandScorePercent >= 55.0)];
+        if (demandedLanes.Count == 0)
+        {
+            return "Fight demand was too evenly distributed to center one spec capability heavily.";
+        }
+
+        double coverage = demandedLanes.Average(demandedLane =>
+        {
+            SpecLaneSnapshot matchingLane = laneSnapshots.FirstOrDefault(lane => lane.Key == demandedLane.Key);
+            return string.IsNullOrEmpty(matchingLane.Key) ? 0.0 : matchingLane.StrengthPercent;
+        });
+        if (coverage >= 60.0)
+        {
+            return "This spec covered a large share of the fight's biggest needs.";
+        }
+        if (coverage >= 35.0)
+        {
+            return $"This spec covered some of the fight's biggest needs, especially {demandedLanes[0].Label}.";
+        }
+        string demandLean = string.Join(" + ", demandedLanes.Take(2).Select(lane => lane.Label));
+        return $"This spec's visible value was more situational than central in this fight, which leaned more on {demandLean}.";
+    }
+
+    private static string BuildSpecDependencySummary(
+        CombatReplaySpecCapabilityAggregate spec,
+        IReadOnlyList<SpecLaneSnapshot> laneSnapshots)
+    {
+        if (spec.PlayerCount <= 1)
+        {
+            return "This spec was represented by one player in this fight.";
+        }
+
+        var dependencyCandidates = laneSnapshots
+            .Select(lane => new
+            {
+                Lane = lane,
+                Score = ComputeDependencyScore(lane.SharePercent, lane.PlayersContributing, lane.PlayerCount, lane.TopContributorSharePercent),
+            })
+            .OrderByDescending(entry => entry.Score)
+            .ToList();
+        if (dependencyCandidates.Count == 0 || dependencyCandidates[0].Score < 25.0)
+        {
+            return "Coverage was broad across the spec.";
+        }
+        if (dependencyCandidates[0].Score >= 65.0)
+        {
+            return $"{dependencyCandidates[0].Lane.Label} value was concentrated in one player.";
+        }
+        return $"{dependencyCandidates[0].Lane.Label} coverage leaned heavily on one player.";
+    }
+
+    private static Dictionary<string, double> BuildSpecPerPlayerMaximums(
+        IReadOnlyList<CombatReplaySpecCapabilityAggregate> specs,
+        CombatReplayPlayerEvaluationTotals totals,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        double ComputeMaxAverage(Func<CombatReplayPlayerEvaluationAggregate, double> selector)
+        {
+            return specs.Count == 0
+                ? 0.0
+                : specs.Max(spec => selector(spec.Aggregate) / Math.Max(spec.PlayerCount, 1));
+        }
+
+        return new Dictionary<string, double>(StringComparer.Ordinal)
+        {
+            ["pressure"] = ComputeMaxAverage(aggregate => GetSpecPressureRawAmount(aggregate, totals)),
+            ["conversion"] = ComputeMaxAverage(aggregate => GetSpecConversionRawAmount(aggregate, totals)),
+            ["strip"] = ComputeMaxAverage(aggregate => GetSpecStripRawAmount(aggregate, totals)),
+            ["control"] = ComputeMaxAverage(aggregate => GetSpecControlRawAmount(aggregate, totals)),
+            ["boonSupport"] = ComputeMaxAverage(GetSpecBoonSupportRawAmount),
+            ["recovery"] = ComputeMaxAverage(aggregate => GetSpecRecoveryRawAmount(aggregate, hasHealingData, hasBarrierData)),
+            ["rez"] = ComputeMaxAverage(aggregate => GetSpecRezRawAmount(aggregate, totals)),
+        };
+    }
+
+    private static double GetSpecPressureRawAmount(CombatReplayPlayerEvaluationAggregate aggregate, CombatReplayPlayerEvaluationTotals totals)
+    {
+        return totals.PressureContribution > 0.0 ? aggregate.EnemyDownContributionDamage : aggregate.LiveTargetDamage;
+    }
+
+    private static double GetSpecConversionRawAmount(CombatReplayPlayerEvaluationAggregate aggregate, CombatReplayPlayerEvaluationTotals totals)
+    {
+        return totals.ConversionContribution > 0.0 ? aggregate.EnemyKillContributionDamage : aggregate.AgainstDownedDamage;
+    }
+
+    private static double GetSpecStripRawAmount(CombatReplayPlayerEvaluationAggregate aggregate, CombatReplayPlayerEvaluationTotals totals)
+    {
+        return totals.StripDownContribution > 0 ? aggregate.StripDownContribution : aggregate.StripsTotal;
+    }
+
+    private static double GetSpecControlRawAmount(CombatReplayPlayerEvaluationAggregate aggregate, CombatReplayPlayerEvaluationTotals totals)
+    {
+        return totals.CrowdControlDownContribution > 0 ? aggregate.CrowdControlDownContribution : aggregate.EffectiveCrowdControlCount;
+    }
+
+    private static double GetSpecBoonSupportRawAmount(CombatReplayPlayerEvaluationAggregate aggregate)
+    {
+        return aggregate.OffensiveBoonSupport + aggregate.DefensiveBoonSupport;
+    }
+
+    private static double GetSpecRecoveryRawAmount(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        return ComputeRecoveryContributionMagnitude(aggregate, hasHealingData, hasBarrierData);
+    }
+
+    private static double GetSpecRezRawAmount(CombatReplayPlayerEvaluationAggregate aggregate, CombatReplayPlayerEvaluationTotals totals)
+    {
+        return totals.SquadRecoveryWindowsHelped > 0 ? aggregate.SquadRecoveryWindowsHelped : aggregate.RezTimeOnRecoveries;
+    }
+
+    private static List<string> BuildSpecEvidenceSnapshot(
+        CombatReplaySpecCapabilityAggregate spec,
+        IReadOnlyList<SpecLaneSnapshot> laneSnapshots)
+    {
+        var evidence = new List<string>
+        {
+            $"{spec.PlayerCount} {(spec.PlayerCount == 1 ? "player" : "players")} on {spec.Label} covered {FormatOneDecimal(ComputePercent(spec.ActiveSeconds, Math.Max(spec.FightDurationSeconds * spec.PlayerCount, 0.1)))}% average active time each."
+        };
+        foreach (SpecLaneSnapshot lane in laneSnapshots.Take(2))
+        {
+            evidence.Add($"{lane.Label}: {FormatOneDecimal(lane.SharePercent)}% squad share at {FormatOneDecimal(lane.PerSlotEfficiency)}x per-slot efficiency.");
+        }
+        return evidence;
     }
 
     private static List<CombatReplayPlayerEvaluationDetailSectionDto> BuildControlTimingDetailSections(CombatReplayPlayerEvaluationAggregate aggregate)
@@ -1976,6 +2709,1001 @@ internal static class CombatReplayAnalysisBuilder
         }
         parts.Add($"{FormatWholeNumber(aggregate.ResurrectsTotal)} rez");
         return string.Join(", ", parts);
+    }
+
+    private static CombatReplayFightDemandDto BuildFightDemand(
+        CombatReplayTeamAnalysisDto squadAnalysis,
+        CombatReplayTeamAnalysisDto enemyAnalysis,
+        CombatReplayEventAnalysisDto eventAnalysis,
+        CombatReplayDefenseAnalysisDto defenseAnalysis,
+        IReadOnlyList<long> times)
+    {
+        int squadBurstWindows = BuildBurstWindows(squadAnalysis, times).Count;
+        int enemyBurstWindows = BuildBurstWindows(enemyAnalysis, times).Count;
+        int enemyDowns = eventAnalysis.Downs.Events.Count(evt => evt.IsEnemy);
+        int enemyKills = eventAnalysis.Kills.Events.Count(evt => evt.IsEnemy);
+        int enemyRecoveries = eventAnalysis.Recovered.Events.Count(evt => evt.IsEnemy && !evt.UsesSupportView);
+        int squadDowns = eventAnalysis.Downs.Events.Count(evt => !evt.IsEnemy);
+        int squadRecoveries = eventAnalysis.Recovered.Events.Count(evt => !evt.IsEnemy && evt.UsesSupportView);
+        int ccImpactedEnemyDowns = eventAnalysis.Downs.Events.Count(evt => evt.IsEnemy && evt.CcImpacted);
+        int stripSyncedBursts = squadAnalysis.StripSynced.Count(value => value);
+        double burstIntensity = 100.0 * Math.Clamp((squadBurstWindows + enemyBurstWindows) / 6.0, 0.0, 1.0);
+        double conversionContest = 100.0 * Math.Clamp((enemyDowns + enemyKills + enemyRecoveries) / 8.0, 0.0, 1.0);
+        double boonCrackNeed = 100.0 * Math.Clamp((stripSyncedBursts / 6.0) * 0.65 + (enemyRecoveries / Math.Max((double)enemyDowns, 1.0)) * 0.35, 0.0, 1.0);
+        double controlNeed = 100.0 * Math.Clamp((ccImpactedEnemyDowns / Math.Max((double)enemyDowns, 1.0)) * 0.70 + (eventAnalysis.Downs.EnemySummary.HardCcDowns / Math.Max((double)enemyDowns, 1.0)) * 0.30, 0.0, 1.0);
+        double defensiveLoad = 100.0 * Math.Clamp((enemyBurstWindows / 6.0) * 0.45 + (squadDowns / 6.0) * 0.35 + (defenseAnalysis.BurstBarrier.LowHealthSurvivorOccurrences / 8.0) * 0.20, 0.0, 1.0);
+        double rescueNeed = 100.0 * Math.Clamp((squadDowns / 6.0) * 0.55 + (squadRecoveries / 4.0) * 0.45, 0.0, 1.0);
+        double threatenedBoonNeed = 100.0 * Math.Clamp(defensiveLoad / 100.0 * 0.70 + burstIntensity / 100.0 * 0.30, 0.0, 1.0);
+        double conditionPressureNeed = 100.0 * Math.Clamp((eventAnalysis.Downs.SquadSummary.ConditionImpactedDowns / Math.Max((double)squadDowns, 1.0)) * 0.65 + (squadRecoveries / Math.Max((double)squadDowns, 1.0)) * 0.35, 0.0, 1.0);
+
+        var lanes = new List<CombatReplayFightDemandLaneDto>
+        {
+            BuildFightDemandLane("pressure", "Pressure",
+                burstIntensity * 0.45 + conversionContest * 0.35 + boonCrackNeed * 0.20,
+                $"{enemyDowns} enemy downs and {squadBurstWindows} strong squad burst windows made live-target pressure matter."),
+            BuildFightDemandLane("conversion", "Conversion",
+                conversionContest * 0.55 + burstIntensity * 0.25 + boonCrackNeed * 0.20,
+                $"{enemyKills} enemy kills and {enemyRecoveries} enemy recoveries kept finishes contested."),
+            BuildFightDemandLane("strip", "Strip",
+                boonCrackNeed * 0.60 + conversionContest * 0.25 + burstIntensity * 0.15,
+                $"{stripSyncedBursts} synced strip bursts and {enemyRecoveries} enemy recoveries increased boon-crack value."),
+            BuildFightDemandLane("control", "Control",
+                controlNeed * 0.60 + conversionContest * 0.25 + burstIntensity * 0.15,
+                $"{ccImpactedEnemyDowns} enemy downs were visibly CC-impacted."),
+            BuildFightDemandLane("boonSupport", "Boon Support",
+                defensiveLoad * 0.50 + burstIntensity * 0.25 + threatenedBoonNeed * 0.25,
+                $"{enemyBurstWindows} enemy burst windows raised the value of offensive and defensive boon coverage."),
+            BuildFightDemandLane("recovery", "Recovery",
+                defensiveLoad * 0.65 + rescueNeed * 0.20 + conditionPressureNeed * 0.15,
+                $"{squadDowns} squad downs and {defenseAnalysis.BurstBarrier.LowHealthSurvivorOccurrences} low-health survive moments raised stabilization demand."),
+            BuildFightDemandLane("rez", "Rez",
+                rescueNeed * 0.70 + defensiveLoad * 0.20 + conversionContest * 0.10,
+                $"{squadRecoveries} squad recoveries made downstate rescue materially relevant."),
+        };
+        lanes = [.. lanes.OrderByDescending(lane => lane.DemandScorePercent).ThenBy(lane => lane.Label)];
+        return new CombatReplayFightDemandDto
+        {
+            Summary = lanes.Count > 0
+                ? $"Top demands: {string.Join(", ", lanes.Take(3).Select(lane => lane.Label))}."
+                : "Fight demand was not strong enough to rank.",
+            Lanes = lanes,
+        };
+    }
+
+    private static CombatReplayFightDemandLaneDto BuildFightDemandLane(string key, string label, double demandScorePercent, string evidenceLine)
+    {
+        demandScorePercent = Math.Clamp(Math.Round(demandScorePercent, 1), 0.0, 100.0);
+        string demandLabel = GetDemandLabel(demandScorePercent);
+        double weightMultiplier = demandLabel switch
+        {
+            "Very High" => 1.30,
+            "High" => 1.15,
+            "Moderate" => 1.00,
+            _ => 0.85,
+        };
+        return new CombatReplayFightDemandLaneDto
+        {
+            Key = key,
+            Label = label,
+            DemandScorePercent = demandScorePercent,
+            DemandLabel = demandLabel,
+            WeightMultiplier = weightMultiplier,
+            EvidenceLine = evidenceLine,
+        };
+    }
+
+    private static CombatReplayPlayerEvaluationMaximums BuildPlayerEvaluationMaximums(IReadOnlyList<CombatReplayPlayerEvaluationAggregate> aggregates)
+    {
+        if (aggregates.Count == 0)
+        {
+            return new CombatReplayPlayerEvaluationMaximums();
+        }
+
+        return new CombatReplayPlayerEvaluationMaximums
+        {
+            DamageTotal = aggregates.Max(aggregate => aggregate.DamageTotal),
+            LiveTargetDamage = aggregates.Max(aggregate => aggregate.LiveTargetDamage),
+            AgainstDownedDamage = aggregates.Max(aggregate => aggregate.AgainstDownedDamage),
+            DownContribution = aggregates.Max(aggregate => aggregate.DownContribution),
+            EnemyDownContributionDamage = aggregates.Max(aggregate => aggregate.EnemyDownContributionDamage),
+            EnemyKillContributionDamage = aggregates.Max(aggregate => aggregate.EnemyKillContributionDamage),
+            AverageTopTargetContribution = aggregates.Max(aggregate => aggregate.AverageTopTargetContribution),
+            OffensiveConditionPressure = aggregates.Max(aggregate => aggregate.OffensiveConditionPressure),
+            ControlConditionPressure = aggregates.Max(aggregate => aggregate.ControlConditionPressure),
+            StripsTotal = aggregates.Max(aggregate => aggregate.StripsTotal),
+            StripDownContribution = aggregates.Max(aggregate => aggregate.StripDownContribution),
+            HealingTotal = aggregates.Max(aggregate => aggregate.HealingTotal),
+            BarrierTotal = aggregates.Max(aggregate => aggregate.BarrierTotal),
+            CleansesTotal = aggregates.Max(aggregate => aggregate.CleansesTotal),
+            ResurrectsTotal = aggregates.Max(aggregate => aggregate.ResurrectsTotal),
+            TotalBoonSupport = aggregates.Max(aggregate => aggregate.OffensiveBoonSupport + aggregate.DefensiveBoonSupport),
+            OffensiveBoonSupport = aggregates.Max(aggregate => aggregate.OffensiveBoonSupport),
+            DefensiveBoonSupport = aggregates.Max(aggregate => aggregate.DefensiveBoonSupport),
+            DefensiveConditionPressure = aggregates.Max(aggregate => aggregate.DefensiveConditionPressure),
+            EffectiveCrowdControlCount = aggregates.Max(aggregate => aggregate.EffectiveCrowdControlCount),
+            EffectiveCrowdControlDuration = aggregates.Max(aggregate => aggregate.EffectiveCrowdControlDuration),
+            CrowdControlDownContribution = aggregates.Max(aggregate => aggregate.CrowdControlDownContribution),
+            BurstContributionWindows = aggregates.Max(aggregate => aggregate.BurstContributionWindows),
+            ConversionContributionWindows = aggregates.Max(aggregate => aggregate.ConversionContributionWindows),
+            ControlContributionWindows = aggregates.Max(aggregate => aggregate.ControlContributionWindows),
+            DefensiveSupportWindows = aggregates.Max(aggregate => aggregate.DefensiveSupportWindows),
+            OffensiveBoonWindows = aggregates.Max(aggregate => aggregate.OffensiveBoonWindows),
+            DefensiveBoonWindows = aggregates.Max(aggregate => aggregate.DefensiveBoonWindows),
+            BoonContributionWindows = aggregates.Max(aggregate => aggregate.BoonContributionWindows),
+            SquadRecoveryWindowsHelped = aggregates.Max(aggregate => aggregate.SquadRecoveryWindowsHelped),
+            DownedHealingOnRecoveries = aggregates.Max(aggregate => aggregate.DownedHealingOnRecoveries),
+            RezTimeOnRecoveries = aggregates.Max(aggregate => aggregate.RezTimeOnRecoveries),
+            KeyWindowsHit = aggregates.Max(aggregate => aggregate.KeyWindowsHit),
+        };
+    }
+
+    private static CombatReplayPlayerEvaluationTotals BuildPlayerEvaluationTotals(
+        IReadOnlyList<CombatReplayPlayerEvaluationAggregate> aggregates,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        return new CombatReplayPlayerEvaluationTotals
+        {
+            PressureContribution = aggregates.Sum(aggregate => aggregate.EnemyDownContributionDamage),
+            LiveTargetDamage = aggregates.Sum(aggregate => aggregate.LiveTargetDamage),
+            ConversionContribution = aggregates.Sum(aggregate => aggregate.EnemyKillContributionDamage),
+            AgainstDownedDamage = aggregates.Sum(aggregate => aggregate.AgainstDownedDamage),
+            StripDownContribution = aggregates.Sum(aggregate => aggregate.StripDownContribution),
+            StripsTotal = aggregates.Sum(aggregate => aggregate.StripsTotal),
+            CrowdControlDownContribution = aggregates.Sum(aggregate => aggregate.CrowdControlDownContribution),
+            EffectiveCrowdControlCount = aggregates.Sum(aggregate => aggregate.EffectiveCrowdControlCount),
+            TotalBoonSupport = Math.Round(aggregates.Sum(aggregate => aggregate.OffensiveBoonSupport + aggregate.DefensiveBoonSupport), 1),
+            HealingTotal = hasHealingData ? aggregates.Sum(aggregate => aggregate.HealingTotal) : 0,
+            BarrierTotal = hasBarrierData ? aggregates.Sum(aggregate => aggregate.BarrierTotal) : 0,
+            CleansesTotal = aggregates.Sum(aggregate => aggregate.CleansesTotal),
+            DefensiveSupportWindows = aggregates.Sum(aggregate => aggregate.DefensiveSupportWindows),
+            SquadRecoveryWindowsHelped = aggregates.Sum(aggregate => aggregate.SquadRecoveryWindowsHelped),
+            RezTimeOnRecoveries = Math.Round(aggregates.Sum(aggregate => aggregate.RezTimeOnRecoveries), 1),
+        };
+    }
+
+    private static Dictionary<int, PlayerEventContributionSummary> BuildPlayerEventContributionSummaries<TEvent>(
+        IReadOnlyList<TEvent> events,
+        Func<TEvent, IReadOnlyList<CombatReplayEventContributionDto>> contributorSelector,
+        Func<CombatReplayEventContributionDto, double> amountSelector,
+        Func<TEvent, bool>? fastEventPredicate = null)
+    {
+        var totals = new Dictionary<int, (double Amount, int WindowsHit, int FastWindowsHit)>();
+        foreach (TEvent evt in events)
+        {
+            var seenContributors = new HashSet<int>();
+            bool isFastEvent = fastEventPredicate?.Invoke(evt) ?? false;
+            foreach (CombatReplayEventContributionDto contributor in contributorSelector(evt))
+            {
+                if (!contributor.ActorId.HasValue)
+                {
+                    continue;
+                }
+                double amount = amountSelector(contributor);
+                if (amount <= 0.0)
+                {
+                    continue;
+                }
+
+                int actorId = contributor.ActorId.Value;
+                totals.TryGetValue(actorId, out var current);
+                current.Amount += amount;
+                if (seenContributors.Add(actorId))
+                {
+                    current.WindowsHit++;
+                    if (isFastEvent)
+                    {
+                        current.FastWindowsHit++;
+                    }
+                }
+                totals[actorId] = current;
+            }
+        }
+
+        return totals.ToDictionary(
+            pair => pair.Key,
+            pair => new PlayerEventContributionSummary(
+                Math.Round(pair.Value.Amount, 1),
+                pair.Value.WindowsHit,
+                events.Count,
+                pair.Value.FastWindowsHit));
+    }
+
+    private static Dictionary<int, PlayerRecoveryContributionSummary> BuildPlayerRecoveryContributionSummaries(IReadOnlyList<CombatReplayRecoveredEventDto> events)
+    {
+        var totals = new Dictionary<int, (int WindowsHit, double DownedHealing, double RezCasts, double RezTime)>();
+        foreach (CombatReplayRecoveredEventDto evt in events)
+        {
+            var seenContributors = new HashSet<int>();
+            foreach (CombatReplayEventContributionDto contributor in evt.SupportContributors)
+            {
+                if (!contributor.ActorId.HasValue)
+                {
+                    continue;
+                }
+
+                double downedHealing = GetSupportDetailAmount(contributor, "Downed healing");
+                double rezCasts = GetSupportDetailAmount(contributor, "Rez casts");
+                double rezTime = GetSupportDetailAmount(contributor, "Rez time");
+                if (downedHealing <= 0.0 && rezCasts <= 0.0 && rezTime <= 0.0)
+                {
+                    continue;
+                }
+
+                int actorId = contributor.ActorId.Value;
+                totals.TryGetValue(actorId, out var current);
+                current.DownedHealing += downedHealing;
+                current.RezCasts += rezCasts;
+                current.RezTime += rezTime;
+                if (seenContributors.Add(actorId))
+                {
+                    current.WindowsHit++;
+                }
+                totals[actorId] = current;
+            }
+        }
+
+        return totals.ToDictionary(
+            pair => pair.Key,
+            pair => new PlayerRecoveryContributionSummary(
+                pair.Value.WindowsHit,
+                events.Count,
+                Math.Round(pair.Value.DownedHealing, 1),
+                Math.Round(pair.Value.RezCasts, 1),
+                Math.Round(pair.Value.RezTime, 1)));
+    }
+
+    private static int BuildPlayerRecoveryCount(ParsedEvtcLog log, SingleActor player)
+    {
+        return log.CombatData.GetDownEvents(player.AgentItem)
+            .Count(downEvent => string.Equals(GetDownOutcomeInfo(log, player.AgentItem, downEvent.Time).Outcome, "Recovered", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static Dictionary<EvaluationWindow, double> ComputeBoonSupportContributionByWindow(
+        ParsedEvtcLog log,
+        SingleActor provider,
+        IReadOnlyList<SingleActor> recipients,
+        IReadOnlyList<EvaluationWindow> windows,
+        IReadOnlyList<long> boonIds)
+    {
+        var result = new Dictionary<EvaluationWindow, double>();
+        foreach (EvaluationWindow window in windows)
+        {
+            double windowTotal = 0.0;
+            foreach (SingleActor recipient in recipients)
+            {
+                IReadOnlyDictionary<long, BuffVolumeByActorStatistics> activeBuffVolumes = recipient.GetActiveBuffVolumesDictionary(log, window.Start, window.End);
+                foreach (long boonId in boonIds)
+                {
+                    if (activeBuffVolumes.TryGetValue(boonId, out BuffVolumeByActorStatistics? stats) &&
+                        stats.IncomingBy.TryGetValue(provider, out double amount))
+                    {
+                        windowTotal += amount;
+                    }
+                }
+            }
+
+            if (windowTotal > 0.0)
+            {
+                result[window] = Math.Round(windowTotal, 1);
+            }
+        }
+        return result;
+    }
+
+    private static int CountKeyContributionWindows(
+        IReadOnlyList<EvaluationWindow> keyWindows,
+        IReadOnlyList<long> times,
+        CombatReplayAnalysisAttackerTimelineDto? attackerTimeline,
+        IReadOnlyList<CrowdControlEvent> effectiveCrowdControlEvents,
+        IReadOnlyDictionary<EvaluationWindow, double> offensiveConditionContribution,
+        IReadOnlyDictionary<EvaluationWindow, double> controlConditionContribution,
+        IReadOnlyDictionary<EvaluationWindow, double> defensiveConditionContribution,
+        IReadOnlyDictionary<EvaluationWindow, double> offensiveBoonContribution,
+        IReadOnlyDictionary<EvaluationWindow, double> defensiveBoonContribution)
+    {
+        return keyWindows.Count(window =>
+            HasTimelineContribution(times, window, attackerTimeline?.Damage, attackerTimeline?.Healing, attackerTimeline?.Barrier, attackerTimeline?.Cleanses, attackerTimeline?.Strips) ||
+            effectiveCrowdControlEvents.Any(crowdControlEvent => crowdControlEvent.Time >= window.Start && crowdControlEvent.Time <= window.End) ||
+            offensiveConditionContribution.ContainsKey(window) ||
+            controlConditionContribution.ContainsKey(window) ||
+            defensiveConditionContribution.ContainsKey(window) ||
+            offensiveBoonContribution.ContainsKey(window) ||
+            defensiveBoonContribution.ContainsKey(window));
+    }
+
+    private static PlayerLaneSnapshot BuildPressureLaneSnapshot(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals)
+    {
+        double strengthPercent = ComputeWeightedScore(
+            (NormalizeValue(aggregate.LiveTargetDamage, maximums.LiveTargetDamage), 0.34),
+            (NormalizeValue(aggregate.EnemyDownContributionDamage, maximums.EnemyDownContributionDamage), maximums.EnemyDownContributionDamage > 0.0 ? 0.28 : 0.0),
+            (NormalizeValue(aggregate.DownContribution, maximums.DownContribution), maximums.DownContribution > 0 ? 0.14 : 0.0),
+            (NormalizeValue(aggregate.AverageTopTargetContribution, maximums.AverageTopTargetContribution), 0.14),
+            (NormalizeValue(aggregate.OffensiveConditionPressure, maximums.OffensiveConditionPressure), maximums.OffensiveConditionPressure > 0.0 ? 0.10 : 0.0));
+        double sharePercent = totals.PressureContribution > 0.0
+            ? aggregate.EnemyDownContributionDamage * 100.0 / totals.PressureContribution
+            : ComputePercent(aggregate.LiveTargetDamage, totals.LiveTargetDamage);
+        int windowsTotal = aggregate.EnemyDownWindowsTotal > 0 ? aggregate.EnemyDownWindowsTotal : aggregate.BurstWindowsTotal;
+        int windowsHit = aggregate.EnemyDownWindowsTotal > 0 ? aggregate.EnemyDownWindowsHit : aggregate.BurstContributionWindows;
+        List<CombatReplayPlayerEvaluationDetailSectionDto> detailSections =
+        [
+            BuildDetailSection("Pressure Metrics",
+            [
+                BuildDetailEntry("Live-target damage", FormatWholeNumber(aggregate.LiveTargetDamage), $"{FormatWholeNumber(aggregate.DamageTotal)} total damage to enemy players"),
+                BuildDetailEntry("Pre-down contribution", FormatWholeNumber((long)Math.Round(aggregate.EnemyDownContributionDamage)), BuildPluralizedLabel(aggregate.EnemyDownWindowsHit, "down window", "down windows")),
+                BuildDetailEntry("Down contribution", FormatWholeNumber(aggregate.DownContribution), ""),
+                BuildDetailEntry("Focus contribution", $"{FormatOneDecimal(aggregate.AverageTopTargetContribution)}%", ""),
+                BuildDetailEntry("Offensive condition pressure", FormatWholeNumber((long)Math.Round(aggregate.OffensiveConditionPressure)), "")
+            ])
+        ];
+        return new PlayerLaneSnapshot(
+            "pressure",
+            "Pressure",
+            strengthPercent,
+            sharePercent,
+            windowsHit,
+            windowsTotal,
+            aggregate.EnemyDownWindowsTotal > 0 ? "down windows" : "burst windows",
+            GetRateBand(strengthPercent),
+            $"{FormatWholeNumber(aggregate.LiveTargetDamage)} live-target damage and {FormatWholeNumber((long)Math.Round(aggregate.EnemyDownContributionDamage))} pre-down pressure showed up before enemies fell.",
+            true,
+            "Pressure Detail",
+            "Pressure highlights live-target damage and visible pre-down contribution before enemy downs landed.",
+            detailSections);
+    }
+
+    private static PlayerLaneSnapshot BuildConversionLaneSnapshot(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals)
+    {
+        double strengthPercent = ComputeWeightedScore(
+            (NormalizeValue(aggregate.EnemyKillContributionDamage, maximums.EnemyKillContributionDamage), maximums.EnemyKillContributionDamage > 0.0 ? 0.46 : 0.0),
+            (NormalizeValue(aggregate.AgainstDownedDamage, maximums.AgainstDownedDamage), maximums.AgainstDownedDamage > 0 ? 0.26 : 0.0),
+            (NormalizeValue(aggregate.FastEnemyKillWindowsHit, Math.Max(1, maximums.EnemyKillContributionDamage > 0.0 ? aggregate.EnemyKillWindowsTotal : 1)), 0.12),
+            (NormalizeValue(aggregate.EnemyKillWindowsHit, Math.Max(1, aggregate.EnemyKillWindowsTotal)), 0.16));
+        double sharePercent = totals.ConversionContribution > 0.0
+            ? aggregate.EnemyKillContributionDamage * 100.0 / totals.ConversionContribution
+            : ComputePercent(aggregate.AgainstDownedDamage, totals.AgainstDownedDamage);
+        List<CombatReplayPlayerEvaluationDetailSectionDto> detailSections =
+        [
+            BuildDetailSection("Conversion Metrics",
+            [
+                BuildDetailEntry("Finish contribution", FormatWholeNumber((long)Math.Round(aggregate.EnemyKillContributionDamage)), BuildPluralizedLabel(aggregate.EnemyKillWindowsHit, "finish window", "finish windows")),
+                BuildDetailEntry("Against-downed damage", FormatWholeNumber(aggregate.AgainstDownedDamage), ""),
+                BuildDetailEntry("Fast conversions helped", BuildPluralizedLabel(aggregate.FastEnemyKillWindowsHit, "fast finish", "fast finishes"), ""),
+                BuildDetailEntry("Conversion windows", BuildPluralizedLabel(aggregate.EnemyKillWindowsHit, "finish window", "finish windows"), $"{aggregate.EnemyKillWindowsTotal} total")
+            ])
+        ];
+        return new PlayerLaneSnapshot(
+            "conversion",
+            "Conversion",
+            strengthPercent,
+            sharePercent,
+            aggregate.EnemyKillWindowsHit,
+            aggregate.EnemyKillWindowsTotal,
+            "finish windows",
+            GetRateBand(strengthPercent),
+            $"{FormatWholeNumber((long)Math.Round(aggregate.EnemyKillContributionDamage))} finish contribution and {FormatWholeNumber(aggregate.AgainstDownedDamage)} against-downed damage helped secure kills.",
+            true,
+            "Conversion Detail",
+            "Conversion tracks visible contribution after enemy downs, especially in successful finish windows.",
+            detailSections);
+    }
+
+    private static PlayerLaneSnapshot BuildStripLaneSnapshot(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals)
+    {
+        double strengthPercent = ComputeWeightedScore(
+            (NormalizeValue(aggregate.StripDownContribution, maximums.StripDownContribution), maximums.StripDownContribution > 0 ? 0.44 : 0.0),
+            (NormalizeValue(aggregate.StripsTotal, maximums.StripsTotal), 0.34),
+            (NormalizeValue(aggregate.ControlContributionWindows, maximums.ControlContributionWindows), 0.12),
+            (NormalizeValue(aggregate.StripDownContributionTime, Math.Max(aggregate.StripDownContributionTime, 0.1)), aggregate.StripDownContributionTime > 0.0 ? 0.10 : 0.0));
+        double sharePercent = totals.StripDownContribution > 0
+            ? aggregate.StripDownContribution * 100.0 / totals.StripDownContribution
+            : ComputePercent(aggregate.StripsTotal, totals.StripsTotal);
+        List<CombatReplayPlayerEvaluationDetailSectionDto> detailSections =
+        [
+            BuildDetailSection("Strip Metrics",
+            [
+                BuildDetailEntry("Timed strips", FormatWholeNumber(aggregate.StripsTotal), $"{FormatOneDecimal(aggregate.StripDownContributionTime)}s down-linked strip time"),
+                BuildDetailEntry("Down-linked strips", FormatWholeNumber(aggregate.StripDownContribution), ""),
+                BuildDetailEntry("Strip windows", BuildPluralizedLabel(aggregate.ControlContributionWindows, "control window", "control windows"), $"{aggregate.ControlWindowsTotal} total")
+            ])
+        ];
+        return new PlayerLaneSnapshot(
+            "strip",
+            "Strip",
+            strengthPercent,
+            sharePercent,
+            aggregate.ControlContributionWindows,
+            aggregate.ControlWindowsTotal,
+            "strip windows",
+            GetRateBand(strengthPercent),
+            $"{FormatWholeNumber(aggregate.StripsTotal)} strips and {FormatWholeNumber(aggregate.StripDownContribution)} down-linked strips cracked enemy boons in key exchanges.",
+            true,
+            "Strip Detail",
+            "Strip highlights enemy boon removal, with extra weight on strips that fed downs.",
+            detailSections);
+    }
+
+    private static PlayerLaneSnapshot BuildControlLaneSnapshot(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals)
+    {
+        double strengthPercent = ComputeWeightedScore(
+            (NormalizeValue(aggregate.CrowdControlDownContribution, maximums.CrowdControlDownContribution), maximums.CrowdControlDownContribution > 0 ? 0.34 : 0.0),
+            (NormalizeValue(aggregate.EffectiveCrowdControlCount, maximums.EffectiveCrowdControlCount), 0.28),
+            (NormalizeValue(aggregate.EffectiveCrowdControlDuration, maximums.EffectiveCrowdControlDuration), maximums.EffectiveCrowdControlDuration > 0.0 ? 0.20 : 0.0),
+            (NormalizeValue(aggregate.ControlConditionPressure, maximums.ControlConditionPressure), maximums.ControlConditionPressure > 0.0 ? 0.08 : 0.0),
+            (NormalizeValue(aggregate.ControlContributionWindows, maximums.ControlContributionWindows), 0.10));
+        double sharePercent = totals.CrowdControlDownContribution > 0
+            ? aggregate.CrowdControlDownContribution * 100.0 / totals.CrowdControlDownContribution
+            : ComputePercent(aggregate.EffectiveCrowdControlCount, totals.EffectiveCrowdControlCount);
+        var detailSections = new List<CombatReplayPlayerEvaluationDetailSectionDto>
+        {
+            BuildDetailSection("Control Metrics",
+            [
+                BuildDetailEntry("Effective CC", BuildPluralizedLabel(aggregate.EffectiveCrowdControlCount, "effective CC event", "effective CC events"), $"{FormatOneDecimal(aggregate.EffectiveCrowdControlDuration)}s total control"),
+                BuildDetailEntry("CC-linked downs", FormatWholeNumber(aggregate.CrowdControlDownContribution), $"{FormatOneDecimal(aggregate.CrowdControlDurationDownContribution)}s linked duration"),
+                BuildDetailEntry("Control-condition pressure", FormatWholeNumber((long)Math.Round(aggregate.ControlConditionPressure)), ""),
+                BuildDetailEntry("Control windows", BuildPluralizedLabel(aggregate.ControlContributionWindows, "control window", "control windows"), $"{aggregate.ControlWindowsTotal} total")
+            ])
+        };
+        detailSections.AddRange(BuildControlTimingDetailSections(aggregate));
+        return new PlayerLaneSnapshot(
+            "control",
+            "Control",
+            strengthPercent,
+            sharePercent,
+            aggregate.ControlContributionWindows,
+            aggregate.ControlWindowsTotal,
+            "control windows",
+            GetRateBand(strengthPercent),
+            $"{FormatWholeNumber(aggregate.EffectiveCrowdControlCount)} effective CC events and {FormatWholeNumber(aggregate.CrowdControlDownContribution)} CC-linked downs visibly disrupted enemy play.",
+            true,
+            "Control Detail",
+            "Control captures effective crowd control, control conditions, and visible CC-linked downs.",
+            detailSections);
+    }
+
+    private static PlayerLaneSnapshot BuildBoonSupportLaneSnapshot(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals)
+    {
+        double totalBoonSupport = aggregate.OffensiveBoonSupport + aggregate.DefensiveBoonSupport;
+        double strengthPercent = ComputeWeightedScore(
+            (NormalizeValue(totalBoonSupport, maximums.TotalBoonSupport), maximums.TotalBoonSupport > 0.0 ? 0.36 : 0.0),
+            (NormalizeValue(aggregate.OffensiveBoonSupport, maximums.OffensiveBoonSupport), maximums.OffensiveBoonSupport > 0.0 ? 0.22 : 0.0),
+            (NormalizeValue(aggregate.DefensiveBoonSupport, maximums.DefensiveBoonSupport), maximums.DefensiveBoonSupport > 0.0 ? 0.30 : 0.0),
+            (NormalizeValue(aggregate.BoonContributionWindows, maximums.BoonContributionWindows), 0.12));
+        double sharePercent = totals.TotalBoonSupport > 0.0
+            ? totalBoonSupport * 100.0 / totals.TotalBoonSupport
+            : 0.0;
+        List<CombatReplayPlayerEvaluationDetailSectionDto> detailSections =
+        [
+            BuildDetailSection("Boon Support Metrics",
+            [
+                BuildDetailEntry("Total boon support", FormatWholeNumber((long)Math.Round(totalBoonSupport)), "offensive + defensive boon-seconds"),
+                BuildDetailEntry("Offensive boon support", FormatWholeNumber((long)Math.Round(aggregate.OffensiveBoonSupport)), BuildPluralizedLabel(aggregate.OffensiveBoonWindows, "offensive boon window", "offensive boon windows")),
+                BuildDetailEntry("Defensive boon support", FormatWholeNumber((long)Math.Round(aggregate.DefensiveBoonSupport)), BuildPluralizedLabel(aggregate.DefensiveBoonWindows, "defensive boon window", "defensive boon windows"))
+            ])
+        ];
+        string boonLean = aggregate.DefensiveBoonSupport >= aggregate.OffensiveBoonSupport ? "defensive" : "offensive";
+        return new PlayerLaneSnapshot(
+            "boonSupport",
+            "Boon Support",
+            strengthPercent,
+            sharePercent,
+            aggregate.BoonContributionWindows,
+            aggregate.BoonWindowsTotal,
+            "boon windows",
+            GetRateBand(strengthPercent),
+            $"{boonLean.Substring(0, 1).ToUpperInvariant()}{boonLean[1..]} boon coverage was most visible, with {FormatWholeNumber((long)Math.Round(totalBoonSupport))} total boon-seconds in key windows.",
+            true,
+            "Boon Support Detail",
+            "Boon Support tracks offensive and defensive boon-seconds applied in the fight's key windows.",
+            detailSections);
+    }
+
+    private static PlayerLaneSnapshot BuildRecoveryLaneSnapshot(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        double strengthPercent = ComputeWeightedScore(
+            (hasHealingData ? NormalizeValue(aggregate.HealingTotal, maximums.HealingTotal) : 0.0, hasHealingData ? 0.32 : 0.0),
+            (hasBarrierData ? NormalizeValue(aggregate.BarrierTotal, maximums.BarrierTotal) : 0.0, hasBarrierData ? 0.18 : 0.0),
+            (NormalizeValue(aggregate.CleansesTotal, maximums.CleansesTotal), hasHealingData || hasBarrierData ? 0.24 : 0.42),
+            (NormalizeValue(aggregate.DefensiveSupportWindows, maximums.DefensiveSupportWindows), 0.16),
+            (NormalizeValue(aggregate.DefensiveConditionPressure, maximums.DefensiveConditionPressure), maximums.DefensiveConditionPressure > 0.0 ? 0.10 : 0.0));
+        double sharePercent = ComputeRecoverySharePercent(aggregate, totals, hasHealingData, hasBarrierData);
+        List<CombatReplayPlayerEvaluationDetailSectionDto> detailSections =
+        [
+            BuildDetailSection("Recovery Metrics",
+            [
+                BuildDetailEntry("Cleanses", FormatWholeNumber(aggregate.CleansesTotal), ""),
+                BuildDetailEntry("Healing", hasHealingData ? FormatWholeNumber(aggregate.HealingTotal) : "Unavailable", hasHealingData ? "" : "Missing healing extension data"),
+                BuildDetailEntry("Barrier", hasBarrierData ? FormatWholeNumber(aggregate.BarrierTotal) : "Unavailable", hasBarrierData ? "" : "Missing barrier extension data"),
+                BuildDetailEntry("Response windows", BuildPluralizedLabel(aggregate.DefensiveSupportWindows, "response window", "response windows"), $"{aggregate.DefensiveSupportWindowsTotal} total"),
+                BuildDetailEntry("Defensive condition pressure", FormatWholeNumber((long)Math.Round(aggregate.DefensiveConditionPressure)), "")
+            ])
+        ];
+        return new PlayerLaneSnapshot(
+            "recovery",
+            "Recovery",
+            strengthPercent,
+            sharePercent,
+            aggregate.DefensiveSupportWindows,
+            aggregate.DefensiveSupportWindowsTotal,
+            "response windows",
+            GetRateBand(strengthPercent),
+            $"{FormatWholeNumber(aggregate.CleansesTotal)} cleanses{(hasHealingData ? $", {FormatWholeNumber(aggregate.HealingTotal)} healing" : "")}{(hasBarrierData ? $", and {FormatWholeNumber(aggregate.BarrierTotal)} barrier" : "")} helped the squad stabilize under pressure.",
+            true,
+            "Recovery Detail",
+            "Recovery captures cleansing, healing, barrier, and presence in defensive response windows.",
+            detailSections);
+    }
+
+    private static PlayerLaneSnapshot BuildRezLaneSnapshot(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals)
+    {
+        double strengthPercent = ComputeWeightedScore(
+            (NormalizeValue(aggregate.SquadRecoveryWindowsHelped, maximums.SquadRecoveryWindowsHelped), maximums.SquadRecoveryWindowsHelped > 0 ? 0.42 : 0.0),
+            (NormalizeValue(aggregate.DownedHealingOnRecoveries, maximums.DownedHealingOnRecoveries), maximums.DownedHealingOnRecoveries > 0.0 ? 0.28 : 0.0),
+            (NormalizeValue(aggregate.RezTimeOnRecoveries, maximums.RezTimeOnRecoveries), maximums.RezTimeOnRecoveries > 0.0 ? 0.18 : 0.0),
+            (NormalizeValue(aggregate.RezCountOnRecoveries, Math.Max(aggregate.RezCountOnRecoveries, 1.0)), aggregate.RezCountOnRecoveries > 0.0 ? 0.12 : 0.0));
+        double sharePercent = totals.SquadRecoveryWindowsHelped > 0
+            ? aggregate.SquadRecoveryWindowsHelped * 100.0 / totals.SquadRecoveryWindowsHelped
+            : ComputePercent(aggregate.RezTimeOnRecoveries, totals.RezTimeOnRecoveries);
+        List<CombatReplayPlayerEvaluationDetailSectionDto> detailSections =
+        [
+            BuildDetailSection("Rez Metrics",
+            [
+                BuildDetailEntry("Successful recoveries helped", BuildPluralizedLabel(aggregate.SquadRecoveryWindowsHelped, "recovery", "recoveries"), $"{aggregate.SquadRecoveryWindowsTotal} total"),
+                BuildDetailEntry("Downed healing", FormatWholeNumber((long)Math.Round(aggregate.DownedHealingOnRecoveries)), ""),
+                BuildDetailEntry("Rez casts", FormatOneDecimal(aggregate.RezCountOnRecoveries), ""),
+                BuildDetailEntry("Rez time", $"{FormatOneDecimal(aggregate.RezTimeOnRecoveries)}s", "")
+            ])
+        ];
+        string recoveryText = BuildPluralizedLabel(aggregate.SquadRecoveryWindowsHelped, "successful recovery", "successful recoveries");
+        string recoveryVerb = aggregate.SquadRecoveryWindowsHelped == 1 ? "was" : "were";
+        return new PlayerLaneSnapshot(
+            "rez",
+            "Rez",
+            strengthPercent,
+            sharePercent,
+            aggregate.SquadRecoveryWindowsHelped,
+            aggregate.SquadRecoveryWindowsTotal,
+            "recovery windows",
+            GetRateBand(strengthPercent),
+            $"{recoveryText} {recoveryVerb} supported with {FormatOneDecimal(aggregate.RezTimeOnRecoveries)}s of rez time and {FormatWholeNumber((long)Math.Round(aggregate.DownedHealingOnRecoveries))} downed healing.",
+            true,
+            "Rez Detail",
+            "Rez focuses on downstate rescue in successful squad recoveries.",
+            detailSections);
+    }
+
+    private static CombatReplayContributionConfidenceDto BuildPlayerEvaluationConfidence(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        var caveats = new List<string>
+        {
+            "Enemy difficulty is inferred, not directly measured",
+            "Contribution is shared, not perfectly attributable",
+        };
+        bool incompleteCoverage = !hasHealingData || !hasBarrierData || !aggregate.HasPositioningData;
+        bool smallSample = aggregate.KeyWindowsTotal < 3 || aggregate.FightDurationSeconds < 20.0;
+        if (incompleteCoverage)
+        {
+            caveats.Insert(0, "Data coverage is incomplete");
+        }
+        if (smallSample)
+        {
+            caveats.Add("Small sample: conclusions may be noisy");
+        }
+
+        int degraders = (incompleteCoverage ? 1 : 0) + (smallSample ? 1 : 0);
+        string label = degraders switch
+        {
+            >= 2 => "Low",
+            1 => "Medium",
+            _ => "High",
+        };
+        string detail = incompleteCoverage && smallSample
+            ? "Profile confidence is limited by missing coverage and a small sample."
+            : incompleteCoverage
+                ? "Profile confidence is moderated by incomplete data coverage."
+                : smallSample
+                    ? "Profile confidence is moderated by a small sample."
+                    : "Profile confidence is high for the visible data captured here.";
+        return new CombatReplayContributionConfidenceDto
+        {
+            Label = label,
+            Detail = detail,
+            Caveats = caveats,
+        };
+    }
+
+    private static List<CombatReplayPlayerEvaluationModifierDto> BuildPlayerModifiers(CombatReplayPlayerEvaluationAggregate aggregate)
+    {
+        double activePercent = ComputePercent(aggregate.ActiveSeconds, aggregate.FightDurationSeconds);
+        double engagedPercent = ComputePercent(aggregate.CombatSeconds, aggregate.FightDurationSeconds);
+        return
+        [
+            new CombatReplayPlayerEvaluationModifierDto
+            {
+                Label = "Discipline",
+                Value = aggregate.HasPositioningData ? $"{FormatOneDecimal(aggregate.InPositionRate)}% in position" : "No positioning samples",
+                Detail = aggregate.HasPositioningData
+                    ? $"{FormatOneDecimal(aggregate.TooFarRate)}% too far, {FormatOneDecimal(aggregate.OverextendedRate)}% overextended, {FormatOneDecimal(aggregate.LateralRiskRate)}% left/right exposed"
+                    : "Commander-relative positioning could not be evaluated for this player.",
+            },
+            new CombatReplayPlayerEvaluationModifierDto
+            {
+                Label = "Survival",
+                Value = $"{BuildPluralizedLabel(aggregate.Downs, "down", "downs")}, {BuildPluralizedLabel(aggregate.Deaths, "death", "deaths")}",
+                Detail = $"{BuildPluralizedLabel(aggregate.Recoveries, "recovery", "recoveries")} after being downed during the fight.",
+            },
+            new CombatReplayPlayerEvaluationModifierDto
+            {
+                Label = "Participation",
+                Value = $"{FormatOneDecimal(activePercent)}% active",
+                Detail = $"{aggregate.KeyWindowsHit}/{aggregate.KeyWindowsTotal} key windows, {FormatOneDecimal(engagedPercent)}% engaged presence",
+            },
+        ];
+    }
+
+    private static List<string> BuildEvidenceSnapshot(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        IReadOnlyList<PlayerLaneSnapshot> laneSnapshots,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        var evidence = new List<string>();
+        foreach (PlayerLaneSnapshot lane in laneSnapshots.Take(2))
+        {
+            evidence.Add($"{lane.Label}: {FormatOneDecimal(lane.SharePercent)}% squad share across {lane.WindowsHit}/{lane.WindowsTotal} {lane.WindowLabel}.");
+        }
+        if (aggregate.HasPositioningData)
+        {
+            evidence.Add($"{FormatOneDecimal(aggregate.InPositionRate)}% in position across {BuildPluralizedLabel(aggregate.PositioningSamples, "sample", "samples")}.");
+        }
+        if (aggregate.Deaths == 0)
+        {
+            evidence.Add("No deaths recorded in this fight.");
+        }
+        else
+        {
+            evidence.Add($"{BuildPluralizedLabel(aggregate.Deaths, "death", "deaths")} recorded during the fight.");
+        }
+        if (!hasHealingData || !hasBarrierData)
+        {
+            evidence.Add("Recovery read is partially limited by missing extension data.");
+        }
+        return [.. evidence.Take(4)];
+    }
+
+    private static string BuildPlayerFitSummary(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        IReadOnlyList<PlayerLaneSnapshot> laneSnapshots,
+        CombatReplayFightDemandDto fightDemand,
+        CombatReplayContributionConfidenceDto confidence)
+    {
+        if (laneSnapshots.Count == 0)
+        {
+            return "Observed contribution was too thin to summarize.";
+        }
+
+        bool smallSample = aggregate.KeyWindowsTotal < 3 || aggregate.FightDurationSeconds < 20.0;
+        string prefix = ComputePercent(aggregate.ActiveSeconds, aggregate.FightDurationSeconds) < 70.0 ? "When present, " : "";
+        PlayerLaneSnapshot primaryLane = laneSnapshots[0];
+        PlayerLaneSnapshot? secondaryLane = SelectSecondaryLane(laneSnapshots);
+        var alignedLanes = laneSnapshots
+            .Select(lane => new
+            {
+                Lane = lane,
+                Score = lane.StrengthPercent * GetDemandScore(fightDemand, lane.Key),
+                Demand = GetDemandScore(fightDemand, lane.Key),
+            })
+            .OrderByDescending(entry => entry.Score)
+            .ThenByDescending(entry => entry.Demand)
+            .ToList();
+        var alignedPrimary = alignedLanes[0];
+        string secondaryText = secondaryLane != null ? $" + {secondaryLane.Value.Label}" : "";
+
+        if (smallSample)
+        {
+            return $"{prefix}Observed contribution leaned {primaryLane.Label}{secondaryText}, but the sample is thin.";
+        }
+
+        if (alignedPrimary.Demand >= 0.55 && alignedPrimary.Score >= primaryLane.StrengthPercent * 0.35)
+        {
+            PlayerLaneSnapshot? alignedSecondary = alignedLanes.Count > 1 && alignedLanes[1].Score >= alignedLanes[0].Score * 0.60
+                ? alignedLanes[1].Lane
+                : null;
+            string alignedSecondaryText = alignedSecondary != null ? $" + {alignedSecondary.Value.Label}" : "";
+            return $"{prefix}Best fit through {alignedPrimary.Lane.Label}{alignedSecondaryText}.";
+        }
+
+        return $"{prefix}Most visible through {primaryLane.Label}{secondaryText}.";
+    }
+
+    private static string BuildPlayerDemandFitSummary(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        IReadOnlyList<PlayerLaneSnapshot> laneSnapshots,
+        CombatReplayFightDemandDto fightDemand,
+        CombatReplayContributionConfidenceDto confidence)
+    {
+        if (laneSnapshots.Count == 0)
+        {
+            return confidence.Detail;
+        }
+
+        List<CombatReplayFightDemandLaneDto> demandedLanes = [.. fightDemand.Lanes.Where(lane => lane.DemandScorePercent >= 55.0)];
+        if (demandedLanes.Count == 0)
+        {
+            return "Fight demand was too evenly distributed to prioritize one lane heavily.";
+        }
+
+        double coverage = demandedLanes.Average(demandedLane =>
+        {
+            PlayerLaneSnapshot matchingLane = laneSnapshots.FirstOrDefault(lane => lane.Key == demandedLane.Key);
+            return string.IsNullOrEmpty(matchingLane.Key) ? 0.0 : matchingLane.StrengthPercent;
+        });
+        string topDemandLabel = demandedLanes[0].Label;
+        if (coverage >= 60.0)
+        {
+            return "Main contributions lined up well with the fight's biggest needs.";
+        }
+        if (coverage >= 35.0)
+        {
+            return $"Main contributions covered part of the fight's biggest needs, especially {topDemandLabel}.";
+        }
+        string demandLean = string.Join(" + ", demandedLanes.Take(2).Select(lane => lane.Label));
+        return $"Visible contribution was more specialized than this fight's biggest demands, which leaned more on {demandLean}.";
+    }
+
+    private static string BuildLegacyContributionProfile(IReadOnlyList<PlayerLaneSnapshot> laneSnapshots)
+    {
+        if (laneSnapshots.Count == 0)
+        {
+            return "";
+        }
+        PlayerLaneSnapshot primary = laneSnapshots[0];
+        PlayerLaneSnapshot? secondary = SelectSecondaryLane(laneSnapshots);
+        return secondary != null ? $"{primary.Label} + {secondary.Value.Label}" : primary.Label;
+    }
+
+    private static PlayerLaneSnapshot? SelectSecondaryLane(IReadOnlyList<PlayerLaneSnapshot> laneSnapshots)
+    {
+        if (laneSnapshots.Count < 2)
+        {
+            return null;
+        }
+        PlayerLaneSnapshot primary = laneSnapshots[0];
+        PlayerLaneSnapshot secondary = laneSnapshots[1];
+        return secondary.StrengthPercent >= primary.StrengthPercent * 0.60 ? secondary : null;
+    }
+
+    private static SpecLaneSnapshot? SelectSecondarySpecLane(IReadOnlyList<SpecLaneSnapshot> laneSnapshots)
+    {
+        if (laneSnapshots.Count < 2)
+        {
+            return null;
+        }
+
+        SpecLaneSnapshot primary = laneSnapshots[0];
+        SpecLaneSnapshot secondary = laneSnapshots[1];
+        return secondary.StrengthPercent >= primary.StrengthPercent * 0.60 ? secondary : null;
+    }
+
+    private static string GetDemandLabel(double demandScorePercent)
+    {
+        return demandScorePercent switch
+        {
+            >= 75.0 => "Very High",
+            >= 55.0 => "High",
+            >= 30.0 => "Moderate",
+            _ => "Low",
+        };
+    }
+
+    private static double GetDemandScore(CombatReplayFightDemandDto fightDemand, string laneKey)
+    {
+        CombatReplayFightDemandLaneDto? lane = fightDemand.Lanes.FirstOrDefault(entry => entry.Key == laneKey);
+        return lane != null ? lane.DemandScorePercent / 100.0 : 0.0;
+    }
+
+    private static int CountPlayersContributing(
+        IReadOnlyList<CombatReplayPlayerEvaluationAggregate> players,
+        Func<CombatReplayPlayerEvaluationAggregate, double> rawSelector)
+    {
+        return players.Count(player => rawSelector(player) > 0.0);
+    }
+
+    private static double ComputeTopContributorSharePercent(
+        IReadOnlyList<CombatReplayPlayerEvaluationAggregate> players,
+        Func<CombatReplayPlayerEvaluationAggregate, double> rawSelector,
+        double totalRawAmount)
+    {
+        if (totalRawAmount <= 0.0 || players.Count == 0)
+        {
+            return 0.0;
+        }
+
+        double topAmount = players.Max(player => rawSelector(player));
+        return Math.Round(Math.Clamp(topAmount * 100.0 / totalRawAmount, 0.0, 100.0), 1);
+    }
+
+    private static double ComputeSpecPerSlotEfficiency(double sharePercent, double activeSharePercent)
+    {
+        if (sharePercent <= 0.0)
+        {
+            return 0.0;
+        }
+
+        return Math.Round(Math.Clamp(sharePercent / Math.Max(activeSharePercent, 5.0), 0.0, 4.0), 1);
+    }
+
+    private static double ComputeSpecLaneStrength(
+        double rawAmount,
+        double averagePerPlayerMaximum,
+        double sharePercent,
+        double perSlotEfficiency,
+        int playersContributing,
+        int playerCount)
+    {
+        double averagePerPlayer = rawAmount / Math.Max(playerCount, 1);
+        double averageStrength = NormalizeValue(averagePerPlayer, averagePerPlayerMaximum);
+        double shareStrength = Math.Clamp(sharePercent / 35.0, 0.0, 1.0);
+        double efficiencyStrength = Math.Clamp(perSlotEfficiency / 3.0, 0.0, 1.0);
+        double contributorCoverage = playerCount > 0
+            ? Math.Clamp(playersContributing / (double)playerCount, 0.0, 1.0)
+            : 0.0;
+        return Math.Round(100.0 * (
+            0.50 * averageStrength +
+            0.28 * efficiencyStrength +
+            0.12 * shareStrength +
+            0.10 * contributorCoverage), 1);
+    }
+
+    private static string GetDependencyLabel(
+        double sharePercent,
+        int playersContributing,
+        int playerCount,
+        double topContributorSharePercent)
+    {
+        double dependencyScore = ComputeDependencyScore(sharePercent, playersContributing, playerCount, topContributorSharePercent);
+        return dependencyScore switch
+        {
+            >= 65.0 => "High dependency",
+            >= 45.0 => "Medium dependency",
+            >= 25.0 => "Low dependency",
+            _ => "",
+        };
+    }
+
+    private static double ComputeDependencyScore(
+        double sharePercent,
+        int playersContributing,
+        int playerCount,
+        double topContributorSharePercent)
+    {
+        if (sharePercent < 15.0 || playersContributing == 0 || playerCount == 0)
+        {
+            return 0.0;
+        }
+
+        double sharePressure = Math.Clamp(sharePercent / 40.0, 0.0, 1.0);
+        double expectedShare = 100.0 / Math.Max(playersContributing, 1);
+        double concentration = playersContributing <= 1
+            ? 1.0
+            : Math.Clamp((topContributorSharePercent - expectedShare) / Math.Max(100.0 - expectedShare, 1.0), 0.0, 1.0);
+        double redundancyRisk = 1.0 - Math.Clamp(playersContributing / (double)playerCount, 0.0, 1.0);
+        return Math.Round(100.0 * (
+            0.50 * sharePressure +
+            0.30 * concentration +
+            0.20 * redundancyRisk), 1);
+    }
+
+    private static string GetRateBand(double strengthPercent)
+    {
+        return strengthPercent switch
+        {
+            >= 80.0 => "Very High",
+            >= 55.0 => "High",
+            >= 30.0 => "Medium",
+            _ => "Low",
+        };
+    }
+
+    private static double ComputeRecoverySharePercent(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationTotals totals,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        var weightedShares = new List<(double Share, double Weight)>();
+        if (hasHealingData && totals.HealingTotal > 0)
+        {
+            weightedShares.Add((aggregate.HealingTotal * 100.0 / totals.HealingTotal, 0.40));
+        }
+        if (hasBarrierData && totals.BarrierTotal > 0)
+        {
+            weightedShares.Add((aggregate.BarrierTotal * 100.0 / totals.BarrierTotal, 0.20));
+        }
+        if (totals.CleansesTotal > 0)
+        {
+            weightedShares.Add((aggregate.CleansesTotal * 100.0 / totals.CleansesTotal, hasHealingData || hasBarrierData ? 0.25 : 0.50));
+        }
+        if (totals.DefensiveSupportWindows > 0)
+        {
+            weightedShares.Add((aggregate.DefensiveSupportWindows * 100.0 / totals.DefensiveSupportWindows, 0.15));
+        }
+        if (weightedShares.Count == 0)
+        {
+            return 0.0;
+        }
+        double weightTotal = weightedShares.Sum(entry => entry.Weight);
+        return Math.Round(weightedShares.Sum(entry => entry.Share * entry.Weight) / Math.Max(weightTotal, 0.01), 1);
+    }
+
+    private static double ComputeRecoveryContributionMagnitude(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        double magnitude = aggregate.CleansesTotal * (hasHealingData || hasBarrierData ? 1.0 : 1.8) +
+            aggregate.DefensiveSupportWindows * 3.0;
+        if (hasHealingData)
+        {
+            magnitude += aggregate.HealingTotal / 2500.0;
+        }
+        if (hasBarrierData)
+        {
+            magnitude += aggregate.BarrierTotal / 2500.0;
+        }
+        return Math.Round(magnitude, 2);
+    }
+
+    private static CombatReplayPlayerEvaluationDetailSectionDto BuildDetailSection(
+        string label,
+        IEnumerable<CombatReplayPlayerEvaluationDetailEntryDto> entries)
+    {
+        return new CombatReplayPlayerEvaluationDetailSectionDto
+        {
+            Label = label,
+            Entries = [.. entries],
+        };
+    }
+
+    private static CombatReplayPlayerEvaluationDetailEntryDto BuildDetailEntry(string label, string value, string secondary)
+    {
+        return new CombatReplayPlayerEvaluationDetailEntryDto
+        {
+            Label = label,
+            Value = value,
+            Secondary = secondary,
+        };
+    }
+
+    private static double ComputePercent(double numerator, double denominator)
+    {
+        return denominator > 0.0 ? Math.Round(numerator * 100.0 / denominator, 1) : 0.0;
     }
 
     private static CombatReplayEventAnalysisDto BuildEventAnalysis(

@@ -952,6 +952,415 @@ h6.actor-shorten-cr-compact {
     opacity: 0.72;
 }
 
+.combat-replay-player-evaluation-confidence {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.combat-replay-player-evaluation-confidence-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.combat-replay-player-evaluation-confidence-badge {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(94, 190, 212, 0.38);
+    border-radius: 999px;
+    padding: 0.2rem 0.55rem;
+    background: rgba(94, 190, 212, 0.12);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.combat-replay-player-evaluation-confidence-detail {
+    font-size: 0.75rem;
+    opacity: 0.8;
+}
+
+.combat-replay-player-evaluation-caveats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.combat-replay-player-evaluation-caveat {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(224, 181, 94, 0.32);
+    border-radius: 999px;
+    padding: 0.18rem 0.5rem;
+    background: rgba(224, 181, 94, 0.1);
+    font-size: 0.72rem;
+    line-height: 1.25;
+    opacity: 0.92;
+}
+
+.combat-replay-fight-demand {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    border: 1px solid rgba(124, 130, 136, 0.26);
+    border-radius: 0.42rem;
+    padding: 0.65rem 0.7rem;
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.combat-replay-fight-demand-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    opacity: 0.82;
+}
+
+.combat-replay-fight-demand-summary {
+    font-size: 0.79rem;
+    opacity: 0.84;
+}
+
+.combat-replay-fight-demand-lanes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.combat-replay-fight-demand-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid rgba(127, 216, 170, 0.28);
+    border-radius: 999px;
+    padding: 0.2rem 0.55rem;
+    background: rgba(127, 216, 170, 0.08);
+}
+
+.combat-replay-fight-demand-pill-label {
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+.combat-replay-fight-demand-pill-value {
+    font-size: 0.72rem;
+    opacity: 0.82;
+}
+
+.combat-replay-player-evaluation-specs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.combat-replay-spec-capability-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.55rem;
+}
+
+.combat-replay-spec-capability-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    border: 1px solid rgba(124, 130, 136, 0.28);
+    border-radius: 0.42rem;
+    padding: 0.62rem 0.68rem;
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.combat-replay-spec-capability-card-selected {
+    border-color: rgba(94, 190, 212, 0.42);
+    background: rgba(94, 190, 212, 0.08);
+}
+
+.combat-replay-spec-capability-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.combat-replay-spec-capability-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.combat-replay-spec-capability-icon {
+    width: 1.55rem;
+    height: 1.55rem;
+    border-radius: 999px;
+    flex: 0 0 auto;
+}
+
+.combat-replay-spec-capability-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.combat-replay-spec-capability-meta {
+    font-size: 0.74rem;
+    opacity: 0.8;
+}
+
+.combat-replay-spec-capability-summary {
+    font-size: 0.79rem;
+    font-weight: 700;
+}
+
+.combat-replay-spec-capability-text {
+    font-size: 0.75rem;
+    line-height: 1.35;
+    opacity: 0.86;
+}
+
+.combat-replay-spec-capability-text-secondary {
+    opacity: 0.78;
+}
+
+.combat-replay-spec-capability-lanes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.42rem;
+}
+
+.combat-replay-spec-capability-lane {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    border: 1px solid rgba(124, 130, 136, 0.22);
+    border-radius: 0.36rem;
+    padding: 0.48rem 0.52rem;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.combat-replay-spec-capability-lane-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.4rem;
+}
+
+.combat-replay-spec-capability-lane-title {
+    font-size: 0.79rem;
+    font-weight: 700;
+}
+
+.combat-replay-spec-capability-lane-share {
+    font-size: 0.71rem;
+    opacity: 0.8;
+    text-align: right;
+}
+
+.combat-replay-spec-capability-lane-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.combat-replay-spec-capability-lane-chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(124, 130, 136, 0.3);
+    border-radius: 999px;
+    padding: 0.13rem 0.42rem;
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    opacity: 0.92;
+}
+
+.combat-replay-spec-capability-lane-chip-low,
+.combat-replay-spec-capability-lane-chip-low-dependency {
+    border-color: rgba(124, 130, 136, 0.34);
+    background: rgba(124, 130, 136, 0.12);
+}
+
+.combat-replay-spec-capability-lane-chip-medium,
+.combat-replay-spec-capability-lane-chip-medium-dependency {
+    border-color: rgba(210, 182, 94, 0.38);
+    background: rgba(210, 182, 94, 0.14);
+}
+
+.combat-replay-spec-capability-lane-chip-high,
+.combat-replay-spec-capability-lane-chip-high-dependency {
+    border-color: rgba(94, 190, 212, 0.4);
+    background: rgba(94, 190, 212, 0.14);
+}
+
+.combat-replay-spec-capability-lane-chip-very-high {
+    border-color: rgba(127, 216, 170, 0.4);
+    background: rgba(127, 216, 170, 0.15);
+}
+
+.combat-replay-spec-capability-lane-evidence {
+    font-size: 0.73rem;
+    line-height: 1.35;
+    opacity: 0.88;
+}
+
+.combat-replay-player-lane-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0.55rem;
+}
+
+.combat-replay-player-lane {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    border: 1px solid rgba(124, 130, 136, 0.28);
+    border-radius: 0.42rem;
+    padding: 0.65rem 0.7rem;
+    background: rgba(0, 0, 0, 0.1);
+    color: inherit;
+}
+
+.combat-replay-player-lane-button {
+    cursor: pointer;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.combat-replay-player-lane-button:hover,
+.combat-replay-player-lane-button:focus-visible {
+    border-color: rgba(94, 190, 212, 0.46);
+    background: rgba(94, 190, 212, 0.08);
+    outline: none;
+}
+
+.combat-replay-player-lane-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+}
+
+.combat-replay-player-lane-title {
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.combat-replay-player-lane-share {
+    font-size: 0.75rem;
+    opacity: 0.82;
+    text-align: right;
+}
+
+.combat-replay-player-lane-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.combat-replay-player-lane-chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(124, 130, 136, 0.3);
+    border-radius: 999px;
+    padding: 0.14rem 0.45rem;
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    opacity: 0.9;
+}
+
+.combat-replay-player-lane-chip-strength {
+    border-color: rgba(94, 190, 212, 0.35);
+    background: rgba(94, 190, 212, 0.12);
+}
+
+.combat-replay-player-lane-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    font-size: 0.73rem;
+    opacity: 0.78;
+}
+
+.combat-replay-player-lane-evidence {
+    font-size: 0.77rem;
+    line-height: 1.4;
+    opacity: 0.92;
+}
+
+.combat-replay-player-evaluation-section-heading {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    opacity: 0.82;
+}
+
+.combat-replay-player-evaluation-modifiers,
+.combat-replay-player-evaluation-evidence {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.combat-replay-player-evaluation-modifier-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.5rem;
+}
+
+.combat-replay-player-evaluation-modifier {
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+    border: 1px solid rgba(124, 130, 136, 0.24);
+    border-radius: 0.38rem;
+    padding: 0.5rem 0.58rem;
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.combat-replay-player-evaluation-modifier-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.45rem;
+}
+
+.combat-replay-player-evaluation-modifier-label {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.8;
+}
+
+.combat-replay-player-evaluation-modifier-value {
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: right;
+}
+
+.combat-replay-player-evaluation-modifier-detail {
+    font-size: 0.74rem;
+    line-height: 1.35;
+    opacity: 0.84;
+}
+
+.combat-replay-player-evaluation-evidence-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+}
+
+.combat-replay-player-evaluation-evidence-item {
+    font-size: 0.76rem;
+    line-height: 1.35;
+}
+
 .combat-replay-player-evaluation-role-mix {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -1081,7 +1490,7 @@ h6.actor-shorten-cr-compact {
 .combat-replay-player-compare-grid {
     margin-top: 1rem;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 0.85rem;
     align-items: start;
     max-height: min(64vh, 56rem);
@@ -1131,6 +1540,46 @@ h6.actor-shorten-cr-compact {
 
 .combat-replay-player-compare-area-grid {
     grid-template-columns: 1fr;
+}
+
+.combat-replay-player-compare-lanes .combat-replay-player-lane {
+    padding: 0.52rem 0.58rem;
+}
+
+.combat-replay-player-compare-modifiers {
+    grid-template-columns: 1fr;
+}
+
+.combat-replay-player-compare-lanes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+}
+
+.combat-replay-player-compare-lanes .combat-replay-player-lane-title {
+    font-size: 0.8rem;
+}
+
+.combat-replay-player-compare-lanes .combat-replay-player-lane-share {
+    font-size: 0.72rem;
+}
+
+.combat-replay-player-compare-lanes .combat-replay-player-lane-meta,
+.combat-replay-player-compare-lanes .combat-replay-player-lane-evidence {
+    font-size: 0.71rem;
+}
+
+@media (max-width: 1200px) {
+    .combat-replay-player-lane-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 900px) {
+    .combat-replay-spec-capability-lanes,
+    .combat-replay-player-lane-list,
+    .combat-replay-player-compare-lanes {
+        grid-template-columns: 1fr;
+    }
 }
 
 .combat-replay-player-evaluation-detail-section + .combat-replay-player-evaluation-detail-section {
@@ -1564,6 +2013,90 @@ h6.actor-shorten-cr-compact {
     margin-top: 0.4rem;
     font-size: 0.78rem;
     opacity: 0.84;
+}
+
+.wvw-summary-demand-panel {
+    margin-top: 0.75rem;
+    border: 1px solid rgba(124, 130, 136, 0.24);
+    border-radius: 0.4rem;
+    background: rgba(0, 0, 0, 0.12);
+    padding: 0.65rem 0.75rem;
+}
+
+.wvw-summary-demand-header .wvw-summary-side-panel-subtitle {
+    margin-bottom: 0;
+}
+
+.wvw-summary-demand-summary {
+    margin-top: -0.15rem;
+    font-size: 0.78rem;
+    opacity: 0.84;
+}
+
+.wvw-summary-demand-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.55rem;
+}
+
+.wvw-summary-demand-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid rgba(124, 130, 136, 0.3);
+    border-radius: 999px;
+    background: rgba(54, 60, 66, 0.35);
+    padding: 0.2rem 0.55rem;
+    line-height: 1.2;
+}
+
+.wvw-summary-demand-badge-label {
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+.wvw-summary-demand-badge-value {
+    font-size: 0.72rem;
+    font-weight: 700;
+    opacity: 0.92;
+}
+
+.wvw-summary-demand-tone-low {
+    border-color: rgba(146, 154, 165, 0.34);
+    background: rgba(88, 96, 108, 0.18);
+    color: #c2c9d3;
+}
+
+.wvw-summary-demand-tone-medium {
+    border-color: rgba(196, 188, 129, 0.5);
+    background: rgba(104, 95, 37, 0.2);
+    color: #e1d58b;
+}
+
+.wvw-summary-demand-tone-high {
+    border-color: rgba(125, 176, 230, 0.5);
+    background: rgba(54, 90, 128, 0.22);
+    color: #9bc8f3;
+}
+
+.wvw-summary-demand-tone-very-high {
+    border-color: rgba(127, 216, 170, 0.55);
+    background: rgba(49, 115, 77, 0.22);
+    color: #8ee5b6;
+}
+
+.wvw-summary-spec-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.wvw-summary-spec-detail {
+    margin-top: 0.45rem;
+    font-size: 0.84rem;
+    line-height: 1.45;
+    color: rgba(217, 226, 232, 0.84);
 }
 
 .wvw-summary-execution-layout {
@@ -2511,6 +3044,16 @@ h6.actor-shorten-cr-compact {
     border-color: rgba(92, 108, 126, 0.18);
 }
 
+.theme-yeti .wvw-summary-demand-panel {
+    background: rgba(86, 144, 212, 0.05);
+    border-color: rgba(92, 108, 126, 0.18);
+}
+
+.theme-yeti .wvw-summary-demand-badge {
+    background: rgba(255, 255, 255, 0.86);
+    border-color: rgba(92, 108, 126, 0.22);
+}
+
 .theme-yeti .wvw-summary-subtab {
     background: rgba(255, 255, 255, 0.88);
     border-color: rgba(92, 108, 126, 0.24);
@@ -2548,6 +3091,22 @@ h6.actor-shorten-cr-compact {
 
 .theme-yeti .wvw-summary-grade-tone-danger {
     color: #c04a4a;
+}
+
+.theme-yeti .wvw-summary-demand-tone-low {
+    color: #66707b;
+}
+
+.theme-yeti .wvw-summary-demand-tone-medium {
+    color: #8b7a1f;
+}
+
+.theme-yeti .wvw-summary-demand-tone-high {
+    color: #2d77c5;
+}
+
+.theme-yeti .wvw-summary-demand-tone-very-high {
+    color: #2f965f;
 }
 
 .theme-yeti .wvw-summary-header-status-strong {

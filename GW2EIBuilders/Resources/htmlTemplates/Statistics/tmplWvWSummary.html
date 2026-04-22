@@ -40,6 +40,10 @@
                     @click="setSummarySubTab('overview')">
                     Overview
                 </button>
+                <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'specs'}"
+                    @click="setSummarySubTab('specs')">
+                    Specs
+                </button>
                 <button type="button" class="wvw-summary-subtab" :class="{'active': activeSummaryTab === 'metrics'}"
                     @click="setSummarySubTab('metrics')">
                     Metrics
@@ -71,6 +75,23 @@
                     </div>
                 </div>
                 <div class="wvw-summary-grade-card-detail">{{summary.fightExecutionScore.detail}}</div>
+                <div v-if="fightDemand && fightDemand.lanes && fightDemand.lanes.length > 0" class="wvw-summary-demand-panel">
+                    <div class="wvw-summary-demand-header">
+                        <div class="wvw-summary-side-panel-title">Replay Fight Demand</div>
+                        <div class="wvw-summary-side-panel-subtitle">Fight-level lane demand is shared across all player evaluations and reflects replay-visible structure, not individual assignments.</div>
+                    </div>
+                    <div class="wvw-summary-demand-summary">{{fightDemandSummary}}</div>
+                    <div class="wvw-summary-demand-badges">
+                        <span
+                            v-for="lane in fightDemand.lanes"
+                            :key="'wvw-summary-fight-demand-' + lane.key"
+                            class="wvw-summary-demand-badge"
+                            :class="getDemandToneClass(lane.demandLabel)">
+                            <span class="wvw-summary-demand-badge-label">{{lane.label}}</span>
+                            <span class="wvw-summary-demand-badge-value">{{formatDemandLabel(lane.demandLabel)}}</span>
+                        </span>
+                    </div>
+                </div>
                 <div class="wvw-summary-execution-layout">
                     <div v-if="summary.fightExecutionScore.scoreAvailable" class="wvw-summary-side-panel">
                         <div class="wvw-summary-grade-card-header">
@@ -328,6 +349,70 @@
                             </ul>
                         </div>
                     </div>
+                </div>
+            </div>
+            <div v-if="activeSummaryTab === 'specs'" class="wvw-summary-spec-layout">
+                <div class="wvw-summary-side-panel">
+                    <div class="wvw-summary-side-panel-title">Squad Spec Capability</div>
+                    <div class="wvw-summary-side-panel-subtitle">Replay-visible contribution by spec in this fight. Lane badges and ordering lean on average per-player impact, while share remains total squad share.</div>
+                    <div class="wvw-summary-spec-detail">This is observed contribution, not assignment success. A spec with one exceptional player can still look strong, but it will no longer look strong solely because more copies of that spec were present.</div>
+                </div>
+                <div v-if="fightDemand && fightDemand.lanes && fightDemand.lanes.length > 0" class="wvw-summary-demand-panel">
+                    <div class="wvw-summary-demand-header">
+                        <div class="wvw-summary-side-panel-title">Replay Fight Demand</div>
+                        <div class="wvw-summary-side-panel-subtitle">Fight demand remains shared context for every spec card in this fight.</div>
+                    </div>
+                    <div class="wvw-summary-demand-summary">{{fightDemandSummary}}</div>
+                    <div class="wvw-summary-demand-badges">
+                        <span
+                            v-for="lane in fightDemand.lanes"
+                            :key="'wvw-summary-spec-demand-' + lane.key"
+                            class="wvw-summary-demand-badge"
+                            :class="getDemandToneClass(lane.demandLabel)">
+                            <span class="wvw-summary-demand-badge-label">{{lane.label}}</span>
+                            <span class="wvw-summary-demand-badge-value">{{formatDemandLabel(lane.demandLabel)}}</span>
+                        </span>
+                    </div>
+                </div>
+                <div v-if="specCapabilities.length > 0" class="combat-replay-spec-capability-grid">
+                    <div
+                        v-for="spec in specCapabilities"
+                        :key="'wvw-summary-spec-' + spec.key"
+                        class="combat-replay-spec-capability-card">
+                        <div class="combat-replay-spec-capability-header">
+                            <div class="combat-replay-spec-capability-title-wrap">
+                                <img :src="spec.icon" :alt="spec.label" class="combat-replay-spec-capability-icon">
+                                <div>
+                                    <div class="combat-replay-spec-capability-title">{{spec.label}}</div>
+                                    <div class="combat-replay-spec-capability-meta">{{spec.playerCount}} {{spec.playerCount === 1 ? 'player' : 'players'}} | {{round1(spec.activeSharePercent)}}% active share</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="combat-replay-spec-capability-summary">{{spec.fitSummary}}</div>
+                        <div v-if="spec.demandFitSummary" class="combat-replay-spec-capability-text">{{spec.demandFitSummary}}</div>
+                        <div v-if="spec.dependencySummary" class="combat-replay-spec-capability-text combat-replay-spec-capability-text-secondary">{{spec.dependencySummary}}</div>
+                        <div v-if="spec.lanes && spec.lanes.length > 0" class="combat-replay-spec-capability-lanes">
+                            <div
+                                v-for="lane in spec.lanes.slice(0, 4)"
+                                :key="'wvw-summary-spec-lane-' + spec.key + '-' + lane.key"
+                                class="combat-replay-spec-capability-lane">
+                                <div class="combat-replay-spec-capability-lane-header">
+                                    <div class="combat-replay-spec-capability-lane-title">{{lane.label}}</div>
+                                    <div class="combat-replay-spec-capability-lane-share">{{round1(lane.sharePercent)}}% share</div>
+                                </div>
+                                <div class="combat-replay-spec-capability-lane-chips">
+                                    <span class="combat-replay-spec-capability-lane-chip" :class="getSpecCapabilityBadgeToneClass(lane.rateBand)">{{lane.rateBand}}</span>
+                                    <span class="combat-replay-spec-capability-lane-chip">{{formatSpecEfficiency(lane.perSlotEfficiency)}}</span>
+                                    <span class="combat-replay-spec-capability-lane-chip">{{lane.playersContributing}}/{{lane.playerCount}} players</span>
+                                    <span v-if="lane.dependencyLabel" class="combat-replay-spec-capability-lane-chip" :class="getSpecCapabilityBadgeToneClass(lane.dependencyLabel)">{{lane.dependencyLabel}}</span>
+                                </div>
+                                <div class="combat-replay-spec-capability-lane-evidence">{{lane.evidenceLine}}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="wvw-summary-side-panel-empty">
+                    Replay spec capability is unavailable for this fight.
                 </div>
             </div>
             <div v-if="activeSummaryTab === 'metrics'" class="wvw-summary-layout">
@@ -839,6 +924,30 @@
                     return "wvw-summary-grade-tone-weak";
                 }
                 return "wvw-summary-grade-tone-danger";
+            },
+            formatDemandLabel: function(label) {
+                return label === "Moderate" ? "Medium" : label;
+            },
+            getDemandToneClass: function(label) {
+                if (label === "Very High") {
+                    return "wvw-summary-demand-tone-very-high";
+                }
+                if (label === "High") {
+                    return "wvw-summary-demand-tone-high";
+                }
+                if (label === "Moderate") {
+                    return "wvw-summary-demand-tone-medium";
+                }
+                return "wvw-summary-demand-tone-low";
+            },
+            formatSpecEfficiency: function(value) {
+                return this.round1(value || 0) + "x efficiency";
+            },
+            getSpecCapabilityBadgeToneClass: function(value) {
+                if (!value) {
+                    return "";
+                }
+                return "combat-replay-spec-capability-lane-chip-" + value.toLowerCase().replace(/\s+/g, "-");
             },
             getExecutionMetricWeightLabel: function(pillar) {
                 if (!pillar || !pillar.metricCount) {
@@ -1425,6 +1534,37 @@
             },
             summary: function() {
                 return this.phase.wvwSummary;
+            },
+            fightDemand: function() {
+                const analysis = typeof crData !== "undefined" && crData && crData.analysis ? crData.analysis : null;
+                return analysis && analysis.fightDemand ? analysis.fightDemand : null;
+            },
+            specCapabilities: function() {
+                const analysis = typeof crData !== "undefined" && crData && crData.analysis ? crData.analysis : null;
+                if (!analysis || !analysis.specCapabilities) {
+                    return [];
+                }
+                return [...analysis.specCapabilities].sort((left, right) => {
+                    if (right.activeSharePercent !== left.activeSharePercent) {
+                        return right.activeSharePercent - left.activeSharePercent;
+                    }
+                    return left.label.localeCompare(right.label);
+                });
+            },
+            fightDemandSummary: function() {
+                if (!this.fightDemand || !this.fightDemand.lanes || this.fightDemand.lanes.length === 0) {
+                    return "";
+                }
+                const lanes = this.fightDemand.lanes;
+                const highDemandLanes = lanes.filter(lane => lane.demandScorePercent >= 55);
+                if (highDemandLanes.length > 0) {
+                    return "Higher replay-visible demand: " + highDemandLanes.slice(0, 3).map(lane => lane.label).join(", ") + ".";
+                }
+                const relativeLanes = lanes.slice(0, 3).map(lane => lane.label);
+                if ((lanes[0].demandScorePercent || 0) >= 30) {
+                    return "Demand was fairly even, with the most relative emphasis on " + relativeLanes.join(", ") + ".";
+                }
+                return "Replay-visible demand stayed low across all lanes; the badges show relative emphasis rather than absolute priority.";
             },
             playerCountStatusKey: function() {
                 if (!this.summary || !this.summary.squad || !this.summary.enemy) {
