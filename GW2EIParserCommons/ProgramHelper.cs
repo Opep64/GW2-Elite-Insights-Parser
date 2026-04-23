@@ -551,6 +551,39 @@ public sealed class ProgramHelper : IDisposable
                 operation.UpdateProgressWithCancellationCheck("Program: JSON created");
             }
         }
+        if (Settings.SaveOutAnalystJSON)
+        {
+            using var _t1 = new AutoTrace("Generate analyst JSON");
+            operation.UpdateProgressWithCancellationCheck("Program: Creating analyst JSON");
+
+            var builder = new WvWAnalystBuilder(log, ParserVersion, fInfo.Name);
+            if (builder.HasPayload)
+            {
+                string outputFile = Path.Combine(saveDirectory.FullName, $"{fName}.analysis.json");
+
+                using Stream str = Settings.CompressRaw || log.LogData.IsInstance
+                    ? new MemoryStream()
+                    : new FileStream(outputFile, FileMode.Create, FileAccess.Write);
+
+                builder.CreateJSON(str, Settings.IndentJSON);
+
+                if (str is MemoryStream msr)
+                {
+                    CompressFile(outputFile, msr, operation);
+                    operation.UpdateProgressWithCancellationCheck("Program: Analyst JSON compressed");
+                }
+                else
+                {
+                    operation.AddFile(outputFile);
+                }
+
+                operation.UpdateProgressWithCancellationCheck("Program: Analyst JSON created");
+            }
+            else
+            {
+                operation.UpdateProgressWithCancellationCheck("Program: Analyst JSON skipped because this log does not produce a detailed WvW analyst payload");
+            }
+        }
         operation.UpdateProgressWithCancellationCheck($"Completed for {resultStr} {log.LogData.Logic.Extension}");
     }
 }

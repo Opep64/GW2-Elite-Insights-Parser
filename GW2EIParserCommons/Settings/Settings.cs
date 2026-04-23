@@ -197,6 +197,21 @@ public sealed partial class Settings : global::System.Configuration.ApplicationS
     [global::System.Configuration.UserScopedSettingAttribute()]
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
     [global::System.Configuration.DefaultSettingValueAttribute("False")]
+    public bool SaveOutAnalystJSON
+    {
+        get
+        {
+            return (bool)this[nameof(SaveOutAnalystJSON)];
+        }
+        set
+        {
+            this[nameof(SaveOutAnalystJSON)] = value;
+        }
+    }
+
+    [global::System.Configuration.UserScopedSettingAttribute()]
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+    [global::System.Configuration.DefaultSettingValueAttribute("False")]
     public bool IndentJSON
     {
         get

@@ -675,6 +675,16 @@ internal class CombatReplayPlayerContributionLaneDto
     public string DrilldownTitle { get; set; } = "";
     public string DrilldownSubtitle { get; set; } = "";
     public List<CombatReplayPlayerEvaluationDetailSectionDto> DetailSections { get; set; } = [];
+    public List<CombatReplayPlayerLaneMetricDto> Metrics { get; set; } = [];
+}
+
+internal class CombatReplayPlayerLaneMetricDto
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public double Value { get; set; }
+    public string Unit { get; set; } = "";
+    public string Aggregation { get; set; } = "";
 }
 
 internal class CombatReplayPlayerEvaluationModifierDto
@@ -965,7 +975,8 @@ internal static class CombatReplayAnalysisBuilder
         bool IsInteractive,
         string DrilldownTitle,
         string DrilldownSubtitle,
-        List<CombatReplayPlayerEvaluationDetailSectionDto> DetailSections);
+        List<CombatReplayPlayerEvaluationDetailSectionDto> DetailSections,
+        List<CombatReplayPlayerLaneMetricDto> Metrics);
     private readonly record struct SpecLaneSnapshot(
         string Key,
         string Label,
@@ -2144,6 +2155,7 @@ internal static class CombatReplayAnalysisBuilder
                 DrilldownTitle = snapshot.DrilldownTitle,
                 DrilldownSubtitle = snapshot.DrilldownSubtitle,
                 DetailSections = snapshot.DetailSections,
+                Metrics = snapshot.Metrics,
             })],
             Modifiers = BuildPlayerModifiers(aggregate),
             EvidenceSnapshot = BuildEvidenceSnapshot(aggregate, laneSnapshots, hasHealingData, hasBarrierData),
@@ -2835,6 +2847,18 @@ internal static class CombatReplayAnalysisBuilder
         };
     }
 
+    private static CombatReplayPlayerLaneMetricDto BuildLaneMetric(string key, string label, double value, string unit, string aggregation = "sum")
+    {
+        return new CombatReplayPlayerLaneMetricDto
+        {
+            Key = key,
+            Label = label,
+            Value = Math.Round(value, 1),
+            Unit = unit,
+            Aggregation = aggregation,
+        };
+    }
+
     private static CombatReplayPlayerEvaluationMaximums BuildPlayerEvaluationMaximums(IReadOnlyList<CombatReplayPlayerEvaluationAggregate> aggregates)
     {
         if (aggregates.Count == 0)
@@ -3207,7 +3231,12 @@ internal static class CombatReplayAnalysisBuilder
             true,
             "Pressure Detail",
             "Pressure highlights live-target damage and visible pre-down contribution before enemy downs landed.",
-            detailSections);
+            detailSections,
+            [
+                BuildLaneMetric("liveTargetDamage", "Live-target damage", aggregate.LiveTargetDamage, "damage"),
+                BuildLaneMetric("preDownDamage", "Pre-down contribution", aggregate.EnemyDownContributionDamage, "damage"),
+                BuildLaneMetric("downContribution", "Down contribution", aggregate.DownContribution, "count")
+            ]);
     }
 
     private static PlayerLaneSnapshot BuildConversionLaneSnapshot(
@@ -3246,7 +3275,12 @@ internal static class CombatReplayAnalysisBuilder
             true,
             "Conversion Detail",
             "Conversion tracks visible contribution after enemy downs, especially in successful finish windows.",
-            detailSections);
+            detailSections,
+            [
+                BuildLaneMetric("finishContributionDamage", "Finish contribution", aggregate.EnemyKillContributionDamage, "damage"),
+                BuildLaneMetric("againstDownedDamage", "Against-downed damage", aggregate.AgainstDownedDamage, "damage"),
+                BuildLaneMetric("fastFinishWindowsHit", "Fast finishes helped", aggregate.FastEnemyKillWindowsHit, "count")
+            ]);
     }
 
     private static PlayerLaneSnapshot BuildStripLaneSnapshot(
@@ -3284,7 +3318,12 @@ internal static class CombatReplayAnalysisBuilder
             true,
             "Strip Detail",
             "Strip highlights enemy boon removal, with extra weight on strips that fed downs.",
-            detailSections);
+            detailSections,
+            [
+                BuildLaneMetric("stripsTotal", "Strips", aggregate.StripsTotal, "count"),
+                BuildLaneMetric("stripDownContribution", "Down-linked strips", aggregate.StripDownContribution, "count"),
+                BuildLaneMetric("stripDownContributionTime", "Down-linked strip time", aggregate.StripDownContributionTime, "seconds")
+            ]);
     }
 
     private static PlayerLaneSnapshot BuildControlLaneSnapshot(
@@ -3325,7 +3364,12 @@ internal static class CombatReplayAnalysisBuilder
             true,
             "Control Detail",
             "Control captures effective crowd control, control conditions, and visible CC-linked downs.",
-            detailSections);
+            detailSections,
+            [
+                BuildLaneMetric("effectiveCrowdControlCount", "Effective CC", aggregate.EffectiveCrowdControlCount, "count"),
+                BuildLaneMetric("effectiveCrowdControlDuration", "Effective CC duration", aggregate.EffectiveCrowdControlDuration, "seconds"),
+                BuildLaneMetric("crowdControlDownContribution", "CC-linked downs", aggregate.CrowdControlDownContribution, "count")
+            ]);
     }
 
     private static PlayerLaneSnapshot BuildBoonSupportLaneSnapshot(
@@ -3367,7 +3411,12 @@ internal static class CombatReplayAnalysisBuilder
             true,
             "Boon Support Detail",
             "Boon Support tracks offensive and defensive boon-seconds in the fight's key windows. Stack boons stay labeled as stack-seconds in the boon breakdown.",
-            detailSections);
+            detailSections,
+            [
+                BuildLaneMetric("totalBoonSupport", "Total boon-seconds", totalBoonSupport, "boonSeconds"),
+                BuildLaneMetric("offensiveBoonSupport", "Offensive boon-seconds", aggregate.OffensiveBoonSupport, "boonSeconds"),
+                BuildLaneMetric("defensiveBoonSupport", "Defensive boon-seconds", aggregate.DefensiveBoonSupport, "boonSeconds")
+            ]);
     }
 
     private static PlayerLaneSnapshot BuildRecoveryLaneSnapshot(
@@ -3408,7 +3457,12 @@ internal static class CombatReplayAnalysisBuilder
             true,
             "Recovery Detail",
             "Recovery captures cleansing, healing, barrier, and presence in defensive response windows.",
-            detailSections);
+            detailSections,
+            [
+                BuildLaneMetric("cleansesTotal", "Cleanses", aggregate.CleansesTotal, "count"),
+                BuildLaneMetric("healingTotal", "Healing", aggregate.HealingTotal, "healing"),
+                BuildLaneMetric("barrierTotal", "Barrier", aggregate.BarrierTotal, "barrier")
+            ]);
     }
 
     private static PlayerLaneSnapshot BuildRezLaneSnapshot(
@@ -3449,7 +3503,12 @@ internal static class CombatReplayAnalysisBuilder
             true,
             "Rez Detail",
             "Rez focuses on downstate rescue in successful squad recoveries.",
-            detailSections);
+            detailSections,
+            [
+                BuildLaneMetric("squadRecoveryWindowsHelped", "Recoveries helped", aggregate.SquadRecoveryWindowsHelped, "count"),
+                BuildLaneMetric("rezTimeOnRecoveries", "Rez time", aggregate.RezTimeOnRecoveries, "seconds"),
+                BuildLaneMetric("downedHealingOnRecoveries", "Downed healing", aggregate.DownedHealingOnRecoveries, "healing")
+            ]);
     }
 
     private static CombatReplayContributionConfidenceDto BuildPlayerEvaluationConfidence(
