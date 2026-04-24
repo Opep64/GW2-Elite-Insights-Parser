@@ -367,9 +367,17 @@
                         <div class="combat-replay-overview-help-section">
                             <div class="combat-replay-overview-help-heading">Recovery</div>
                             <ul class="combat-replay-overview-help-list">
-                                <li><strong>What it is</strong>: cleanses, healing, barrier, pet/minion absorption, and attributed negation during enemy pressure</li>
-                                <li><strong>Squad Share</strong>: weighted blend of Healing share 0.35, Barrier share 0.15, PetAbsorption share 0.15, Negation share 0.14, Cleanses share 0.21, DefensiveSupportWindows share 0.18, re-normalized over available inputs</li>
-                                <li><strong>Strength constants</strong>: Healing 0.24, Barrier 0.12, PetAbsorption 0.12, Negation 0.14, Cleanses 0.20, DefensiveSupportWindows 0.10, DefensiveConditionPressure 0.08, re-normalized over available inputs</li>
+                                <li><strong>What it is</strong>: healing, cleansing, and response-window coverage after damage landed</li>
+                                <li><strong>Squad Share</strong>: weighted blend of Healing share 0.60, Cleanses share 0.25, RecoveryContributionWindows share 0.15, re-normalized over available inputs</li>
+                                <li><strong>Strength constants</strong>: Healing 0.50, Cleanses 0.30, RecoveryContributionWindows 0.20, re-normalized over available inputs</li>
+                            </ul>
+                        </div>
+                        <div class="combat-replay-overview-help-section">
+                            <div class="combat-replay-overview-help-heading">Prevention</div>
+                            <ul class="combat-replay-overview-help-list">
+                                <li><strong>What it is</strong>: barrier, attributed negation, pet/minion absorption, defensive condition pressure, and prevention-window coverage before recovery work was needed</li>
+                                <li><strong>Squad Share</strong>: weighted blend of Barrier share 0.35, Negation share 0.30, PetAbsorption share 0.15, DefensiveConditionPressure share 0.10, DefensiveSupportWindows share 0.10, re-normalized over available inputs</li>
+                                <li><strong>Strength constants</strong>: Barrier 0.30, Negation 0.30, PetAbsorption 0.10, DefensiveConditionPressure 0.20, DefensiveSupportWindows 0.10, re-normalized over available inputs</li>
                             </ul>
                         </div>
                         <div class="combat-replay-overview-help-section">
@@ -2225,7 +2233,8 @@
                     { key: "strip", label: "Strip", detail: "Top boon removal timed into pressure and conversion windows." },
                     { key: "control", label: "Control", detail: "Top effective crowd control and control-condition disruption." },
                     { key: "boonSupport", label: "Boon Support", detail: "Top offensive and defensive boon support in key windows." },
-                    { key: "recovery", label: "Recovery", detail: "Top cleanses, healing, barrier, pet absorption, and attributed negation during enemy pressure." },
+                    { key: "recovery", label: "Recovery", detail: "Top healing, cleansing, and response-window stabilization after damage landed." },
+                    { key: "prevention", label: "Prevention", detail: "Top barrier, attributed negation, pet/minion absorption, and other pre-hit mitigation." },
                     { key: "rez", label: "Rez", detail: "Top help on successful ally recoveries after downstate." },
                 ];
                 laneCards.forEach(card => {

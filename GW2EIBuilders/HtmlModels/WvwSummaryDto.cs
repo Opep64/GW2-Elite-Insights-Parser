@@ -434,7 +434,7 @@ internal class WvwSummaryDto
             : 0;
         CombatReplayDefenseSavedPlayersSummaryDto savedPlayersSummary = combatReplayAnalysis.Defense.SavedPlayersSummary;
 
-        var supportMetrics = new List<WvwSummaryExecutionMetricDto>(4);
+        var supportMetrics = new List<WvwSummaryExecutionMetricDto>(5);
         if (log.CombatData.HasEXTHealing && healAddonCoverage >= ExecutionMinimumHealingCoverage && squadHealthDamageTaken > 0)
         {
             string healingNote = healAddonPlayerCount == squadActors.Count
@@ -477,6 +477,8 @@ internal class WvwSummaryDto
                 "Weighted support boon coverage",
                 "Neutralized at 50: the squad never had threatened replay samples for weighted support-boon coverage in this phase."));
         }
+        WvwSummaryExecutionMetricDto preventionMetric = BuildPreventionExecutionMetric(combatReplayAnalysis, savedPlayersSummary, out string preventionSummary);
+        supportMetrics.Add(preventionMetric);
         if (savedPlayersSummary.SavedCases > 0 || squadDownState.Downs > 0)
         {
             supportMetrics.Add(
@@ -486,7 +488,7 @@ internal class WvwSummaryDto
                     squadDownState.Downs,
                     higherIsBetter: true,
                     $"{savedPlayersSummary.SavedCases} saved cases vs {squadDownState.Downs} squad downs",
-                    $"{savedPlayersSummary.BarrierSavedCases} barrier saves and {savedPlayersSummary.DamageReductionSavedCases} damage-reduction saves were detected."));
+                    $"{savedPlayersSummary.BarrierSavedCases} barrier saves, {savedPlayersSummary.DamageReductionSavedCases} damage-reduction saves, and {savedPlayersSummary.NegatedDamageSavedCases} negated-damage saves were detected."));
         }
         else
         {
@@ -508,6 +510,10 @@ internal class WvwSummaryDto
             supportSummary = $"{supportSummary} Weighted threatened support-boon coverage averaged {FormatDecimal(weightedSupportBoonCoverage)}%.";
         }
         if (supportMetrics[3].Available)
+        {
+            supportSummary = $"{supportSummary} {preventionSummary}";
+        }
+        if (supportMetrics[4].Available)
         {
             supportSummary = $"{supportSummary} {savedPlayersSummary.SavedCases} saved cases were detected against {squadDownState.Downs} squad downs.";
         }
@@ -543,7 +549,7 @@ internal class WvwSummaryDto
                 "Support & Mitigation",
                 supportMetrics,
                 supportSummary,
-                $"Blends healing coverage, pressure-gated cleanse response, threat-weighted support-boon coverage, and saved-player mitigation. Cleanse response is self-scored only when tracked condition pressure reaches at least {FormatDecimal(ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute)} condition-seconds per active player per minute. Each tracked condition, including Vulnerability, counts as present or absent rather than by stack count, and faster cleanses get more credit because they remove more remaining duration. Healing coverage needs at least {FormatDecimal(ExecutionMinimumHealingCoverage * 100.0)}% squad Healing Stats coverage; missing support inputs are neutralized at 50 instead of guessed."),
+                $"Blends healing coverage, pressure-gated cleanse response, threat-weighted support-boon coverage, prevention value, and saved-player mitigation. Prevention value uses barrier absorbed, estimated negated damage, and discounted pet/minion absorption as pre-hit mitigation signals rather than only counting saves. Cleanse response is self-scored only when tracked condition pressure reaches at least {FormatDecimal(ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute)} condition-seconds per active player per minute. Each tracked condition, including Vulnerability, counts as present or absent rather than by stack count, and faster cleanses get more credit because they remove more remaining duration. Healing coverage needs at least {FormatDecimal(ExecutionMinimumHealingCoverage * 100.0)}% squad Healing Stats coverage; missing support inputs are neutralized at 50 instead of guessed."),
         ];
 
         result.ScoreAvailable = true;
@@ -877,6 +883,66 @@ internal class WvwSummaryDto
             higherIsBetter: true,
             $"{FormatDecimal(preventedShare)}% prevented vs {FormatDecimal(enduredShare)}% endured under {FormatDecimal(pressurePerActivePlayerPerMinute)} tracked condition-seconds per active player per minute",
             "Self-scored from tracked condition burden. Each tracked condition, including Vulnerability, counts as present or absent rather than by stack count, and allied cleanse removes remaining condition duration, so earlier cleanses score better because they prevent more seconds from being endured.");
+    }
+
+    private static WvwSummaryExecutionMetricDto BuildPreventionExecutionMetric(
+        CombatReplayAnalysisDto combatReplayAnalysis,
+        CombatReplayDefenseSavedPlayersSummaryDto savedPlayersSummary,
+        out string summary)
+    {
+        const string label = "Prevention value";
+
+        double barrierAbsorbed = Math.Max(0.0, combatReplayAnalysis.Defense.BarrierDamageAbsorbed);
+        double negatedDamage = Math.Max(0.0, combatReplayAnalysis.Defense.NegatedHitSummaries.Sum(entry => entry.EstimatedPreventedDamage));
+        double petMinionAbsorption = Math.Max(0.0, combatReplayAnalysis.Defense.TotalPetMinionDamageAbsorbed);
+        double totalPrevention = barrierAbsorbed + negatedDamage + petMinionAbsorption;
+        double squadHealthDamageTaken = Math.Max(0.0, combatReplayAnalysis.Defense.HealthDamageToSquad);
+
+        summary = $"{FormatWholeNumber((long)Math.Round(barrierAbsorbed))} barrier absorbed, {FormatWholeNumber((long)Math.Round(negatedDamage))} estimated negated damage, and {FormatWholeNumber((long)Math.Round(petMinionAbsorption))} pet/minion absorption reduced incoming pressure before recovery work.";
+        if (totalPrevention <= 0.0 && squadHealthDamageTaken <= 0.0)
+        {
+            summary = "Prevention value was neutralized because this phase had no tracked barrier, negation, pet/minion absorption, or squad health damage to compare.";
+            return BuildNeutralizedExecutionMetric(label, summary);
+        }
+
+        double totalPressure = totalPrevention + squadHealthDamageTaken;
+        double preventionShare = totalPressure > 0.0 ? totalPrevention * 100.0 / totalPressure : 0.0;
+        int score = ComputePreventionExecutionScore(preventionShare);
+        string note = $"{FormatWholeNumber((long)Math.Round(barrierAbsorbed))} barrier absorbed + {FormatWholeNumber((long)Math.Round(negatedDamage))} estimated negated damage + {FormatWholeNumber((long)Math.Round(petMinionAbsorption))} pet/minion absorption. Scores against realistic prevention-share bands rather than expecting prevention to match damage taken. {savedPlayersSummary.BarrierSavedCases} barrier saves and {savedPlayersSummary.NegatedDamageSavedCases} negated-damage saves were detected.";
+        return new WvwSummaryExecutionMetricDto
+        {
+            Label = label,
+            Value = $"{FormatDecimal(preventionShare)}% of total incoming pressure prevented ({FormatWholeNumber((long)Math.Round(totalPrevention))} prevention vs {FormatWholeNumber((long)Math.Round(squadHealthDamageTaken))} squad health damage)",
+            Note = note,
+            Available = true,
+            Score = score,
+        };
+    }
+
+    private static int ComputePreventionExecutionScore(double preventionSharePercent)
+    {
+        double[] shareAnchors = [0.0, 10.0, 20.0, 30.0, 40.0, 45.0, 55.0];
+        double[] scoreAnchors = [15.0, 35.0, 55.0, 72.0, 88.0, 95.0, 100.0];
+
+        if (preventionSharePercent <= shareAnchors[0])
+        {
+            return (int)Math.Round(scoreAnchors[0]);
+        }
+
+        for (int i = 1; i < shareAnchors.Length; i++)
+        {
+            if (preventionSharePercent <= shareAnchors[i])
+            {
+                double lowerShare = shareAnchors[i - 1];
+                double upperShare = shareAnchors[i];
+                double lowerScore = scoreAnchors[i - 1];
+                double upperScore = scoreAnchors[i];
+                double progress = (preventionSharePercent - lowerShare) / Math.Max(upperShare - lowerShare, 0.0001);
+                return (int)Math.Round(lowerScore + (upperScore - lowerScore) * progress);
+            }
+        }
+
+        return (int)Math.Round(scoreAnchors[^1]);
     }
 
     private static double ComputePhaseTrackedConditionPresenceSeconds(

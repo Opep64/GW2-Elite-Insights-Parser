@@ -841,6 +841,8 @@ internal class CombatReplayPlayerEvaluationAggregate
     public int ConversionWindowsTotal { get; set; }
     public int ControlContributionWindows { get; set; }
     public int ControlWindowsTotal { get; set; }
+    public int RecoveryContributionWindows { get; set; }
+    public int RecoveryWindowsTotal { get; set; }
     public int DefensiveSupportWindows { get; set; }
     public int DefensiveSupportWindowsTotal { get; set; }
     public int SquadRecoveryWindowsHelped { get; set; }
@@ -902,6 +904,8 @@ internal class CombatReplayPlayerEvaluationMaximums
     public int ConversionWindowsTotal { get; set; }
     public int ControlContributionWindows { get; set; }
     public int ControlWindowsTotal { get; set; }
+    public int RecoveryContributionWindows { get; set; }
+    public int RecoveryWindowsTotal { get; set; }
     public int DefensiveSupportWindows { get; set; }
     public int DefensiveSupportWindowsTotal { get; set; }
     public int OffensiveBoonWindows { get; set; }
@@ -930,6 +934,8 @@ internal class CombatReplayPlayerEvaluationTotals
     public long PetMinionAbsorptionTotal { get; set; }
     public double AttributedNegatedDamageTotal { get; set; }
     public int CleansesTotal { get; set; }
+    public int RecoveryContributionWindows { get; set; }
+    public double DefensiveConditionPressure { get; set; }
     public int DefensiveSupportWindows { get; set; }
     public int SquadRecoveryWindowsHelped { get; set; }
     public double RezTimeOnRecoveries { get; set; }
@@ -2177,7 +2183,9 @@ internal static class CombatReplayAnalysisBuilder
             ConversionWindowsTotal = conversionWindows.Count,
             ControlContributionWindows = CountControlContributionWindows(attackerTimeline, conversionWindows, times, effectiveCrowdControlEvents, controlConditionContribution),
             ControlWindowsTotal = conversionWindows.Count,
-            DefensiveSupportWindows = CountDefensiveSupportWindows(attackerTimeline, defensiveResponseWindows, times, defensiveConditionContribution),
+            RecoveryContributionWindows = CountRecoveryContributionWindows(attackerTimeline, defensiveResponseWindows, times),
+            RecoveryWindowsTotal = defensiveResponseWindows.Count,
+            DefensiveSupportWindows = CountPreventionContributionWindows(attackerTimeline, defensiveResponseWindows, times, defensiveConditionContribution),
             DefensiveSupportWindowsTotal = defensiveResponseWindows.Count,
             SquadRecoveryWindowsHelped = squadRecoveryContribution.WindowsHit,
             SquadRecoveryWindowsTotal = squadRecoveryContribution.WindowsTotal,
@@ -2235,6 +2243,7 @@ internal static class CombatReplayAnalysisBuilder
             BuildControlLaneSnapshot(aggregate, maximums, totals),
             BuildBoonSupportLaneSnapshot(log, aggregate, maximums, totals),
             BuildRecoveryLaneSnapshot(aggregate, maximums, totals, hasHealingData, hasBarrierData),
+            BuildPreventionLaneSnapshot(aggregate, maximums, totals, hasBarrierData),
             BuildRezLaneSnapshot(aggregate, maximums, totals),
         ];
         laneSnapshots = [.. laneSnapshots.OrderByDescending(lane => lane.StrengthPercent).ThenByDescending(lane => lane.SharePercent).ThenBy(lane => lane.Label)];
@@ -2366,6 +2375,8 @@ internal static class CombatReplayAnalysisBuilder
             ConversionWindowsTotal = players.Max(player => player.ConversionWindowsTotal),
             ControlContributionWindows = players.Max(player => player.ControlContributionWindows),
             ControlWindowsTotal = players.Max(player => player.ControlWindowsTotal),
+            RecoveryContributionWindows = players.Max(player => player.RecoveryContributionWindows),
+            RecoveryWindowsTotal = players.Max(player => player.RecoveryWindowsTotal),
             DefensiveSupportWindows = players.Max(player => player.DefensiveSupportWindows),
             DefensiveSupportWindowsTotal = players.Max(player => player.DefensiveSupportWindowsTotal),
             SquadRecoveryWindowsHelped = players.Max(player => player.SquadRecoveryWindowsHelped),
@@ -2410,6 +2421,7 @@ internal static class CombatReplayAnalysisBuilder
             BuildSpecControlLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
             BuildSpecBoonSupportLaneSnapshot(log, spec, maximums, totals, perPlayerMaximums, activeSharePercent),
             BuildSpecRecoveryLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent, hasHealingData, hasBarrierData),
+            BuildSpecPreventionLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent, hasBarrierData),
             BuildSpecRezLaneSnapshot(spec, maximums, totals, perPlayerMaximums, activeSharePercent),
         ];
         laneSnapshots = [.. laneSnapshots
@@ -2558,18 +2570,6 @@ internal static class CombatReplayAnalysisBuilder
         {
             recoveryEvidenceParts.Add($"{FormatWholeNumber(spec.Aggregate.HealingTotal)} healing");
         }
-        if (hasBarrierData)
-        {
-            recoveryEvidenceParts.Add($"{FormatWholeNumber(spec.Aggregate.BarrierTotal)} barrier");
-        }
-        if (spec.Aggregate.PetMinionAbsorptionTotal > 0)
-        {
-            recoveryEvidenceParts.Add($"{FormatWholeNumber(spec.Aggregate.PetMinionAbsorptionTotal)} pet absorption");
-        }
-        if (spec.Aggregate.AttributedNegatedDamageTotal > 0.0)
-        {
-            recoveryEvidenceParts.Add($"{FormatOneDecimal(spec.Aggregate.AttributedNegatedDamageTotal)} negated damage");
-        }
         return BuildSpecLaneSnapshot(
             spec,
             baseLane,
@@ -2577,6 +2577,44 @@ internal static class CombatReplayAnalysisBuilder
             aggregate => GetSpecRecoveryRawAmount(aggregate, hasHealingData, hasBarrierData),
             perPlayerMaximums.GetValueOrDefault("recovery"),
             $"{string.Join(", ", recoveryEvidenceParts)} gave {spec.Label} a visible recovery footprint.");
+    }
+
+    private static SpecLaneSnapshot BuildSpecPreventionLaneSnapshot(
+        CombatReplaySpecCapabilityAggregate spec,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        IReadOnlyDictionary<string, double> perPlayerMaximums,
+        double activeSharePercent,
+        bool hasBarrierData)
+    {
+        PlayerLaneSnapshot baseLane = BuildPreventionLaneSnapshot(spec.Aggregate, maximums, totals, hasBarrierData);
+        var preventionEvidenceParts = new List<string>();
+        if (hasBarrierData)
+        {
+            preventionEvidenceParts.Add($"{FormatWholeNumber(spec.Aggregate.BarrierTotal)} barrier");
+        }
+        if (spec.Aggregate.AttributedNegatedDamageTotal > 0.0)
+        {
+            preventionEvidenceParts.Add($"{FormatOneDecimal(spec.Aggregate.AttributedNegatedDamageTotal)} negated damage");
+        }
+        if (spec.Aggregate.PetMinionAbsorptionTotal > 0)
+        {
+            preventionEvidenceParts.Add($"{FormatWholeNumber(spec.Aggregate.PetMinionAbsorptionTotal)} pet absorption");
+        }
+        if (spec.Aggregate.DefensiveConditionPressure > 0.0)
+        {
+            preventionEvidenceParts.Add($"{FormatWholeNumber((long)Math.Round(spec.Aggregate.DefensiveConditionPressure))} defensive condition pressure");
+        }
+        string preventionSummary = preventionEvidenceParts.Count > 0
+            ? $"{string.Join(", ", preventionEvidenceParts)} gave {spec.Label} a visible prevention footprint."
+            : $"{spec.Label} showed prevention value through defensive windows.";
+        return BuildSpecLaneSnapshot(
+            spec,
+            baseLane,
+            activeSharePercent,
+            aggregate => GetSpecPreventionRawAmount(aggregate, hasBarrierData),
+            perPlayerMaximums.GetValueOrDefault("prevention"),
+            preventionSummary);
     }
 
     private static SpecLaneSnapshot BuildSpecRezLaneSnapshot(
@@ -2752,6 +2790,7 @@ internal static class CombatReplayAnalysisBuilder
             ["control"] = ComputeMaxAverage(aggregate => GetSpecControlRawAmount(aggregate, totals)),
             ["boonSupport"] = ComputeMaxAverage(GetSpecBoonSupportRawAmount),
             ["recovery"] = ComputeMaxAverage(aggregate => GetSpecRecoveryRawAmount(aggregate, hasHealingData, hasBarrierData)),
+            ["prevention"] = ComputeMaxAverage(aggregate => GetSpecPreventionRawAmount(aggregate, hasBarrierData)),
             ["rez"] = ComputeMaxAverage(aggregate => GetSpecRezRawAmount(aggregate, totals)),
         };
     }
@@ -2787,6 +2826,13 @@ internal static class CombatReplayAnalysisBuilder
         bool hasBarrierData)
     {
         return ComputeRecoveryContributionMagnitude(aggregate, hasHealingData, hasBarrierData);
+    }
+
+    private static double GetSpecPreventionRawAmount(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        bool hasBarrierData)
+    {
+        return ComputePreventionContributionMagnitude(aggregate, hasBarrierData);
     }
 
     private static double GetSpecRezRawAmount(CombatReplayPlayerEvaluationAggregate aggregate, CombatReplayPlayerEvaluationTotals totals)
@@ -2939,8 +2985,11 @@ internal static class CombatReplayAnalysisBuilder
                 defensiveLoad * 0.50 + burstIntensity * 0.25 + threatenedBoonNeed * 0.25,
                 $"{enemyBurstWindows} enemy burst windows raised the value of offensive and defensive boon coverage."),
             BuildFightDemandLane("recovery", "Recovery",
-                defensiveLoad * 0.65 + rescueNeed * 0.20 + conditionPressureNeed * 0.15,
-                $"{squadDowns} squad downs and {defenseAnalysis.BurstBarrier.LowHealthSurvivorOccurrences} low-health survive moments raised stabilization demand."),
+                defensiveLoad * 0.40 + rescueNeed * 0.20 + conditionPressureNeed * 0.40,
+                $"{squadDowns} squad downs and {eventAnalysis.Downs.SquadSummary.ConditionImpactedDowns} condition-impacted squad downs raised post-hit recovery demand."),
+            BuildFightDemandLane("prevention", "Prevention",
+                defensiveLoad * 0.60 + threatenedBoonNeed * 0.20 + burstIntensity * 0.10 + rescueNeed * 0.10,
+                $"{enemyBurstWindows} enemy burst windows and {defenseAnalysis.BurstBarrier.LowHealthSurvivorOccurrences} low-health survive moments raised damage-prevention demand."),
             BuildFightDemandLane("rez", "Rez",
                 rescueNeed * 0.70 + defensiveLoad * 0.20 + conversionContest * 0.10,
                 $"{squadRecoveries} squad recoveries made downstate rescue materially relevant."),
@@ -3025,6 +3074,8 @@ internal static class CombatReplayAnalysisBuilder
             BurstContributionWindows = aggregates.Max(aggregate => aggregate.BurstContributionWindows),
             ConversionContributionWindows = aggregates.Max(aggregate => aggregate.ConversionContributionWindows),
             ControlContributionWindows = aggregates.Max(aggregate => aggregate.ControlContributionWindows),
+            RecoveryContributionWindows = aggregates.Max(aggregate => aggregate.RecoveryContributionWindows),
+            RecoveryWindowsTotal = aggregates.Max(aggregate => aggregate.RecoveryWindowsTotal),
             DefensiveSupportWindows = aggregates.Max(aggregate => aggregate.DefensiveSupportWindows),
             OffensiveBoonWindows = aggregates.Max(aggregate => aggregate.OffensiveBoonWindows),
             DefensiveBoonWindows = aggregates.Max(aggregate => aggregate.DefensiveBoonWindows),
@@ -3057,6 +3108,8 @@ internal static class CombatReplayAnalysisBuilder
             PetMinionAbsorptionTotal = aggregates.Sum(aggregate => aggregate.PetMinionAbsorptionTotal),
             AttributedNegatedDamageTotal = Math.Round(aggregates.Sum(aggregate => aggregate.AttributedNegatedDamageTotal), 1),
             CleansesTotal = aggregates.Sum(aggregate => aggregate.CleansesTotal),
+            RecoveryContributionWindows = aggregates.Sum(aggregate => aggregate.RecoveryContributionWindows),
+            DefensiveConditionPressure = Math.Round(aggregates.Sum(aggregate => aggregate.DefensiveConditionPressure), 1),
             DefensiveSupportWindows = aggregates.Sum(aggregate => aggregate.DefensiveSupportWindows),
             SquadRecoveryWindowsHelped = aggregates.Sum(aggregate => aggregate.SquadRecoveryWindowsHelped),
             RezTimeOnRecoveries = Math.Round(aggregates.Sum(aggregate => aggregate.RezTimeOnRecoveries), 1),
@@ -3586,18 +3639,12 @@ internal static class CombatReplayAnalysisBuilder
         bool hasBarrierData)
     {
         double strengthPercent = ComputeWeightedScore(
-            (hasHealingData ? NormalizeValue(aggregate.HealingTotal, maximums.HealingTotal) : 0.0, hasHealingData ? 0.24 : 0.0),
-            (hasBarrierData ? NormalizeValue(aggregate.BarrierTotal, maximums.BarrierTotal) : 0.0, hasBarrierData ? 0.12 : 0.0),
-            (NormalizeValue(aggregate.PetMinionAbsorptionTotal, maximums.PetMinionAbsorptionTotal), maximums.PetMinionAbsorptionTotal > 0 ? 0.12 : 0.0),
-            (NormalizeValue(aggregate.AttributedNegatedDamageTotal, maximums.AttributedNegatedDamageTotal), maximums.AttributedNegatedDamageTotal > 0.0 ? 0.14 : 0.0),
-            (NormalizeValue(aggregate.CleansesTotal, maximums.CleansesTotal), 0.20),
-            (NormalizeValue(aggregate.DefensiveSupportWindows, maximums.DefensiveSupportWindows), 0.10),
-            (NormalizeValue(aggregate.DefensiveConditionPressure, maximums.DefensiveConditionPressure), maximums.DefensiveConditionPressure > 0.0 ? 0.08 : 0.0));
+            (hasHealingData ? NormalizeValue(aggregate.HealingTotal, maximums.HealingTotal) : 0.0, hasHealingData ? 0.50 : 0.0),
+            (NormalizeValue(aggregate.CleansesTotal, maximums.CleansesTotal), 0.30),
+            (NormalizeValue(aggregate.RecoveryContributionWindows, maximums.RecoveryContributionWindows), maximums.RecoveryContributionWindows > 0 ? 0.20 : 0.0));
         double sharePercent = ComputeRecoverySharePercent(aggregate, totals, hasHealingData, hasBarrierData);
         string healingValue = hasHealingData ? FormatWholeNumber(aggregate.HealingTotal) : "Unavailable";
         string healingSecondary = hasHealingData ? "" : "Missing healing extension data";
-        string barrierValue = hasBarrierData ? FormatWholeNumber(aggregate.BarrierTotal) : "Unavailable";
-        string barrierSecondary = hasBarrierData ? "" : "Missing barrier extension data";
         string negationValue = aggregate.AttributedNegatedDamageTotal > 0.0 ? FormatOneDecimal(aggregate.AttributedNegatedDamageTotal) : "0";
         var recoveryEvidenceParts = new List<string>
         {
@@ -3607,29 +3654,76 @@ internal static class CombatReplayAnalysisBuilder
         {
             recoveryEvidenceParts.Add($"{FormatWholeNumber(aggregate.HealingTotal)} healing");
         }
-        if (hasBarrierData)
-        {
-            recoveryEvidenceParts.Add($"{FormatWholeNumber(aggregate.BarrierTotal)} barrier");
-        }
-        if (aggregate.PetMinionAbsorptionTotal > 0)
-        {
-            recoveryEvidenceParts.Add($"{FormatWholeNumber(aggregate.PetMinionAbsorptionTotal)} pet absorption");
-        }
-        if (aggregate.AttributedNegatedDamageTotal > 0.0)
-        {
-            recoveryEvidenceParts.Add($"{FormatOneDecimal(aggregate.AttributedNegatedDamageTotal)} negated damage");
-        }
         List<CombatReplayPlayerEvaluationDetailSectionDto> detailSections =
         [
             BuildDetailSection("Recovery Metrics",
             [
                 BuildDetailEntry("Cleanses", FormatWholeNumber(aggregate.CleansesTotal), ""),
                 BuildDetailEntry("Healing", healingValue, healingSecondary),
+                BuildDetailEntry("Response windows", BuildPluralizedLabel(aggregate.RecoveryContributionWindows, "response window", "response windows"), $"{aggregate.RecoveryWindowsTotal} total")
+            ])
+        ];
+        return new PlayerLaneSnapshot(
+            "recovery",
+            "Recovery",
+            strengthPercent,
+            sharePercent,
+            aggregate.RecoveryContributionWindows,
+            aggregate.RecoveryWindowsTotal,
+            "response windows",
+            GetRateBand(strengthPercent),
+            $"{string.Join(", ", recoveryEvidenceParts)} helped the squad stabilize under pressure.",
+            true,
+            "Recovery Detail",
+            "Recovery captures healing, cleansing, and presence in defensive response windows after pressure landed.",
+            detailSections,
+            [
+                BuildLaneMetric("cleansesTotal", "Cleanses", aggregate.CleansesTotal, "count"),
+                BuildLaneMetric("healingTotal", "Healing", aggregate.HealingTotal, "healing")
+            ]);
+    }
+
+    private static PlayerLaneSnapshot BuildPreventionLaneSnapshot(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals,
+        bool hasBarrierData)
+    {
+        double strengthPercent = ComputeWeightedScore(
+            (hasBarrierData ? NormalizeValue(aggregate.BarrierTotal, maximums.BarrierTotal) : 0.0, hasBarrierData ? 0.30 : 0.0),
+            (NormalizeValue(aggregate.AttributedNegatedDamageTotal, maximums.AttributedNegatedDamageTotal), maximums.AttributedNegatedDamageTotal > 0.0 ? 0.30 : 0.0),
+            (NormalizeValue(aggregate.PetMinionAbsorptionTotal, maximums.PetMinionAbsorptionTotal), maximums.PetMinionAbsorptionTotal > 0 ? 0.10 : 0.0),
+            (NormalizeValue(aggregate.DefensiveConditionPressure, maximums.DefensiveConditionPressure), maximums.DefensiveConditionPressure > 0.0 ? 0.20 : 0.0),
+            (NormalizeValue(aggregate.DefensiveSupportWindows, maximums.DefensiveSupportWindows), maximums.DefensiveSupportWindows > 0 ? 0.10 : 0.0));
+        double sharePercent = ComputePreventionSharePercent(aggregate, totals, hasBarrierData);
+        string barrierValue = hasBarrierData ? FormatWholeNumber(aggregate.BarrierTotal) : "Unavailable";
+        string barrierSecondary = hasBarrierData ? "" : "Missing barrier extension data";
+        var preventionEvidenceParts = new List<string>();
+        if (hasBarrierData)
+        {
+            preventionEvidenceParts.Add($"{FormatWholeNumber(aggregate.BarrierTotal)} barrier");
+        }
+        if (aggregate.AttributedNegatedDamageTotal > 0.0)
+        {
+            preventionEvidenceParts.Add($"{FormatOneDecimal(aggregate.AttributedNegatedDamageTotal)} negated damage");
+        }
+        if (aggregate.PetMinionAbsorptionTotal > 0)
+        {
+            preventionEvidenceParts.Add($"{FormatWholeNumber(aggregate.PetMinionAbsorptionTotal)} pet absorption");
+        }
+        if (aggregate.DefensiveConditionPressure > 0.0)
+        {
+            preventionEvidenceParts.Add($"{FormatWholeNumber((long)Math.Round(aggregate.DefensiveConditionPressure))} defensive condition pressure");
+        }
+        List<CombatReplayPlayerEvaluationDetailSectionDto> detailSections =
+        [
+            BuildDetailSection("Prevention Metrics",
+            [
                 BuildDetailEntry("Barrier", barrierValue, barrierSecondary),
+                BuildDetailEntry("Negated damage", FormatOneDecimal(aggregate.AttributedNegatedDamageTotal), "Estimated prevented damage from attributed Aegis, Blind, Distortion, Blur, and tracked invulnerability-style effects"),
                 BuildDetailEntry("Pet absorption", FormatWholeNumber(aggregate.PetMinionAbsorptionTotal), "Incoming damage taken by owned pets and minions"),
-                BuildDetailEntry("Negated damage", negationValue, "Estimated prevented damage from attributed Aegis, Blind, Distortion, Blur, and tracked invulnerability-style effects"),
-                BuildDetailEntry("Response windows", BuildPluralizedLabel(aggregate.DefensiveSupportWindows, "response window", "response windows"), $"{aggregate.DefensiveSupportWindowsTotal} total"),
-                BuildDetailEntry("Defensive condition pressure", FormatWholeNumber((long)Math.Round(aggregate.DefensiveConditionPressure)), "")
+                BuildDetailEntry("Defensive condition pressure", FormatWholeNumber((long)Math.Round(aggregate.DefensiveConditionPressure)), ""),
+                BuildDetailEntry("Prevention windows", BuildPluralizedLabel(aggregate.DefensiveSupportWindows, "prevention window", "prevention windows"), $"{aggregate.DefensiveSupportWindowsTotal} total")
             ])
         ];
         if (aggregate.AttributedNegatedDamageByEffect.Count > 0)
@@ -3638,26 +3732,27 @@ internal static class CombatReplayAnalysisBuilder
                 "Attributed Negation Breakdown",
                 BuildNamedContributionDetailEntries(aggregate.AttributedNegatedDamageByEffect, "estimated damage")));
         }
+        string preventionSummary = preventionEvidenceParts.Count > 0
+            ? $"{string.Join(", ", preventionEvidenceParts)} reduced incoming pressure before it became recovery work."
+            : "Preventive value was limited in this fight.";
         return new PlayerLaneSnapshot(
-            "recovery",
-            "Recovery",
+            "prevention",
+            "Prevention",
             strengthPercent,
             sharePercent,
             aggregate.DefensiveSupportWindows,
             aggregate.DefensiveSupportWindowsTotal,
-            "response windows",
+            "prevention windows",
             GetRateBand(strengthPercent),
-            $"{string.Join(", ", recoveryEvidenceParts)} helped the squad stabilize under pressure.",
+            preventionSummary,
             true,
-            "Recovery Detail",
-            "Recovery captures cleansing, healing, barrier, pet/minion absorption, attributed negated damage, and presence in defensive response windows.",
+            "Prevention Detail",
+            "Prevention captures barrier, attributed negations, pet/minion diversion, defensive conditions, and presence in windows where incoming pressure was prevented or redirected.",
             detailSections,
             [
-                BuildLaneMetric("cleansesTotal", "Cleanses", aggregate.CleansesTotal, "count"),
-                BuildLaneMetric("healingTotal", "Healing", aggregate.HealingTotal, "healing"),
                 BuildLaneMetric("barrierTotal", "Barrier", aggregate.BarrierTotal, "barrier"),
-                BuildLaneMetric("petAbsorptionTotal", "Pet absorption", aggregate.PetMinionAbsorptionTotal, "damage"),
-                BuildLaneMetric("negatedDamageTotal", "Negated damage", aggregate.AttributedNegatedDamageTotal, "damage")
+                BuildLaneMetric("negatedDamageTotal", "Negated damage", aggregate.AttributedNegatedDamageTotal, "damage"),
+                BuildLaneMetric("petAbsorptionTotal", "Pet absorption", aggregate.PetMinionAbsorptionTotal, "damage")
             ]);
     }
 
@@ -3804,7 +3899,7 @@ internal static class CombatReplayAnalysisBuilder
         }
         if (!hasHealingData || !hasBarrierData)
         {
-            evidence.Add("Recovery read is partially limited by missing extension data.");
+            evidence.Add("Recovery and Prevention reads are partially limited by missing extension data.");
         }
         return [.. evidence.Take(4)];
     }
@@ -4052,27 +4147,15 @@ internal static class CombatReplayAnalysisBuilder
         var weightedShares = new List<(double Share, double Weight)>();
         if (hasHealingData && totals.HealingTotal > 0)
         {
-            weightedShares.Add((aggregate.HealingTotal * 100.0 / totals.HealingTotal, 0.35));
-        }
-        if (hasBarrierData && totals.BarrierTotal > 0)
-        {
-            weightedShares.Add((aggregate.BarrierTotal * 100.0 / totals.BarrierTotal, 0.15));
-        }
-        if (totals.PetMinionAbsorptionTotal > 0)
-        {
-            weightedShares.Add((aggregate.PetMinionAbsorptionTotal * 100.0 / totals.PetMinionAbsorptionTotal, 0.15));
-        }
-        if (totals.AttributedNegatedDamageTotal > 0.0)
-        {
-            weightedShares.Add((aggregate.AttributedNegatedDamageTotal * 100.0 / totals.AttributedNegatedDamageTotal, 0.14));
+            weightedShares.Add((aggregate.HealingTotal * 100.0 / totals.HealingTotal, 0.60));
         }
         if (totals.CleansesTotal > 0)
         {
-            weightedShares.Add((aggregate.CleansesTotal * 100.0 / totals.CleansesTotal, 0.21));
+            weightedShares.Add((aggregate.CleansesTotal * 100.0 / totals.CleansesTotal, 0.25));
         }
-        if (totals.DefensiveSupportWindows > 0)
+        if (totals.RecoveryContributionWindows > 0)
         {
-            weightedShares.Add((aggregate.DefensiveSupportWindows * 100.0 / totals.DefensiveSupportWindows, 0.18));
+            weightedShares.Add((aggregate.RecoveryContributionWindows * 100.0 / totals.RecoveryContributionWindows, 0.15));
         }
         if (weightedShares.Count == 0)
         {
@@ -4087,23 +4170,69 @@ internal static class CombatReplayAnalysisBuilder
         bool hasHealingData,
         bool hasBarrierData)
     {
-        double magnitude = aggregate.CleansesTotal * (hasHealingData || hasBarrierData ? 1.0 : 1.8) +
-            aggregate.DefensiveSupportWindows * 3.0;
+        double magnitude = aggregate.CleansesTotal * (hasHealingData ? 1.0 : 1.6) +
+            aggregate.RecoveryContributionWindows * 3.0;
         if (hasHealingData)
         {
             magnitude += aggregate.HealingTotal / 2500.0;
         }
+        return Math.Round(magnitude, 2);
+    }
+
+    private static double ComputePreventionSharePercent(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationTotals totals,
+        bool hasBarrierData)
+    {
+        var weightedShares = new List<(double Share, double Weight)>();
+        if (hasBarrierData && totals.BarrierTotal > 0)
+        {
+            weightedShares.Add((aggregate.BarrierTotal * 100.0 / totals.BarrierTotal, 0.35));
+        }
+        if (totals.AttributedNegatedDamageTotal > 0.0)
+        {
+            weightedShares.Add((aggregate.AttributedNegatedDamageTotal * 100.0 / totals.AttributedNegatedDamageTotal, 0.30));
+        }
+        if (totals.PetMinionAbsorptionTotal > 0)
+        {
+            weightedShares.Add((aggregate.PetMinionAbsorptionTotal * 100.0 / totals.PetMinionAbsorptionTotal, 0.15));
+        }
+        if (totals.DefensiveConditionPressure > 0.0)
+        {
+            weightedShares.Add((aggregate.DefensiveConditionPressure * 100.0 / totals.DefensiveConditionPressure, 0.10));
+        }
+        if (totals.DefensiveSupportWindows > 0)
+        {
+            weightedShares.Add((aggregate.DefensiveSupportWindows * 100.0 / totals.DefensiveSupportWindows, 0.10));
+        }
+        if (weightedShares.Count == 0)
+        {
+            return 0.0;
+        }
+        double weightTotal = weightedShares.Sum(entry => entry.Weight);
+        return Math.Round(weightedShares.Sum(entry => entry.Share * entry.Weight) / Math.Max(weightTotal, 0.01), 1);
+    }
+
+    private static double ComputePreventionContributionMagnitude(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        bool hasBarrierData)
+    {
+        double magnitude = aggregate.DefensiveSupportWindows * 3.0;
         if (hasBarrierData)
         {
             magnitude += aggregate.BarrierTotal / 2500.0;
         }
-        if (aggregate.PetMinionAbsorptionTotal > 0)
-        {
-            magnitude += aggregate.PetMinionAbsorptionTotal / 2500.0;
-        }
         if (aggregate.AttributedNegatedDamageTotal > 0.0)
         {
             magnitude += aggregate.AttributedNegatedDamageTotal / 2500.0;
+        }
+        if (aggregate.PetMinionAbsorptionTotal > 0)
+        {
+            magnitude += aggregate.PetMinionAbsorptionTotal / 4000.0;
+        }
+        if (aggregate.DefensiveConditionPressure > 0.0)
+        {
+            magnitude += aggregate.DefensiveConditionPressure / 120.0;
         }
         return Math.Round(magnitude, 2);
     }
@@ -7262,7 +7391,7 @@ internal static class CombatReplayAnalysisBuilder
             windows.Add(CreateEvaluationWindow(windowStart, limit - 1, times, times[^1]));
         }
 
-        return windows;
+        return MergeEvaluationWindows(windows);
     }
 
     private static List<EvaluationWindow> BuildConversionWindows(
@@ -7362,14 +7491,26 @@ internal static class CombatReplayAnalysisBuilder
             conditionContribution.ContainsKey(window));
     }
 
-    private static int CountDefensiveSupportWindows(
+    private static int CountRecoveryContributionWindows(
+        CombatReplayAnalysisAttackerTimelineDto? attackerTimeline,
+        IReadOnlyList<EvaluationWindow> defensiveResponseWindows,
+        IReadOnlyList<long> times)
+    {
+        return CountTimelineContributionWindows(
+            defensiveResponseWindows,
+            times,
+            attackerTimeline?.Healing,
+            attackerTimeline?.Cleanses);
+    }
+
+    private static int CountPreventionContributionWindows(
         CombatReplayAnalysisAttackerTimelineDto? attackerTimeline,
         IReadOnlyList<EvaluationWindow> defensiveResponseWindows,
         IReadOnlyList<long> times,
         IReadOnlyDictionary<EvaluationWindow, double> conditionContribution)
     {
         return defensiveResponseWindows.Count(window =>
-            HasTimelineContribution(times, window, attackerTimeline?.Healing, attackerTimeline?.Barrier, attackerTimeline?.Cleanses) ||
+            HasTimelineContribution(times, window, attackerTimeline?.Barrier) ||
             conditionContribution.ContainsKey(window));
     }
 
