@@ -62,14 +62,16 @@ public sealed class WvWAnalystBuilder
         var defenseSaves = BuildDefenseSaves(combatReplayAnalysis);
         var obliterate = BuildObliterateSummary(combatReplayAnalysis);
         var topBursts = BuildTopBursts(combatReplayAnalysis, squadPlayers);
+        var squadClasses = BuildSideClasses(squadPlayers);
+        var enemyClasses = BuildSideClasses(hostilePlayerTargets);
 
         return new WvWAnalystFightPayloadDto
         {
             Meta = new WvWAnalystMetaDto
             {
-                SchemaVersion = "1.8.0",
+                SchemaVersion = "1.9.0",
                 PayloadType = "wvw-analyst-fight",
-                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves+obliterate",
+                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves+obliterate+side-classes",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
                 ParserVersion = parserVersion.ToString(),
             },
@@ -108,6 +110,7 @@ public sealed class WvWAnalystBuilder
                     FriendlyNonSquadCount = summary.FriendlyPlayerCount,
                     EffectiveAlliedPlayerCount = summary.EffectiveAlliedPlayerCount,
                     Commander = BuildCommander(commander),
+                    Classes = squadClasses,
                     Totals = BuildSideTotals(summary.Squad),
                 },
                 Enemy = new WvWAnalystSideDto
@@ -115,6 +118,7 @@ public sealed class WvWAnalystBuilder
                     SideId = "enemy",
                     DisplayLabel = summary.Enemy.Label,
                     PlayerCount = summary.Enemy.PlayerCount,
+                    Classes = enemyClasses,
                     Totals = BuildSideTotals(summary.Enemy),
                 }
             },
@@ -147,6 +151,27 @@ public sealed class WvWAnalystBuilder
             StripsPerMinute = side.StripsPerMinute,
             CleansesPerMinute = side.CleansesPerMinute,
         };
+    }
+
+    private static IReadOnlyList<WvWAnalystSideClassSummaryDto> BuildSideClasses(IReadOnlyList<SingleActor> actors)
+    {
+        return actors
+            .Select(actor => new
+            {
+                ClassLabel = BuildClassLabel(actor.BaseSpec.ToString(), actor.Spec.ToString()),
+                Icon = actor.GetIcon(),
+            })
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.ClassLabel))
+            .GroupBy(entry => entry.ClassLabel, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new WvWAnalystSideClassSummaryDto
+            {
+                ClassLabel = group.First().ClassLabel,
+                Icon = group.Select(entry => entry.Icon).FirstOrDefault(icon => !string.IsNullOrWhiteSpace(icon)) ?? string.Empty,
+                Count = group.Count(),
+            })
+            .OrderByDescending(entry => entry.Count)
+            .ThenBy(entry => entry.ClassLabel, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static WvWAnalystExecutionDto BuildExecution(WvwSummaryDto summary)
@@ -877,6 +902,20 @@ public sealed class WvWAnalystBuilder
             : encounterLabel;
     }
 
+    private static string BuildClassLabel(string? profession, string? eliteSpec)
+    {
+        string trimmedProfession = profession?.Trim() ?? string.Empty;
+        string trimmedEliteSpec = eliteSpec?.Trim() ?? string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(trimmedEliteSpec) &&
+            !string.Equals(trimmedEliteSpec, trimmedProfession, StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmedEliteSpec;
+        }
+
+        return trimmedProfession;
+    }
+
     private static string Slugify(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -988,7 +1027,15 @@ internal sealed class WvWAnalystSideDto
     public int FriendlyNonSquadCount { get; set; }
     public double EffectiveAlliedPlayerCount { get; set; }
     public WvWAnalystCommanderDto Commander { get; set; } = new();
+    public IReadOnlyList<WvWAnalystSideClassSummaryDto> Classes { get; set; } = Array.Empty<WvWAnalystSideClassSummaryDto>();
     public WvWAnalystSideTotalsDto Totals { get; set; } = new();
+}
+
+internal sealed class WvWAnalystSideClassSummaryDto
+{
+    public string ClassLabel { get; set; } = string.Empty;
+    public string Icon { get; set; } = string.Empty;
+    public int Count { get; set; }
 }
 
 internal sealed class WvWAnalystCommanderDto
