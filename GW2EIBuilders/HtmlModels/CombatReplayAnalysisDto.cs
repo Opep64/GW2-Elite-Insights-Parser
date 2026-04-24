@@ -387,6 +387,8 @@ internal class CombatReplayDownSummaryDto
     public List<CombatReplayEventSummaryEntryDto> TopConditions { get; set; } = [];
     public List<CombatReplayEventSummaryEntryDto> TopHardCcSources { get; set; } = [];
     public List<CombatReplayEventSummaryEntryDto> TopSoftCcSources { get; set; } = [];
+    public int OffensiveProtocolObliterateHitCount { get; set; }
+    public int OffensiveProtocolObliterateBarrierRemovedHitCount { get; set; }
     public List<string> Takeaways { get; set; } = [];
 }
 
@@ -492,6 +494,8 @@ internal class CombatReplayDownEventDto
     public bool CcImpacted { get; set; }
     public int CcImpactCount { get; set; }
     public int HardCcImpactCount { get; set; }
+    public int OffensiveProtocolObliterateHitCount { get; set; }
+    public int OffensiveProtocolObliterateBarrierRemovedHitCount { get; set; }
     public List<CombatReplayEventContributionDto> Conditions { get; set; } = [];
     public List<CombatReplayEventContributionDto> ConditionDamageBreakdown { get; set; } = [];
     public List<CombatReplayEventTimelineEntryDto> CrowdControlEffects { get; set; } = [];
@@ -869,6 +873,7 @@ internal class CombatReplaySpecCapabilityAggregate
 internal static class CombatReplayAnalysisBuilder
 {
     private const string MysticRebukeSkillName = "Mystic Rebuke";
+    private const string OffensiveProtocolObliterateSkillNamePrefix = "Offensive Protocol: Obliterate";
     private const int LookbackWindow = 3000;
     private const int RecoveryRezAttributionWindow = 500;
     private const int BucketSize = 1000;
@@ -899,6 +904,12 @@ internal static class CombatReplayAnalysisBuilder
         Immobile,
         Fear,
         Taunt,
+    ];
+    private static readonly HashSet<long> OffensiveProtocolObliterateSkillIds =
+    [
+        OffensiveProtocolObliterate,
+        OffensiveProtocolObliterate2,
+        OffensiveProtocolObliterate3,
     ];
     private static readonly IReadOnlyList<long> OffensiveSupportBoonIds =
     [
@@ -994,6 +1005,9 @@ internal static class CombatReplayAnalysisBuilder
         string DrilldownSubtitle,
         List<CombatReplayPlayerEvaluationDetailSectionDto> DetailSections);
     private readonly record struct DownOutcomeInfo(string Outcome, long? TransitionTime);
+    private readonly record struct ObliterateBarrierSummary(
+        int HitCount,
+        int BarrierRemovedHitCount);
     private readonly record struct DamageWindowSummary(
         int TotalDamageTaken,
         int StrikeDamageTaken,
@@ -1002,6 +1016,8 @@ internal static class CombatReplayAnalysisBuilder
         int BarrierDamageTaken,
         int HitCount,
         int ContributorCount,
+        int OffensiveProtocolObliterateHitCount,
+        int OffensiveProtocolObliterateBarrierRemovedHitCount,
         IReadOnlyList<CombatReplayEventContributionDto> Conditions,
         IReadOnlyList<CombatReplayEventContributionDto> ConditionDamageBreakdown,
         IReadOnlyList<CombatReplayEventContributionDto> Contributors,
@@ -4696,9 +4712,11 @@ internal static class CombatReplayAnalysisBuilder
     {
         foreach (SingleActor actor in actors)
         {
+            List<HealthDamageEvent> trackedDamageEvents = BuildTrackedDamageEvents(log, actor);
+            Dictionary<HealthDamageEvent, HealthDamageEvent?> previousDamageEventLookup = BuildPreviousDamageEventLookup(trackedDamageEvents);
             foreach (DownEvent downEvent in log.CombatData.GetDownEvents(actor.AgentItem).OrderBy(evt => evt.Time))
             {
-                yield return BuildDownEvent(log, actor, downEvent, side, isEnemy);
+                yield return BuildDownEvent(log, actor, trackedDamageEvents, previousDamageEventLookup, downEvent, side, isEnemy);
             }
         }
     }
@@ -4706,6 +4724,8 @@ internal static class CombatReplayAnalysisBuilder
     private static CombatReplayDownEventDto BuildDownEvent(
         ParsedEvtcLog log,
         SingleActor actor,
+        IReadOnlyList<HealthDamageEvent> trackedDamageEvents,
+        IReadOnlyDictionary<HealthDamageEvent, HealthDamageEvent?> previousDamageEventLookup,
         DownEvent downEvent,
         string side,
         bool isEnemy)
@@ -4713,7 +4733,7 @@ internal static class CombatReplayAnalysisBuilder
         DownOutcomeInfo outcomeInfo = GetDownOutcomeInfo(log, actor.AgentItem, downEvent.Time);
         long windowStart = Math.Max(log.LogData.LogStart, downEvent.Time - LookbackWindow);
         long conditionSnapshotTime = Math.Max(log.LogData.LogStart, downEvent.Time - 1);
-        DamageWindowSummary summary = BuildDamageWindowSummary(log, actor, windowStart, downEvent.Time, conditionSnapshotTime);
+        DamageWindowSummary summary = BuildDamageWindowSummary(log, actor, trackedDamageEvents, previousDamageEventLookup, windowStart, downEvent.Time, conditionSnapshotTime);
         (List<CombatReplayEventTimelineEntryDto> crowdControlEffects, int hardCcImpactCount) = BuildDownCrowdControlEffects(log, actor, windowStart, downEvent.Time, isEnemy);
 
         return new CombatReplayDownEventDto
@@ -4744,6 +4764,8 @@ internal static class CombatReplayAnalysisBuilder
             CcImpacted = crowdControlEffects.Count > 0,
             CcImpactCount = crowdControlEffects.Count,
             HardCcImpactCount = hardCcImpactCount,
+            OffensiveProtocolObliterateHitCount = summary.OffensiveProtocolObliterateHitCount,
+            OffensiveProtocolObliterateBarrierRemovedHitCount = summary.OffensiveProtocolObliterateBarrierRemovedHitCount,
             Conditions = [.. summary.Conditions],
             ConditionDamageBreakdown = [.. summary.ConditionDamageBreakdown],
             CrowdControlEffects = crowdControlEffects,
@@ -4770,6 +4792,8 @@ internal static class CombatReplayAnalysisBuilder
             TotalStrikeDamage = Math.Round(events.Sum(evt => (double)evt.StrikeDamageTaken), 1),
             TotalConditionDamage = Math.Round(events.Sum(evt => (double)evt.ConditionDamageTaken), 1),
             TotalMysticRebukeDamage = Math.Round(events.Sum(evt => (double)evt.MysticRebukeDamageTaken), 1),
+            OffensiveProtocolObliterateHitCount = events.Sum(evt => evt.OffensiveProtocolObliterateHitCount),
+            OffensiveProtocolObliterateBarrierRemovedHitCount = events.Sum(evt => evt.OffensiveProtocolObliterateBarrierRemovedHitCount),
         };
         summary.BothCcDowns = events.Count(evt => evt.HardCcImpactCount > 0 && evt.CrowdControlEffects.Any(effect => !effect.IsHardCc));
         summary.TotalBurningDamage = Math.Round(events.Sum(evt =>
@@ -4860,9 +4884,11 @@ internal static class CombatReplayAnalysisBuilder
     {
         foreach (SingleActor actor in actors)
         {
+            List<HealthDamageEvent> trackedDamageEvents = BuildTrackedDamageEvents(log, actor);
+            Dictionary<HealthDamageEvent, HealthDamageEvent?> previousDamageEventLookup = BuildPreviousDamageEventLookup(trackedDamageEvents);
             foreach (DownEvent downEvent in log.CombatData.GetDownEvents(actor.AgentItem).OrderBy(evt => evt.Time))
             {
-                CombatReplayKillEventDto? killEvent = BuildKillEvent(log, actor, downEvent, side, isEnemy);
+                CombatReplayKillEventDto? killEvent = BuildKillEvent(log, actor, trackedDamageEvents, previousDamageEventLookup, downEvent, side, isEnemy);
                 if (killEvent != null)
                 {
                     yield return killEvent;
@@ -4874,6 +4900,8 @@ internal static class CombatReplayAnalysisBuilder
     private static CombatReplayKillEventDto? BuildKillEvent(
         ParsedEvtcLog log,
         SingleActor actor,
+        IReadOnlyList<HealthDamageEvent> trackedDamageEvents,
+        IReadOnlyDictionary<HealthDamageEvent, HealthDamageEvent?> previousDamageEventLookup,
         DownEvent downEvent,
         string side,
         bool isEnemy)
@@ -4887,7 +4915,7 @@ internal static class CombatReplayAnalysisBuilder
 
         long killTime = outcomeInfo.TransitionTime.Value;
         long conditionSnapshotTime = Math.Max(log.LogData.LogStart, killTime - 1);
-        DamageWindowSummary summary = BuildDamageWindowSummary(log, actor, downEvent.Time, killTime, conditionSnapshotTime);
+        DamageWindowSummary summary = BuildDamageWindowSummary(log, actor, trackedDamageEvents, previousDamageEventLookup, downEvent.Time, killTime, conditionSnapshotTime);
         return new CombatReplayKillEventDto
         {
             Time = killTime,
@@ -5007,9 +5035,11 @@ internal static class CombatReplayAnalysisBuilder
     {
         foreach (SingleActor actor in actors)
         {
+            List<HealthDamageEvent> trackedDamageEvents = BuildTrackedDamageEvents(log, actor);
+            Dictionary<HealthDamageEvent, HealthDamageEvent?> previousDamageEventLookup = BuildPreviousDamageEventLookup(trackedDamageEvents);
             foreach (DownEvent downEvent in log.CombatData.GetDownEvents(actor.AgentItem).OrderBy(evt => evt.Time))
             {
-                CombatReplayRecoveredEventDto? recoveredEvent = BuildRecoveredEvent(log, actor, squadPlayers, downEvent, side, isEnemy);
+                CombatReplayRecoveredEventDto? recoveredEvent = BuildRecoveredEvent(log, actor, trackedDamageEvents, previousDamageEventLookup, squadPlayers, downEvent, side, isEnemy);
                 if (recoveredEvent != null)
                 {
                     yield return recoveredEvent;
@@ -5021,6 +5051,8 @@ internal static class CombatReplayAnalysisBuilder
     private static CombatReplayRecoveredEventDto? BuildRecoveredEvent(
         ParsedEvtcLog log,
         SingleActor actor,
+        IReadOnlyList<HealthDamageEvent> trackedDamageEvents,
+        IReadOnlyDictionary<HealthDamageEvent, HealthDamageEvent?> previousDamageEventLookup,
         IReadOnlyList<SingleActor> squadPlayers,
         DownEvent downEvent,
         string side,
@@ -5037,7 +5069,7 @@ internal static class CombatReplayAnalysisBuilder
         long conditionSnapshotTime = Math.Max(log.LogData.LogStart, recoveredTime - 1);
         if (isEnemy)
         {
-            DamageWindowSummary summary = BuildDamageWindowSummary(log, actor, downEvent.Time, recoveredTime, conditionSnapshotTime);
+            DamageWindowSummary summary = BuildDamageWindowSummary(log, actor, trackedDamageEvents, previousDamageEventLookup, downEvent.Time, recoveredTime, conditionSnapshotTime);
             return new CombatReplayRecoveredEventDto
             {
                 Time = recoveredTime,
@@ -5298,13 +5330,14 @@ internal static class CombatReplayAnalysisBuilder
     private static DamageWindowSummary BuildDamageWindowSummary(
         ParsedEvtcLog log,
         SingleActor actor,
+        IReadOnlyList<HealthDamageEvent> trackedDamageEvents,
+        IReadOnlyDictionary<HealthDamageEvent, HealthDamageEvent?> previousDamageEventLookup,
         long windowStart,
         long windowEnd,
         long conditionSnapshotTime)
     {
-        List<HealthDamageEvent> damageEvents = [.. actor.GetDamageTakenEvents(null, log, windowStart, windowEnd)
-            .Where(damageEvent => damageEvent.HasHit && (damageEvent.HealthDamage > 0 || damageEvent.ShieldDamage > 0))
-            .OrderBy(damageEvent => damageEvent.Time)];
+        List<HealthDamageEvent> damageEvents = [.. trackedDamageEvents
+            .Where(damageEvent => damageEvent.Time >= windowStart && damageEvent.Time <= windowEnd)];
         var contributorTotals = new Dictionary<AgentItem, double>();
         var contributorStrikeTotals = new Dictionary<AgentItem, double>();
         var contributorConditionTotals = new Dictionary<AgentItem, double>();
@@ -5353,7 +5386,7 @@ internal static class CombatReplayAnalysisBuilder
                     ? existingStrikeAmount + damageEvent.HealthDamage
                     : damageEvent.HealthDamage;
                 if (!string.IsNullOrWhiteSpace(damageEvent.Skill.Name)
-                    && damageEvent.Skill.Name.IndexOf(MysticRebukeSkillName, StringComparison.OrdinalIgnoreCase) >= 0)
+                    && damageEvent.Skill.Name.Contains(MysticRebukeSkillName, StringComparison.OrdinalIgnoreCase))
                 {
                     mysticRebukeDamageTaken += totalDamage;
                     contributorMysticRebukeTotals[source] = contributorMysticRebukeTotals.TryGetValue(source, out double existingMysticRebukeAmount)
@@ -5390,6 +5423,7 @@ internal static class CombatReplayAnalysisBuilder
             contributorConditionTotals,
             contributorMysticRebukeTotals,
             totalDamageTaken);
+        ObliterateBarrierSummary obliterateSummary = BuildOffensiveProtocolObliterateSummary(damageEvents, previousDamageEventLookup);
 
         return new DamageWindowSummary(
             TotalDamageTaken: totalDamageTaken,
@@ -5399,10 +5433,65 @@ internal static class CombatReplayAnalysisBuilder
             BarrierDamageTaken: barrierDamageTaken,
             HitCount: damageEvents.Count,
             ContributorCount: contributorTotals.Count(pair => pair.Value > 0.0),
+            OffensiveProtocolObliterateHitCount: obliterateSummary.HitCount,
+            OffensiveProtocolObliterateBarrierRemovedHitCount: obliterateSummary.BarrierRemovedHitCount,
             Conditions: conditions,
             ConditionDamageBreakdown: conditionDamageBreakdown,
             Contributors: contributors,
             DamageTimeline: BuildDownDamageTimeline(log, damageEvents));
+    }
+
+    private static List<HealthDamageEvent> BuildTrackedDamageEvents(ParsedEvtcLog log, SingleActor actor)
+    {
+        return [.. actor.GetDamageTakenEvents(null, log)
+            .Where(damageEvent => damageEvent.HasHit && (damageEvent.HealthDamage > 0 || damageEvent.ShieldDamage > 0))
+            .OrderBy(damageEvent => damageEvent.Time)];
+    }
+
+    private static Dictionary<HealthDamageEvent, HealthDamageEvent?> BuildPreviousDamageEventLookup(IReadOnlyList<HealthDamageEvent> trackedDamageEvents)
+    {
+        var result = new Dictionary<HealthDamageEvent, HealthDamageEvent?>();
+        HealthDamageEvent? previousDamageEvent = null;
+        foreach (HealthDamageEvent damageEvent in trackedDamageEvents)
+        {
+            result[damageEvent] = previousDamageEvent;
+            previousDamageEvent = damageEvent;
+        }
+        return result;
+    }
+
+    private static ObliterateBarrierSummary BuildOffensiveProtocolObliterateSummary(
+        IReadOnlyList<HealthDamageEvent> damageEvents,
+        IReadOnlyDictionary<HealthDamageEvent, HealthDamageEvent?> previousDamageEventLookup)
+    {
+        int hitCount = 0;
+        int barrierRemovedHitCount = 0;
+        foreach (HealthDamageEvent damageEvent in damageEvents)
+        {
+            if (!IsOffensiveProtocolObliterateHit(damageEvent))
+            {
+                continue;
+            }
+
+            hitCount++;
+            if (previousDamageEventLookup.TryGetValue(damageEvent, out HealthDamageEvent? previousDamageEvent)
+                && previousDamageEvent != null
+                && previousDamageEvent.ShieldDamage > 0)
+            {
+                barrierRemovedHitCount++;
+            }
+        }
+
+        return new ObliterateBarrierSummary(
+            HitCount: hitCount,
+            BarrierRemovedHitCount: barrierRemovedHitCount);
+    }
+
+    private static bool IsOffensiveProtocolObliterateHit(HealthDamageEvent damageEvent)
+    {
+        return OffensiveProtocolObliterateSkillIds.Contains(damageEvent.SkillID)
+            || (!string.IsNullOrWhiteSpace(damageEvent.Skill.Name)
+                && damageEvent.Skill.Name.StartsWith(OffensiveProtocolObliterateSkillNamePrefix, StringComparison.OrdinalIgnoreCase));
     }
 
     private static (List<CombatReplayEventTimelineEntryDto> Effects, int HardCcCount) BuildDownCrowdControlEffects(
@@ -6091,7 +6180,7 @@ internal static class CombatReplayAnalysisBuilder
         return [.. damageEvents.Select(damageEvent =>
         {
             string value = damageEvent.ShieldDamage > 0
-                ? $"{FormatWholeNumber(damageEvent.HealthDamage)} health, {FormatWholeNumber(damageEvent.ShieldDamage)} barrier"
+                ? $"{FormatWholeNumber(damageEvent.HealthDamage)} health, {FormatWholeNumber(damageEvent.ShieldDamage)} barrier removed"
                 : $"{FormatWholeNumber(damageEvent.HealthDamage)} health";
             AgentItem sourceAgent = !damageEvent.CreditedFrom.IsUnknown
                 ? damageEvent.CreditedFrom
@@ -6119,7 +6208,7 @@ internal static class CombatReplayAnalysisBuilder
         return [.. damageEvents.Select(damageEvent =>
         {
             string value = damageEvent.ShieldDamage > 0
-                ? $"{FormatWholeNumber(damageEvent.HealthDamage)} health, {FormatWholeNumber(damageEvent.ShieldDamage)} barrier"
+                ? $"{FormatWholeNumber(damageEvent.HealthDamage)} health, {FormatWholeNumber(damageEvent.ShieldDamage)} barrier removed"
                 : $"{FormatWholeNumber(damageEvent.HealthDamage)} health";
             string secondary = "";
             if (!damageEvent.CreditedFrom.IsUnknown)

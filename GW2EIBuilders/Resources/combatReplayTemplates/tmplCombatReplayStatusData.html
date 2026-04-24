@@ -1032,6 +1032,8 @@
             return {
                 selectedEventKey: null,
                 summaryView: "enemy",
+                downSkillFilterQuery: "",
+                selectedDownSkillFilter: "",
                 showDownSummaryHelp: false,
                 eventListScrollTop: 0,
                 eventDetailScrollTop: 0,
@@ -1203,6 +1205,12 @@
                                 <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}s <span class="combat-replay-wvw-analysis-detail">({{formatCount(entry.count)}} downs)</span></span>
                             </div>
                         </div>
+                        <div class="combat-replay-wvw-analysis-detail mt-2">Offensive Protocol: Obliterate</div>
+                        <div v-if="downSummary.offensiveProtocolObliterateHitCount === 0" class="combat-replay-wvw-analysis-helper">No Offensive Protocol: Obliterate hits were found in down windows.</div>
+                        <div v-else style="display: grid; gap: 0.25rem; margin-top: 0.25rem;">
+                            <div class="combat-replay-wvw-analysis-detail">{{formatCount(downSummary.offensiveProtocolObliterateHitCount)}} total hits</div>
+                            <div class="combat-replay-wvw-analysis-detail">{{formatCount(downSummary.offensiveProtocolObliterateBarrierRemovedHitCount)}} hits counted as removing barrier</div>
+                        </div>
                     </div>
                 </div>
                 <div v-if="downSummary.takeaways.length > 0" class="mt-1">
@@ -1251,12 +1259,51 @@
                     </div>
                 </div>
             </div>
+            <div class="combat-replay-wvw-analysis-card mb-2">
+                <div class="combat-replay-wvw-analysis-card-title">Down Skill Filter</div>
+                <div class="combat-replay-wvw-analysis-detail mb-2">
+                    Choose a skill to show only downs that were impacted by that skill.
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
+                    <input
+                        v-model="downSkillFilterQuery"
+                        list="combat-replay-down-skill-filter-options"
+                        type="text"
+                        class="form-control form-control-sm"
+                        style="max-width: 32rem;"
+                        placeholder="Type or select a skill"
+                        @input="onDownSkillFilterInput">
+                    <datalist id="combat-replay-down-skill-filter-options">
+                        <option
+                            v-for="skillName in downSkillFilterOptions"
+                            :key="'down-skill-filter-option-' + skillName"
+                            :value="skillName">
+                        </option>
+                    </datalist>
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-secondary"
+                        :disabled="!selectedDownSkillFilter && !downSkillFilterQuery"
+                        @click="clearDownSkillFilter">
+                        Clear
+                    </button>
+                </div>
+                <div v-if="selectedDownSkillFilter" class="combat-replay-wvw-analysis-detail mt-2">
+                    Filtering to <strong>{{selectedDownSkillFilter}}</strong>: {{formatCount(events.length)}} of {{formatCount(allEvents.length)}} downs shown.
+                </div>
+                <div v-else-if="downSkillFilterQuery" class="combat-replay-wvw-analysis-helper mt-2">
+                    Choose a listed skill to apply the filter.
+                </div>
+                <div v-else class="combat-replay-wvw-analysis-detail mt-2">
+                    Showing all {{formatCount(allEvents.length)}} downs.
+                </div>
+            </div>
             <div class="row">
                 <div class="col-lg-4 mb-2">
                     <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
                         <div class="combat-replay-wvw-analysis-card-title">Downs</div>
                         <div ref="eventList" style="flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 0.25rem;" @scroll.passive="captureEventScroll">
-                            <div v-if="events.length === 0" class="combat-replay-wvw-analysis-helper">No down events were found in this log.</div>
+                            <div v-if="events.length === 0" class="combat-replay-wvw-analysis-helper">{{selectedDownSkillFilter ? "No down events matched the selected skill filter." : "No down events were found in this log."}}</div>
                             <div v-else class="combat-replay-wvw-analysis-bursts">
                                 <button
                                     v-for="event in events"
@@ -1328,7 +1375,7 @@
                                         <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.conditionDamageTaken)}}</div>
                                     </div>
                                     <div class="combat-replay-wvw-analysis-metric">
-                                        <div class="combat-replay-wvw-analysis-label">Barrier damage</div>
+                                        <div class="combat-replay-wvw-analysis-label">Barrier removed</div>
                                         <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.barrierDamageTaken)}}</div>
                                     </div>
                                     <div class="combat-replay-wvw-analysis-metric">
@@ -1493,6 +1540,8 @@
                     totalMysticRebukeDamage: 0,
                     averageMysticRebukeDamage: 0,
                     averageEffectiveSoftCcSeconds: 0,
+                    offensiveProtocolObliterateHitCount: 0,
+                    offensiveProtocolObliterateBarrierRemovedHitCount: 0,
                     topContributors: [],
                     mysticRebukeContributors: [],
                     conditionContributors: [],
@@ -1502,8 +1551,21 @@
                     takeaways: [],
                 };
             },
-            events: function () {
+            allEvents: function () {
                 return this.downAnalysis.events || [];
+            },
+            downSkillFilterOptions: function () {
+                const skillNames = new Set();
+                this.allEvents.forEach(event => {
+                    this.getEventSkillNames(event).forEach(skillName => skillNames.add(skillName));
+                });
+                return Array.from(skillNames).sort((left, right) => left.localeCompare(right));
+            },
+            events: function () {
+                if (!this.selectedDownSkillFilter) {
+                    return this.allEvents;
+                }
+                return this.allEvents.filter(event => this.eventMatchesSelectedSkill(event, this.selectedDownSkillFilter));
             },
             selectedEvent: function () {
                 if (this.events.length === 0) {
@@ -1596,6 +1658,47 @@
             },
             hasContributorDamageSplit: function (contributor) {
                 return this.getContributorStrikeAmount(contributor) > 0 || this.getContributorConditionAmount(contributor) > 0;
+            },
+            getEventSkillNames: function (event) {
+                const skillNames = new Set();
+                const addSkillName = (name) => {
+                    if (name && name.trim()) {
+                        skillNames.add(name.trim());
+                    }
+                };
+                (event && event.damageTimeline ? event.damageTimeline : []).forEach(entry => addSkillName(entry.label));
+                (event && event.crowdControlEffects ? event.crowdControlEffects : []).forEach(entry => addSkillName(entry.label));
+                (event && event.conditionDamageBreakdown ? event.conditionDamageBreakdown : []).forEach(entry => addSkillName(entry.name));
+                return Array.from(skillNames);
+            },
+            findDownSkillFilterMatch: function (query) {
+                const normalizedQuery = query ? query.trim().toLowerCase() : "";
+                if (!normalizedQuery) {
+                    return "";
+                }
+                return this.downSkillFilterOptions.find(skillName => skillName.toLowerCase() === normalizedQuery) || "";
+            },
+            eventMatchesSelectedSkill: function (event, selectedSkill) {
+                const normalizedSkill = selectedSkill ? selectedSkill.toLowerCase() : "";
+                if (!normalizedSkill) {
+                    return true;
+                }
+                return this.getEventSkillNames(event).some(skillName => skillName.toLowerCase() === normalizedSkill);
+            },
+            onDownSkillFilterInput: function () {
+                this.selectedDownSkillFilter = this.findDownSkillFilterMatch(this.downSkillFilterQuery);
+                this.selectedEventKey = null;
+                this.eventListScrollTop = 0;
+                this.eventDetailScrollTop = 0;
+                this.restoreEventScroll();
+            },
+            clearDownSkillFilter: function () {
+                this.downSkillFilterQuery = "";
+                this.selectedDownSkillFilter = "";
+                this.selectedEventKey = null;
+                this.eventListScrollTop = 0;
+                this.eventDetailScrollTop = 0;
+                this.restoreEventScroll();
             },
             getEventKey: function (event) {
                 return [event.time, event.actorId, event.side].join("-");
@@ -1892,7 +1995,7 @@
                                         <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.conditionDamageTaken)}}</div>
                                     </div>
                                     <div class="combat-replay-wvw-analysis-metric">
-                                        <div class="combat-replay-wvw-analysis-label">Barrier damage</div>
+                                        <div class="combat-replay-wvw-analysis-label">Barrier removed</div>
                                         <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.barrierDamageTaken)}}</div>
                                     </div>
                                     <div class="combat-replay-wvw-analysis-metric">
@@ -2589,7 +2692,7 @@
                                             <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.conditionDamageTaken)}}</div>
                                         </div>
                                         <div class="combat-replay-wvw-analysis-metric">
-                                            <div class="combat-replay-wvw-analysis-label">Barrier damage</div>
+                                            <div class="combat-replay-wvw-analysis-label">Barrier removed</div>
                                             <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedEvent.barrierDamageTaken)}}</div>
                                         </div>
                                         <div class="combat-replay-wvw-analysis-metric">

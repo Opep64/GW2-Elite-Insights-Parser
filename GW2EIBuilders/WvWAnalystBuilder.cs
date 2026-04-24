@@ -60,15 +60,16 @@ public sealed class WvWAnalystBuilder
         var commanderSummary = BuildCommanderSummary(summary, combatReplayAnalysis, players, commander?.UniqueID ?? 0);
         var threatBoons = BuildThreatBoons(combatReplayAnalysis);
         var defenseSaves = BuildDefenseSaves(combatReplayAnalysis);
+        var obliterate = BuildObliterateSummary(combatReplayAnalysis);
         var topBursts = BuildTopBursts(combatReplayAnalysis, squadPlayers);
 
         return new WvWAnalystFightPayloadDto
         {
             Meta = new WvWAnalystMetaDto
             {
-                SchemaVersion = "1.7.0",
+                SchemaVersion = "1.8.0",
                 PayloadType = "wvw-analyst-fight",
-                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves",
+                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves+obliterate",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
                 ParserVersion = parserVersion.ToString(),
             },
@@ -121,6 +122,7 @@ public sealed class WvWAnalystBuilder
             Execution = BuildExecution(summary),
             CommanderSummary = commanderSummary,
             DefenseSaves = defenseSaves,
+            Obliterate = obliterate,
             ThreatBoons = threatBoons,
             TopBursts = topBursts,
             Players = players,
@@ -422,6 +424,21 @@ public sealed class WvWAnalystBuilder
             LowestLowestHealthPercent = summary.LowestLowestHealthPercent,
             TotalIncomingDamage = summary.TotalIncomingDamage,
             TotalIncomingHealing = summary.TotalIncomingHealing,
+        };
+    }
+
+    private static WvWAnalystObliterateSummaryDto? BuildObliterateSummary(CombatReplayAnalysisDto? combatReplayAnalysis)
+    {
+        CombatReplayDownSummaryDto? summary = combatReplayAnalysis?.Events?.Downs?.CombinedSummary;
+        if (summary is null)
+        {
+            return null;
+        }
+
+        return new WvWAnalystObliterateSummaryDto
+        {
+            HitCount = summary.OffensiveProtocolObliterateHitCount,
+            BarrierRemovedHitCount = summary.OffensiveProtocolObliterateBarrierRemovedHitCount,
         };
     }
 
@@ -914,6 +931,7 @@ internal sealed class WvWAnalystFightPayloadDto
     public WvWAnalystExecutionDto Execution { get; set; } = new();
     public WvWAnalystCommanderSummaryDto CommanderSummary { get; set; } = new();
     public WvWAnalystDefenseSaveSummaryDto? DefenseSaves { get; set; }
+    public WvWAnalystObliterateSummaryDto? Obliterate { get; set; }
     public IReadOnlyList<WvWAnalystThreatBoonSummaryDto> ThreatBoons { get; set; } = Array.Empty<WvWAnalystThreatBoonSummaryDto>();
     public IReadOnlyList<WvWAnalystTopBurstDto> TopBursts { get; set; } = Array.Empty<WvWAnalystTopBurstDto>();
     public IReadOnlyList<WvWAnalystPlayerSummaryDto> Players { get; set; } = Array.Empty<WvWAnalystPlayerSummaryDto>();
@@ -1127,6 +1145,12 @@ internal sealed class WvWAnalystDefenseSaveSummaryDto
     public double LowestLowestHealthPercent { get; set; }
     public double TotalIncomingDamage { get; set; }
     public double TotalIncomingHealing { get; set; }
+}
+
+internal sealed class WvWAnalystObliterateSummaryDto
+{
+    public int HitCount { get; set; }
+    public int BarrierRemovedHitCount { get; set; }
 }
 
 internal sealed class WvWAnalystPlayerSummaryDto
