@@ -367,9 +367,9 @@
                         <div class="combat-replay-overview-help-section">
                             <div class="combat-replay-overview-help-heading">Recovery</div>
                             <ul class="combat-replay-overview-help-list">
-                                <li><strong>What it is</strong>: cleanses, healing, and barrier during enemy pressure</li>
-                                <li><strong>Squad Share</strong>: weighted blend of Healing share 0.40, Barrier share 0.20, Cleanses share 0.25, DefensiveSupportWindows share 0.15, re-normalized over available inputs; if healing and barrier are both unavailable, Cleanses uses 0.50 and DefensiveSupportWindows uses 0.15</li>
-                                <li><strong>Strength constants</strong>: Healing 0.32, Barrier 0.18, Cleanses 0.24, DefensiveSupportWindows 0.16, DefensiveConditionPressure 0.10, re-normalized over available inputs; if healing and barrier are both unavailable, Cleanses uses 0.42</li>
+                                <li><strong>What it is</strong>: cleanses, healing, barrier, pet/minion absorption, and attributed negation during enemy pressure</li>
+                                <li><strong>Squad Share</strong>: weighted blend of Healing share 0.35, Barrier share 0.15, PetAbsorption share 0.15, Negation share 0.14, Cleanses share 0.21, DefensiveSupportWindows share 0.18, re-normalized over available inputs</li>
+                                <li><strong>Strength constants</strong>: Healing 0.24, Barrier 0.12, PetAbsorption 0.12, Negation 0.14, Cleanses 0.20, DefensiveSupportWindows 0.10, DefensiveConditionPressure 0.08, re-normalized over available inputs</li>
                             </ul>
                         </div>
                         <div class="combat-replay-overview-help-section">
@@ -2225,7 +2225,7 @@
                     { key: "strip", label: "Strip", detail: "Top boon removal timed into pressure and conversion windows." },
                     { key: "control", label: "Control", detail: "Top effective crowd control and control-condition disruption." },
                     { key: "boonSupport", label: "Boon Support", detail: "Top offensive and defensive boon support in key windows." },
-                    { key: "recovery", label: "Recovery", detail: "Top cleanses, healing, and barrier during enemy pressure." },
+                    { key: "recovery", label: "Recovery", detail: "Top cleanses, healing, barrier, pet absorption, and attributed negation during enemy pressure." },
                     { key: "rez", label: "Rez", detail: "Top help on successful ally recoveries after downstate." },
                 ];
                 laneCards.forEach(card => {

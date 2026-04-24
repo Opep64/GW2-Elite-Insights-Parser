@@ -3391,6 +3391,7 @@
                 mitigationSavedOnly: false,
                 mitigationListScrollTop: 0,
                 pendingMitigationScrollRestore: false,
+                negatedHitDetailModal: null,
                 showMitigationSummaryHelp: false,
                 showMitigationCasesHelp: false,
             };
@@ -3406,12 +3407,17 @@
                     Barrier totals may be understated or incomplete if some squad players were missing the healing/barrier addon.
                 </div>
                 <div class="row">
-                    <div :class="defenseAnalysis.topBarrierProviders && defenseAnalysis.topBarrierProviders.length > 0 ? 'col-xl-8 mb-3 mb-xl-0' : 'col-12'">
+                    <div :class="((defenseAnalysis.topBarrierProviders && defenseAnalysis.topBarrierProviders.length > 0) || (defenseAnalysis.topPetMinionAbsorbers && defenseAnalysis.topPetMinionAbsorbers.length > 0)) ? 'col-xl-8 mb-3 mb-xl-0' : 'col-12'">
                         <div class="combat-replay-wvw-analysis-grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
                             <div class="combat-replay-wvw-analysis-metric">
                                 <div class="combat-replay-wvw-analysis-label">Overall Barrier Absorption</div>
                                 <div class="combat-replay-wvw-analysis-value">{{formatPercent(defenseAnalysis.barrierAbsorptionPercent)}}</div>
                                 <div class="combat-replay-wvw-analysis-detail">{{formatAmount(defenseAnalysis.barrierDamageAbsorbed)}} damage absorbed out of {{formatAmount(defenseAnalysis.totalDamageToSquad)}} total damage</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Pet / Minion Absorption</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatPercent(defenseAnalysis.petMinionAbsorptionPercent)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatAmount(defenseAnalysis.totalPetMinionDamageAbsorbed)}} pet/minion damage taken out of {{formatAmount(defenseAnalysis.totalDamageToSquad + defenseAnalysis.totalPetMinionDamageAbsorbed)}} combined incoming damage</div>
                             </div>
                             <div v-if="defenseAnalysis.hasBarrierData && burstBarrier && burstBarrier.enemyBurstWindows > 0" class="combat-replay-wvw-analysis-metric">
                                 <div class="combat-replay-wvw-analysis-label">Burst Barrier Absorption</div>
@@ -3421,19 +3427,61 @@
                             </div>
                         </div>
                     </div>
-                    <div v-if="defenseAnalysis.topBarrierProviders && defenseAnalysis.topBarrierProviders.length > 0" class="col-xl-4">
-                        <div class="combat-replay-wvw-analysis-label mb-1">Top Barrier Providers</div>
-                        <div class="combat-replay-wvw-analysis-top-actors" style="max-height: 17vh; overflow-y: auto; padding-right: 0.25rem;">
+                    <div v-if="(defenseAnalysis.topBarrierProviders && defenseAnalysis.topBarrierProviders.length > 0) || (defenseAnalysis.topPetMinionAbsorbers && defenseAnalysis.topPetMinionAbsorbers.length > 0)" class="col-xl-4">
+                        <div v-if="defenseAnalysis.topBarrierProviders && defenseAnalysis.topBarrierProviders.length > 0" :class="defenseAnalysis.topPetMinionAbsorbers && defenseAnalysis.topPetMinionAbsorbers.length > 0 ? 'mb-3' : ''">
+                            <div class="combat-replay-wvw-analysis-label mb-1">Top Barrier Providers</div>
+                            <div class="combat-replay-wvw-analysis-top-actors" style="max-height: 17vh; overflow-y: auto; padding-right: 0.25rem;">
+                                <button
+                                    v-for="(entry, index) in defenseAnalysis.topBarrierProviders"
+                                    :key="'defense-provider-' + index + '-' + entry.actorId"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                    :disabled="!entry.actorId"
+                                    @click.stop="focusProvider(entry)">
+                                    <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div v-if="defenseAnalysis.topPetMinionAbsorbers && defenseAnalysis.topPetMinionAbsorbers.length > 0">
+                            <div class="combat-replay-wvw-analysis-label mb-1">Top Pet / Minion Absorbers</div>
+                            <div class="combat-replay-wvw-analysis-top-actors" style="max-height: 17vh; overflow-y: auto; padding-right: 0.25rem;">
+                                <button
+                                    v-for="(entry, index) in defenseAnalysis.topPetMinionAbsorbers"
+                                    :key="'defense-pet-absorber-' + index + '-' + entry.actorId"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                    :disabled="!entry.actorId"
+                                    @click.stop="focusProvider(entry)">
+                                    <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="defenseAnalysis.negatedHitSummaries && defenseAnalysis.negatedHitSummaries.length > 0" class="mt-3">
+                    <div class="combat-replay-wvw-analysis-label mb-2 text-center">Negated Hit Estimates</div>
+                    <div class="combat-replay-wvw-analysis-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                        <div
+                            v-for="summary in defenseAnalysis.negatedHitSummaries"
+                            :key="'negated-hit-summary-' + summary.key"
+                            class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">{{summary.label}}</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(summary.estimatedPreventedDamage)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">{{formatCount(summary.negatedHitCount)}} negated hits</div>
+                            <div class="combat-replay-wvw-analysis-detail">{{formatCount(summary.fallbackEstimateCount)}} fallback estimates at 50 each</div>
+                            <div v-if="summary.contributingEffects && summary.contributingEffects.length > 0" class="combat-replay-wvw-analysis-detail">
+                                Effects: {{summary.contributingEffects.map(effect => effect.name + ' (' + formatCount(effect.count) + ')').join(', ')}}
+                            </div>
                             <button
-                                v-for="(entry, index) in defenseAnalysis.topBarrierProviders"
-                                :key="'defense-provider-' + index + '-' + entry.actorId"
+                                v-if="summary.occurrences && summary.occurrences.length > 0"
                                 type="button"
-                                class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
-                                :disabled="!entry.actorId"
-                                @click.stop="focusProvider(entry)">
-                                <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
-                                <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
-                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                class="btn btn-link btn-sm p-0 combat-replay-wvw-analysis-detail"
+                                @click.stop="openNegatedHitSummaryDetail(summary)">
+                                View occurrences
                             </button>
                         </div>
                     </div>
@@ -3460,6 +3508,11 @@
                             <div class="combat-replay-wvw-analysis-detail">{{formatCount(defenseAnalysis.savedPlayersSummary.damageReductionSavedCases)}} cases included damage reduction</div>
                         </div>
                         <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Estimated negated damage for saved players</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(defenseAnalysis.savedPlayersSummary.totalEstimatedNegatedDamage)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">{{formatCount(defenseAnalysis.savedPlayersSummary.negatedDamageSavedCases)}} cases included negated damage</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
                             <div class="combat-replay-wvw-analysis-label">Lowest Health</div>
                             <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">Lowest Average Health: {{formatAmount(defenseAnalysis.savedPlayersSummary.averageLowestHealthPercent)}}%</div>
                             <div class="combat-replay-wvw-analysis-detail">Closest to down: {{formatAmount(defenseAnalysis.savedPlayersSummary.lowestLowestHealthPercent)}}%</div>
@@ -3478,8 +3531,12 @@
                                     <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(defenseAnalysis.savedPlayersSummary.damageReductionSavedCases)}}</span>
                                 </div>
                                 <div class="combat-replay-wvw-analysis-top-actor-entry">
-                                    <span class="combat-replay-wvw-analysis-top-actor-name">Barrier + damage reduction</span>
-                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(defenseAnalysis.savedPlayersSummary.bothSavedCases)}}</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">Negated damage saves</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(defenseAnalysis.savedPlayersSummary.negatedDamageSavedCases)}}</span>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-top-actor-entry">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">Multi-source saves</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(defenseAnalysis.savedPlayersSummary.multiSourceSavedCases)}}</span>
                                 </div>
                             </div>
                         </div>
@@ -3512,6 +3569,26 @@
                             </div>
                             <div v-else class="combat-replay-wvw-analysis-helper">
                                 No damage reduction saves were detected in the 99% bucket.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-xl-4">
+                            <div class="combat-replay-wvw-analysis-label mb-1">Top negated damage effects</div>
+                            <div v-if="defenseAnalysis.savedPlayersSummary.topNegatedDamageEffects && defenseAnalysis.savedPlayersSummary.topNegatedDamageEffects.length > 0" class="combat-replay-wvw-analysis-top-actors">
+                                <div
+                                    v-for="(entry, index) in defenseAnalysis.savedPlayersSummary.topNegatedDamageEffects"
+                                    :key="'saved-negated-effect-' + index + '-' + entry.name"
+                                    class="combat-replay-wvw-analysis-top-actor-entry">
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img v-if="entry.icon" :src="entry.icon" alt="" class="icon icon-hover mx-1" />
+                                        {{entry.name}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(entry.count)}} cases</span>
+                                </div>
+                            </div>
+                            <div v-else class="combat-replay-wvw-analysis-helper">
+                                No negated-damage saves were detected in the 99% bucket.
                             </div>
                         </div>
                     </div>
@@ -3628,6 +3705,10 @@
                                 <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatAmount(event.estimatedMitigation)}}</div>
                             </div>
                             <div class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
+                                <div class="combat-replay-wvw-analysis-label" style="margin-bottom: 0.15rem;">Estimated negated damage</div>
+                                <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatAmount(event.estimatedNegatedDamage)}}</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-top-actor-entry" style="padding: 0.35rem 0.5rem; min-width: 0; text-align: center;">
                                 <div class="combat-replay-wvw-analysis-label" style="margin-bottom: 0.15rem;">Incoming damage</div>
                                 <div class="combat-replay-wvw-analysis-value" style="font-size: 0.95rem;">{{formatAmount(event.incomingDamage)}}</div>
                             </div>
@@ -3670,7 +3751,7 @@
                                 :key="'mitigation-effect-' + event.actorId + '-' + event.time + '-' + effectIndex"
                                 class="combat-replay-wvw-analysis-detail"
                                 :title="getMitigationEffectTooltip(effect)"
-                                :style="(event.barrierSavedPlayer && effect.name === 'Barrier') || (event.estimatedMitigationSavedPlayer && event.estimatedMitigationSavedEffects && event.estimatedMitigationSavedEffects.includes(effect.name))
+                                :style="(event.barrierSavedPlayer && effect.name === 'Barrier') || (event.estimatedMitigationSavedPlayer && event.estimatedMitigationSavedEffects && event.estimatedMitigationSavedEffects.includes(effect.name)) || (event.estimatedNegatedDamageSavedPlayer && event.estimatedNegatedDamageSavedEffects && event.estimatedNegatedDamageSavedEffects.includes(effect.name))
                                     ? 'display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.18rem 0.42rem; border-radius: 999px; background: rgba(106, 226, 170, 0.18); color: #b8ffd8; line-height: 1.25; border: 1px solid rgba(152, 240, 194, 0.35);'
                                     : 'display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.18rem 0.42rem; border-radius: 999px; background: rgba(255,255,255,0.05); line-height: 1.25;'">
                                 <img v-if="effect.icon" :src="effect.icon" alt="" class="icon icon-hover" style="margin-right: 0;" />
@@ -3696,28 +3777,34 @@
                     <button type="button" class="wvw-summary-modal-close" aria-label="Close mitigation summary help" @click="showMitigationSummaryHelp = false">&times;</button>
                     <div class="wvw-summary-modal-title">Mitigation Summary Help</div>
                     <div class="wvw-summary-modal-subtitle">
-                        This section combines whole-fight barrier totals with a focused saved-player summary built from the 99% mitigation threshold bucket.
+                        This section combines whole-fight barrier and pet/minion diversion totals with a focused saved-player summary built from the 99% mitigation threshold bucket.
                     </div>
                     <div class="combat-replay-overview-help-text">
-                        <strong>Saved player / saved case</strong> means a mitigation entry where barrier, estimated damage reduction, or both are large enough to cover the player's estimated remaining health at the lowest-health point.
+                        <strong>Saved player / saved case</strong> means a mitigation entry where barrier, estimated damage reduction, estimated negated damage, or any combination of those categories is large enough to cover the player's estimated remaining health at the lowest-health point.
                     </div>
                     <div class="combat-replay-overview-help-section">
-                        <div class="combat-replay-overview-help-heading">Whole-fight barrier metrics</div>
+                        <div class="combat-replay-overview-help-heading">Whole-fight mitigation metrics</div>
                         <ul class="combat-replay-overview-help-list">
                             <li><strong>Overall Barrier Absorption</strong>: percentage of incoming squad damage that hit barrier instead of health over the whole fight.</li>
+                            <li><strong>Pet / Minion Absorption</strong>: percentage of combined incoming damage to squad players and owned pets/minions that landed on pets/minions instead of squad players.</li>
                             <li><strong>Burst Barrier Absorption</strong>: percentage of incoming squad damage absorbed by barrier during tracked enemy burst windows.</li>
                             <li><strong>Top Barrier Providers</strong>: squad players who contributed the most outgoing barrier across the fight.</li>
+                            <li><strong>Top Pet / Minion Absorbers</strong>: squad players whose owned pets or minions took the most incoming damage.</li>
+                            <li><strong>Negated Hit Estimates</strong>: estimated prevented damage from Aegis blocks, Distortion, Blur, absorbed invulnerability-style hits, and blind misses. Each negated hit is estimated from landed hits of the same attacker and skill when possible.</li>
+                            <li><strong>Fallback estimates</strong>: when no landed-hit sample exists for that attacker and skill, the estimate uses 50 damage and increments the fallback counter.</li>
                         </ul>
                     </div>
                     <div class="combat-replay-overview-help-section">
                         <div class="combat-replay-overview-help-heading">Saved Players (99% threshold)</div>
                         <ul class="combat-replay-overview-help-list">
-                            <li><strong>Saved cases</strong>: total mitigation entries in the 99% threshold bucket where barrier, damage reduction, or both met the current save estimate.</li>
+                            <li><strong>Saved cases</strong>: total mitigation entries in the 99% threshold bucket where barrier, damage reduction, negated damage, or any combination of those categories met the current save estimate.</li>
                             <li><strong>Barrier absorbed for saved players</strong>: barrier absorbed between the last full-health point and the lowest-health point for saved entries.</li>
                             <li><strong>Estimated damage reduction for saved players</strong>: estimated strike damage prevented by tracked reduction effects during saved entries.</li>
+                            <li><strong>Estimated negated damage for saved players</strong>: estimated damage from Aegis, Distortion, Blur, and other tracked negated hits during saved entries.</li>
                             <li><strong>Lowest Health</strong>: the average lowest-health percent across qualifying saved entries, plus the single lowest qualifying health percent.</li>
-                            <li><strong>Save breakdown</strong>: counts of saved entries attributed to barrier, damage reduction, or both.</li>
+                            <li><strong>Save breakdown</strong>: counts of saved entries attributed to barrier, damage reduction, negated damage, and multi-source combinations.</li>
                             <li><strong>Top damage reduction effects</strong>: the most common tracked reduction effects that contributed to saved entries.</li>
+                            <li><strong>Top negated damage effects</strong>: the most common negation effects that contributed to saved entries.</li>
                         </ul>
                     </div>
                     <div class="combat-replay-overview-help-section">
@@ -3726,6 +3813,8 @@
                             <li>Saved-player counts are heuristic and are intended for comparison and investigation, not exact ground truth.</li>
                             <li>Barrier values can be incomplete if some players were missing the barrier/healing addon.</li>
                             <li>Damage reduction estimates currently only use the tracked reduction effects implemented in the mitigation calculation.</li>
+                            <li>Negated-damage estimates are built from negated hits. When a matching landed hit for the same attacker and skill is unavailable, the estimate falls back to 50 damage.</li>
+                            <li>Pet / minion absorption shows diverted pressure on owned pets and minions. It does not prove that the same damage would otherwise have hit a player.</li>
                         </ul>
                     </div>
                 </div>
@@ -3738,7 +3827,7 @@
                         Mitigation Cases lists recovery windows where a squad player dropped to or below the selected threshold, then returned to full health without going down or dying.
                     </div>
                     <div class="combat-replay-overview-help-text">
-                        <strong>Saved player / saved case</strong> means a mitigation entry where barrier, estimated damage reduction, or both are large enough to cover the player's estimated remaining health at the lowest-health point.
+                        <strong>Saved player / saved case</strong> means a mitigation entry where barrier, estimated damage reduction, estimated negated damage, or any combination of those categories is large enough to cover the player's estimated remaining health at the lowest-health point.
                     </div>
                     <div class="combat-replay-overview-help-section">
                         <div class="combat-replay-overview-help-heading">How a case is built</div>
@@ -3754,7 +3843,7 @@
                         <ul class="combat-replay-overview-help-list">
                             <li><strong>Health threshold</strong>: switches between precomputed threshold buckets.</li>
                             <li><strong>Effect</strong>: only shows cases where the selected mitigation effect appeared during the full-to-recover window.</li>
-                            <li><strong>Saved only</strong>: after the effect filter is applied, keeps only entries where the selected effect, or barrier, was part of the current save estimate.</li>
+                            <li><strong>Saved only</strong>: after the effect filter is applied, keeps only entries where the selected effect, or barrier, was part of the current save estimate through damage reduction or negated damage.</li>
                             <li><strong>Player</strong>: after threshold, saved-only, and effect filters are applied, narrows the list to one selected player.</li>
                             <li><strong>Jump links</strong>: switch to Overview, move the replay to the selected moment, and select the player.</li>
                         </ul>
@@ -3766,6 +3855,7 @@
                             <li><strong>Barrier absorbed</strong>: actual logged shield damage absorbed from the start of the case to the lowest-health point.</li>
                             <li><strong>Health at lowest point</strong>: lowest observed health percent in the case window.</li>
                             <li><strong>Estimated mitigation</strong>: estimated strike damage prevented by tracked damage-reduction effects during the case window.</li>
+                            <li><strong>Estimated negated damage</strong>: estimated damage from Aegis, Distortion, Blur, and other tracked negated hits during the case window.</li>
                             <li><strong>Incoming damage / Incoming healing</strong>: totals across the full-to-recover window.</li>
                             <li><strong>Effect chips</strong>: mitigation effects active at some point in the window, with active duration shown on each chip.</li>
                         </ul>
@@ -3773,11 +3863,37 @@
                     <div class="combat-replay-overview-help-section">
                         <div class="combat-replay-overview-help-heading">Saved highlighting</div>
                         <ul class="combat-replay-overview-help-list">
-                            <li><strong>Saved player</strong>: a case where barrier, estimated damage reduction, or both are large enough to cover the player's estimated remaining health at the lowest-health point.</li>
+                            <li><strong>Saved player</strong>: a case where barrier, estimated damage reduction, estimated negated damage, or any combination of those categories is large enough to cover the player's estimated remaining health at the lowest-health point.</li>
                             <li>The <strong>Barrier</strong> effect chip is highlighted when barrier alone meets the current save estimate.</li>
-                            <li>Tracked damage-reduction effect chips are highlighted when those effects meet the current estimated save check.</li>
+                            <li>Tracked damage-reduction effect chips are highlighted when those effects were part of the current estimated save check.</li>
+                            <li>Tracked negation effect chips such as <strong>Aegis</strong>, <strong>Distortion</strong>, and <strong>Blur</strong> are highlighted when estimated negated damage was part of the current save check.</li>
                             <li>These highlights are heuristic and are intended to flag likely saves for review.</li>
                         </ul>
+                    </div>
+                </div>
+            </div>
+            <div v-if="negatedHitDetailModal" class="wvw-summary-modal-backdrop" @click.self="closeNegatedHitSummaryDetail">
+                <div class="wvw-summary-modal combat-replay-player-evaluation-modal" role="dialog" aria-modal="true" :aria-label="negatedHitDetailModal.title">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close negated hit detail" @click="closeNegatedHitSummaryDetail">&times;</button>
+                    <div class="wvw-summary-modal-title">{{negatedHitDetailModal.title}}</div>
+                    <div v-if="negatedHitDetailModal.subtitle" class="wvw-summary-modal-subtitle">
+                        <span>{{negatedHitDetailModal.subtitle}}</span>
+                    </div>
+                    <div class="combat-replay-player-evaluation-detail-section">
+                        <div class="combat-replay-player-evaluation-detail-heading">Occurrences</div>
+                        <div class="wvw-summary-modal-list">
+                            <div v-for="(occurrence, index) in negatedHitDetailModal.occurrences" :key="'negated-hit-occurrence-' + occurrence.time + '-' + index" class="wvw-summary-modal-row">
+                                <div class="wvw-summary-modal-skill">
+                                    <div class="wvw-summary-modal-skill-name">{{occurrence.effectName}}</div>
+                                    <div class="wvw-summary-modal-secondary">{{occurrence.skillName}}</div>
+                                    <div class="wvw-summary-modal-secondary">{{occurrence.timeLabel}} · {{occurrence.playerName}}</div>
+                                </div>
+                                <div class="wvw-summary-modal-values">
+                                    <span class="wvw-summary-modal-count">{{formatAmount(occurrence.estimatedPreventedDamage)}}</span>
+                                    <span v-if="occurrence.usedFallbackEstimate" class="wvw-summary-modal-secondary">fallback 50</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3813,11 +3929,14 @@
                         return !!event.barrierSavedPlayer;
                     }
                     if (this.selectedMitigationEffect) {
-                        return !!event.estimatedMitigationSavedPlayer
+                        return (!!event.estimatedMitigationSavedPlayer
                             && !!event.estimatedMitigationSavedEffects
-                            && event.estimatedMitigationSavedEffects.includes(this.selectedMitigationEffect);
+                            && event.estimatedMitigationSavedEffects.includes(this.selectedMitigationEffect))
+                            || (!!event.estimatedNegatedDamageSavedPlayer
+                                && !!event.estimatedNegatedDamageSavedEffects
+                                && event.estimatedNegatedDamageSavedEffects.includes(this.selectedMitigationEffect));
                     }
-                    return !!event.barrierSavedPlayer || !!event.estimatedMitigationSavedPlayer;
+                    return !!event.barrierSavedPlayer || !!event.estimatedMitigationSavedPlayer || !!event.estimatedNegatedDamageSavedPlayer;
                 });
             },
             mitigationEffectFilteredEvents: function () {
@@ -3988,6 +4107,19 @@
                 this.jumpToBurst(time);
                 this.selectReplayActor(event.actorId);
             },
+            openNegatedHitSummaryDetail: function (summary) {
+                if (!summary || !summary.occurrences || summary.occurrences.length === 0) {
+                    return;
+                }
+                this.negatedHitDetailModal = {
+                    title: summary.label + " Occurrences",
+                    subtitle: "Each occurrence shows the matched effect, the skill that was negated, and the estimated prevented damage.",
+                    occurrences: summary.occurrences,
+                };
+            },
+            closeNegatedHitSummaryDetail: function () {
+                this.negatedHitDetailModal = null;
+            },
             formatMitigationSeconds: function (seconds) {
                 return this.formatAmount(seconds) + "s";
             },
@@ -4010,7 +4142,8 @@
                     "Frost Aura": "Frost Aura reduces incoming strike damage while active.",
                     "Light Aura": "Light Aura reduces incoming condition damage while active.",
                     "Dark Aura": "Dark Aura reduces incoming condition damage while active.",
-                    "Distortion / Blur": "Distortion or Blur negates incoming hits while active.",
+                    "Distortion": "Distortion negates incoming hits while active.",
+                    "Blur": "Blur negates incoming hits while active.",
                     "Determined": "Determined is a damage-negating state. Incoming hits generally do not affect the actor while this is active.",
                     "Invulnerability": "Invulnerability prevents incoming damage from affecting the actor while active.",
                     "Spawn Protection": "Spawn Protection prevents incoming damage from affecting the actor while active.",

@@ -148,10 +148,43 @@ internal class CombatReplayDefenseAnalysisDto
     public long HealthDamageToSquad { get; set; }
     public long BarrierDamageAbsorbed { get; set; }
     public double BarrierAbsorptionPercent { get; set; }
+    public long TotalPetMinionDamageAbsorbed { get; set; }
+    public double PetMinionAbsorptionPercent { get; set; }
     public CombatReplayDefenseBurstBarrierDto BurstBarrier { get; set; } = new();
     public CombatReplayDefenseMitigationDto Mitigation { get; set; } = new();
     public CombatReplayDefenseSavedPlayersSummaryDto SavedPlayersSummary { get; set; } = new();
     public List<CombatReplayEventActorSummaryDto> TopBarrierProviders { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> TopPetMinionAbsorbers { get; set; } = [];
+    public List<CombatReplayDefenseNegatedHitSummaryDto> NegatedHitSummaries { get; set; } = [];
+}
+
+internal class CombatReplayDefenseNegatedHitSummaryDto
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public int NegatedHitCount { get; set; }
+    public double EstimatedPreventedDamage { get; set; }
+    public int FallbackEstimateCount { get; set; }
+    public List<CombatReplayEffectCountSummaryDto> ContributingEffects { get; set; } = [];
+    public List<CombatReplayDefenseNegatedHitOccurrenceDto> Occurrences { get; set; } = [];
+}
+
+internal class CombatReplayEffectCountSummaryDto
+{
+    public string Name { get; set; } = "";
+    public int Count { get; set; }
+}
+
+internal class CombatReplayDefenseNegatedHitOccurrenceDto
+{
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public int ActorId { get; set; }
+    public string PlayerName { get; set; } = "";
+    public string EffectName { get; set; } = "";
+    public string SkillName { get; set; } = "";
+    public double EstimatedPreventedDamage { get; set; }
+    public bool UsedFallbackEstimate { get; set; }
 }
 
 internal class CombatReplayDefenseSavedPlayersSummaryDto
@@ -161,12 +194,16 @@ internal class CombatReplayDefenseSavedPlayersSummaryDto
     public int BarrierSavedCases { get; set; }
     public double TotalEstimatedDamageReduction { get; set; }
     public int DamageReductionSavedCases { get; set; }
+    public double TotalEstimatedNegatedDamage { get; set; }
+    public int NegatedDamageSavedCases { get; set; }
     public double AverageLowestHealthPercent { get; set; }
     public double LowestLowestHealthPercent { get; set; }
     public int BothSavedCases { get; set; }
+    public int MultiSourceSavedCases { get; set; }
     public double TotalIncomingDamage { get; set; }
     public double TotalIncomingHealing { get; set; }
     public List<CombatReplayEventActorSummaryDto> TopDamageReductionEffects { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> TopNegatedDamageEffects { get; set; } = [];
 }
 
 internal class CombatReplayDefenseBurstBarrierDto
@@ -234,6 +271,10 @@ internal class CombatReplayDefenseMitigationEventDto
     public double EstimatedMitigation { get; set; }
     public bool EstimatedMitigationSavedPlayer { get; set; }
     public List<string> EstimatedMitigationSavedEffects { get; set; } = [];
+    public double EstimatedNegatedDamageToLowest { get; set; }
+    public double EstimatedNegatedDamage { get; set; }
+    public bool EstimatedNegatedDamageSavedPlayer { get; set; }
+    public List<string> EstimatedNegatedDamageSavedEffects { get; set; } = [];
     public double IncomingDamage { get; set; }
     public double IncomingHealing { get; set; }
     public List<CombatReplayMitigationEffectDto> Effects { get; set; } = [];
@@ -259,6 +300,21 @@ internal sealed class TrackedMitigationReduction
     public double StrikeReduction { get; init; }
 }
 
+internal enum NegatedHitTrigger
+{
+    Blocked,
+    Absorbed,
+}
+
+internal sealed class TrackedNegatedMitigationEffect
+{
+    public string Name { get; init; } = "";
+    public long[] BuffIds { get; init; } = [];
+    public NegatedHitTrigger Trigger { get; init; }
+    public string SummaryKey { get; init; } = "";
+    public string SummaryLabel { get; init; } = "";
+}
+
 internal static class CombatReplayMitigationDefinitions
 {
     public static readonly IReadOnlyList<TrackedMitigationBuff> TrackedEffects =
@@ -269,7 +325,8 @@ internal static class CombatReplayMitigationDefinitions
         new() { Name = "Frost Aura", BuffIds = [FrostAura] },
         new() { Name = "Light Aura", BuffIds = [LightAura] },
         new() { Name = "Dark Aura", BuffIds = [DarkAura] },
-        new() { Name = "Distortion / Blur", BuffIds = [Blur] },
+        new() { Name = "Distortion", BuffIds = [DistortionBuff] },
+        new() { Name = "Blur", BuffIds = [Blur] },
         new() { Name = "Determined", BuffIds = [Determined762, Determined785, Determined788, Determined895, Determined3892, Determined31450, Determined52271] },
         new() { Name = "Invulnerability", BuffIds = [Invulnerability757, Invulnerability56227, Invulnerability801] },
         new() { Name = "Spawn Protection", BuffIds = [SpawnProtection] },
@@ -289,6 +346,19 @@ internal static class CombatReplayMitigationDefinitions
         new() { Name = "Urn of Saint Viktor", BuffIds = [UrnOfSaintViktorBuff] },
         new() { Name = "Shielding Hands", BuffIds = [ShieldingHandsBuff] },
         new() { Name = "Shadow Shroud", BuffIds = [ShadowShroud] },
+    ];
+
+    public static readonly IReadOnlyList<TrackedNegatedMitigationEffect> NegatedEffects =
+    [
+        new() { Name = "Aegis", BuffIds = [Aegis], Trigger = NegatedHitTrigger.Blocked, SummaryKey = "aegis", SummaryLabel = "Aegis Blocks" },
+        new() { Name = "Distortion", BuffIds = [DistortionBuff], Trigger = NegatedHitTrigger.Absorbed, SummaryKey = "distortion", SummaryLabel = "Distortion Negations" },
+        new() { Name = "Blur", BuffIds = [Blur], Trigger = NegatedHitTrigger.Absorbed, SummaryKey = "blur", SummaryLabel = "Blur Negations" },
+        new() { Name = "Determined", BuffIds = [Determined762, Determined785, Determined788, Determined895, Determined3892, Determined31450, Determined52271], Trigger = NegatedHitTrigger.Absorbed, SummaryKey = "invulnerability", SummaryLabel = "Invulnerability / Absorb" },
+        new() { Name = "Invulnerability", BuffIds = [Invulnerability757, Invulnerability56227, Invulnerability801], Trigger = NegatedHitTrigger.Absorbed, SummaryKey = "invulnerability", SummaryLabel = "Invulnerability / Absorb" },
+        new() { Name = "Spawn Protection", BuffIds = [SpawnProtection], Trigger = NegatedHitTrigger.Absorbed, SummaryKey = "invulnerability", SummaryLabel = "Invulnerability / Absorb" },
+        new() { Name = "Obsidian Flesh", BuffIds = [ObsidianFlesh], Trigger = NegatedHitTrigger.Absorbed, SummaryKey = "invulnerability", SummaryLabel = "Invulnerability / Absorb" },
+        new() { Name = "Renewed Focus", BuffIds = [RenewedFocus], Trigger = NegatedHitTrigger.Absorbed, SummaryKey = "invulnerability", SummaryLabel = "Invulnerability / Absorb" },
+        new() { Name = "Defy Pain", BuffIds = [DefyPainSoulbeastBuff], Trigger = NegatedHitTrigger.Absorbed, SummaryKey = "invulnerability", SummaryLabel = "Invulnerability / Absorb" },
     ];
 
     public static readonly IReadOnlyList<TrackedMitigationReduction> StrikeReductions =
@@ -750,6 +820,8 @@ internal class CombatReplayPlayerEvaluationAggregate
     public double StripDownContributionTime { get; set; }
     public long HealingTotal { get; set; }
     public long BarrierTotal { get; set; }
+    public long PetMinionAbsorptionTotal { get; set; }
+    public double AttributedNegatedDamageTotal { get; set; }
     public int CleansesTotal { get; set; }
     public int ResurrectsTotal { get; set; }
     public double ResurrectTime { get; set; }
@@ -795,6 +867,7 @@ internal class CombatReplayPlayerEvaluationAggregate
     public List<CombatReplayPlayerEvaluationDetailEntryDto> ControlConditionSources { get; set; } = [];
     public Dictionary<long, double> OffensiveBoonSupportByBuff { get; set; } = [];
     public Dictionary<long, double> DefensiveBoonSupportByBuff { get; set; } = [];
+    public Dictionary<string, double> AttributedNegatedDamageByEffect { get; set; } = [];
 }
 
 internal class CombatReplayPlayerEvaluationMaximums
@@ -812,6 +885,8 @@ internal class CombatReplayPlayerEvaluationMaximums
     public int StripDownContribution { get; set; }
     public long HealingTotal { get; set; }
     public long BarrierTotal { get; set; }
+    public long PetMinionAbsorptionTotal { get; set; }
+    public double AttributedNegatedDamageTotal { get; set; }
     public int CleansesTotal { get; set; }
     public int ResurrectsTotal { get; set; }
     public double TotalBoonSupport { get; set; }
@@ -852,6 +927,8 @@ internal class CombatReplayPlayerEvaluationTotals
     public double TotalBoonSupport { get; set; }
     public long HealingTotal { get; set; }
     public long BarrierTotal { get; set; }
+    public long PetMinionAbsorptionTotal { get; set; }
+    public double AttributedNegatedDamageTotal { get; set; }
     public int CleansesTotal { get; set; }
     public int DefensiveSupportWindows { get; set; }
     public int SquadRecoveryWindowsHelped { get; set; }
@@ -868,6 +945,12 @@ internal class CombatReplaySpecCapabilityAggregate
     public double FightDurationSeconds { get; set; }
     public CombatReplayPlayerEvaluationAggregate Aggregate { get; set; } = new();
     public List<CombatReplayPlayerEvaluationAggregate> Players { get; set; } = [];
+}
+
+internal class PlayerAttributedNegationSummary
+{
+    public double TotalAmount { get; set; }
+    public Dictionary<string, double> AmountByEffect { get; set; } = [];
 }
 
 internal static class CombatReplayAnalysisBuilder
@@ -1944,6 +2027,7 @@ internal static class CombatReplayAnalysisBuilder
             killEvent => killEvent.Contributors,
             contributor => contributor.Amount,
             killEvent => killEvent.OutcomeTime.HasValue && killEvent.OutcomeTime.Value - killEvent.WindowStart <= 5000);
+        Dictionary<int, PlayerAttributedNegationSummary> attributedNegationContributions = BuildPlayerAttributedNegationSummaries(log, squadPlayers);
         Dictionary<int, PlayerRecoveryContributionSummary> squadRecoveryContributions = BuildPlayerRecoveryContributionSummaries(
             [.. eventAnalysis.Recovered.Events.Where(evt => !evt.IsEnemy && evt.UsesSupportView)]);
         var aggregates = new List<CombatReplayPlayerEvaluationAggregate>(squadPlayers.Count);
@@ -1964,6 +2048,7 @@ internal static class CombatReplayAnalysisBuilder
                 keyWindows,
                 enemyDownContributions,
                 enemyKillContributions,
+                attributedNegationContributions,
                 squadRecoveryContributions,
                 times));
         }
@@ -1999,6 +2084,7 @@ internal static class CombatReplayAnalysisBuilder
         IReadOnlyList<EvaluationWindow> keyWindows,
         IReadOnlyDictionary<int, PlayerEventContributionSummary> enemyDownContributions,
         IReadOnlyDictionary<int, PlayerEventContributionSummary> enemyKillContributions,
+        IReadOnlyDictionary<int, PlayerAttributedNegationSummary> attributedNegationContributions,
         IReadOnlyDictionary<int, PlayerRecoveryContributionSummary> squadRecoveryContributions,
         IReadOnlyList<long> times)
     {
@@ -2019,6 +2105,7 @@ internal static class CombatReplayAnalysisBuilder
         long wholeFightBarrier = log.CombatData.HasEXTBarrier
             ? player.EXTBarrier.GetOutgoingBarrierStats(null, log, 0, log.LogData.LogEnd).Barrier
             : 0;
+        long wholeFightPetMinionAbsorption = ComputePetMinionAbsorptionTotal(log, player);
 
         List<CrowdControlEvent> effectiveCrowdControlEvents = GetEffectiveCrowdControlEvents(log, player, hostileTargets);
         int effectiveCount = effectiveCrowdControlEvents.Count;
@@ -2044,6 +2131,7 @@ internal static class CombatReplayAnalysisBuilder
         double defensiveBoonSupport = Math.Round(defensiveBoonContribution.Values.Sum(), 1);
         enemyDownContributions.TryGetValue(player.UniqueID, out PlayerEventContributionSummary enemyDownContribution);
         enemyKillContributions.TryGetValue(player.UniqueID, out PlayerEventContributionSummary enemyKillContribution);
+        attributedNegationContributions.TryGetValue(player.UniqueID, out PlayerAttributedNegationSummary? attributedNegationContribution);
         squadRecoveryContributions.TryGetValue(player.UniqueID, out PlayerRecoveryContributionSummary squadRecoveryContribution);
 
         return new CombatReplayPlayerEvaluationAggregate
@@ -2068,6 +2156,8 @@ internal static class CombatReplayAnalysisBuilder
             StripDownContributionTime = supportStats.BoonStripDownContributionTime,
             HealingTotal = wholeFightHealing,
             BarrierTotal = wholeFightBarrier,
+            PetMinionAbsorptionTotal = wholeFightPetMinionAbsorption,
+            AttributedNegatedDamageTotal = Math.Round(attributedNegationContribution?.TotalAmount ?? 0.0, 1),
             CleansesTotal = supportStats.ConditionCleanseCount,
             ResurrectsTotal = supportStats.ResurrectCount,
             ResurrectTime = supportStats.ResurrectTime,
@@ -2122,6 +2212,9 @@ internal static class CombatReplayAnalysisBuilder
             ControlConditionSources = BuildConditionSourceEntries(log, controlConditionSourceContribution),
             OffensiveBoonSupportByBuff = offensiveBoonContributionByBuff,
             DefensiveBoonSupportByBuff = defensiveBoonContributionByBuff,
+            AttributedNegatedDamageByEffect = attributedNegationContribution?.AmountByEffect != null
+                ? new Dictionary<string, double>(attributedNegationContribution.AmountByEffect, StringComparer.OrdinalIgnoreCase)
+                : [],
         };
     }
 
@@ -2252,6 +2345,8 @@ internal static class CombatReplayAnalysisBuilder
             StripDownContributionTime = Math.Round(players.Sum(player => player.StripDownContributionTime), 1),
             HealingTotal = players.Sum(player => player.HealingTotal),
             BarrierTotal = players.Sum(player => player.BarrierTotal),
+            PetMinionAbsorptionTotal = players.Sum(player => player.PetMinionAbsorptionTotal),
+            AttributedNegatedDamageTotal = Math.Round(players.Sum(player => player.AttributedNegatedDamageTotal), 1),
             CleansesTotal = players.Sum(player => player.CleansesTotal),
             ResurrectsTotal = players.Sum(player => player.ResurrectsTotal),
             ResurrectTime = Math.Round(players.Sum(player => player.ResurrectTime), 1),
@@ -2291,6 +2386,7 @@ internal static class CombatReplayAnalysisBuilder
             KeyWindowsTotal = players.Max(player => player.KeyWindowsTotal),
             OffensiveBoonSupportByBuff = MergeContributionDictionaries(players.Select(player => player.OffensiveBoonSupportByBuff)),
             DefensiveBoonSupportByBuff = MergeContributionDictionaries(players.Select(player => player.DefensiveBoonSupportByBuff)),
+            AttributedNegatedDamageByEffect = MergeContributionDictionaries(players.Select(player => player.AttributedNegatedDamageByEffect)),
         };
     }
 
@@ -2454,15 +2550,33 @@ internal static class CombatReplayAnalysisBuilder
         bool hasBarrierData)
     {
         PlayerLaneSnapshot baseLane = BuildRecoveryLaneSnapshot(spec.Aggregate, maximums, totals, hasHealingData, hasBarrierData);
-        string healingText = hasHealingData ? $", {FormatWholeNumber(spec.Aggregate.HealingTotal)} healing" : "";
-        string barrierText = hasBarrierData ? $", and {FormatWholeNumber(spec.Aggregate.BarrierTotal)} barrier" : "";
+        var recoveryEvidenceParts = new List<string>
+        {
+            $"{FormatWholeNumber(spec.Aggregate.CleansesTotal)} cleanses",
+        };
+        if (hasHealingData)
+        {
+            recoveryEvidenceParts.Add($"{FormatWholeNumber(spec.Aggregate.HealingTotal)} healing");
+        }
+        if (hasBarrierData)
+        {
+            recoveryEvidenceParts.Add($"{FormatWholeNumber(spec.Aggregate.BarrierTotal)} barrier");
+        }
+        if (spec.Aggregate.PetMinionAbsorptionTotal > 0)
+        {
+            recoveryEvidenceParts.Add($"{FormatWholeNumber(spec.Aggregate.PetMinionAbsorptionTotal)} pet absorption");
+        }
+        if (spec.Aggregate.AttributedNegatedDamageTotal > 0.0)
+        {
+            recoveryEvidenceParts.Add($"{FormatOneDecimal(spec.Aggregate.AttributedNegatedDamageTotal)} negated damage");
+        }
         return BuildSpecLaneSnapshot(
             spec,
             baseLane,
             activeSharePercent,
             aggregate => GetSpecRecoveryRawAmount(aggregate, hasHealingData, hasBarrierData),
             perPlayerMaximums.GetValueOrDefault("recovery"),
-            $"{FormatWholeNumber(spec.Aggregate.CleansesTotal)} cleanses{healingText}{barrierText} gave {spec.Label} a visible recovery footprint.");
+            $"{string.Join(", ", recoveryEvidenceParts)} gave {spec.Label} a visible recovery footprint.");
     }
 
     private static SpecLaneSnapshot BuildSpecRezLaneSnapshot(
@@ -2897,6 +3011,8 @@ internal static class CombatReplayAnalysisBuilder
             StripDownContribution = aggregates.Max(aggregate => aggregate.StripDownContribution),
             HealingTotal = aggregates.Max(aggregate => aggregate.HealingTotal),
             BarrierTotal = aggregates.Max(aggregate => aggregate.BarrierTotal),
+            PetMinionAbsorptionTotal = aggregates.Max(aggregate => aggregate.PetMinionAbsorptionTotal),
+            AttributedNegatedDamageTotal = aggregates.Max(aggregate => aggregate.AttributedNegatedDamageTotal),
             CleansesTotal = aggregates.Max(aggregate => aggregate.CleansesTotal),
             ResurrectsTotal = aggregates.Max(aggregate => aggregate.ResurrectsTotal),
             TotalBoonSupport = aggregates.Max(aggregate => aggregate.OffensiveBoonSupport + aggregate.DefensiveBoonSupport),
@@ -2938,6 +3054,8 @@ internal static class CombatReplayAnalysisBuilder
             TotalBoonSupport = Math.Round(aggregates.Sum(aggregate => aggregate.OffensiveBoonSupport + aggregate.DefensiveBoonSupport), 1),
             HealingTotal = hasHealingData ? aggregates.Sum(aggregate => aggregate.HealingTotal) : 0,
             BarrierTotal = hasBarrierData ? aggregates.Sum(aggregate => aggregate.BarrierTotal) : 0,
+            PetMinionAbsorptionTotal = aggregates.Sum(aggregate => aggregate.PetMinionAbsorptionTotal),
+            AttributedNegatedDamageTotal = Math.Round(aggregates.Sum(aggregate => aggregate.AttributedNegatedDamageTotal), 1),
             CleansesTotal = aggregates.Sum(aggregate => aggregate.CleansesTotal),
             DefensiveSupportWindows = aggregates.Sum(aggregate => aggregate.DefensiveSupportWindows),
             SquadRecoveryWindowsHelped = aggregates.Sum(aggregate => aggregate.SquadRecoveryWindowsHelped),
@@ -3150,6 +3268,21 @@ internal static class CombatReplayAnalysisBuilder
         return result;
     }
 
+    private static Dictionary<string, double> MergeContributionDictionaries(IEnumerable<IReadOnlyDictionary<string, double>> dictionaries)
+    {
+        var result = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (IReadOnlyDictionary<string, double> dictionary in dictionaries)
+        {
+            foreach (KeyValuePair<string, double> pair in dictionary)
+            {
+                result[pair.Key] = result.TryGetValue(pair.Key, out double existing)
+                    ? Math.Round(existing + pair.Value, 1)
+                    : Math.Round(pair.Value, 1);
+            }
+        }
+        return result;
+    }
+
     private static List<CombatReplayPlayerEvaluationDetailSectionDto> BuildBoonSupportDetailSections(
         ParsedEvtcLog log,
         CombatReplayPlayerEvaluationAggregate aggregate)
@@ -3184,6 +3317,16 @@ internal static class CombatReplayAnalysisBuilder
                 string unit = buff.Type == Buff.BuffType.Intensity ? "stack-seconds" : "seconds";
                 return BuildDetailEntry(buff.Name, FormatOneDecimal(pair.Value), unit);
             });
+    }
+
+    private static IEnumerable<CombatReplayPlayerEvaluationDetailEntryDto> BuildNamedContributionDetailEntries(
+        IReadOnlyDictionary<string, double> valuesByName,
+        string secondary)
+    {
+        return valuesByName
+            .OrderByDescending(pair => pair.Value)
+            .ThenBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(pair => BuildDetailEntry(pair.Key, FormatOneDecimal(pair.Value), secondary));
     }
 
     private static int CountKeyContributionWindows(
@@ -3443,23 +3586,58 @@ internal static class CombatReplayAnalysisBuilder
         bool hasBarrierData)
     {
         double strengthPercent = ComputeWeightedScore(
-            (hasHealingData ? NormalizeValue(aggregate.HealingTotal, maximums.HealingTotal) : 0.0, hasHealingData ? 0.32 : 0.0),
-            (hasBarrierData ? NormalizeValue(aggregate.BarrierTotal, maximums.BarrierTotal) : 0.0, hasBarrierData ? 0.18 : 0.0),
-            (NormalizeValue(aggregate.CleansesTotal, maximums.CleansesTotal), hasHealingData || hasBarrierData ? 0.24 : 0.42),
-            (NormalizeValue(aggregate.DefensiveSupportWindows, maximums.DefensiveSupportWindows), 0.16),
-            (NormalizeValue(aggregate.DefensiveConditionPressure, maximums.DefensiveConditionPressure), maximums.DefensiveConditionPressure > 0.0 ? 0.10 : 0.0));
+            (hasHealingData ? NormalizeValue(aggregate.HealingTotal, maximums.HealingTotal) : 0.0, hasHealingData ? 0.24 : 0.0),
+            (hasBarrierData ? NormalizeValue(aggregate.BarrierTotal, maximums.BarrierTotal) : 0.0, hasBarrierData ? 0.12 : 0.0),
+            (NormalizeValue(aggregate.PetMinionAbsorptionTotal, maximums.PetMinionAbsorptionTotal), maximums.PetMinionAbsorptionTotal > 0 ? 0.12 : 0.0),
+            (NormalizeValue(aggregate.AttributedNegatedDamageTotal, maximums.AttributedNegatedDamageTotal), maximums.AttributedNegatedDamageTotal > 0.0 ? 0.14 : 0.0),
+            (NormalizeValue(aggregate.CleansesTotal, maximums.CleansesTotal), 0.20),
+            (NormalizeValue(aggregate.DefensiveSupportWindows, maximums.DefensiveSupportWindows), 0.10),
+            (NormalizeValue(aggregate.DefensiveConditionPressure, maximums.DefensiveConditionPressure), maximums.DefensiveConditionPressure > 0.0 ? 0.08 : 0.0));
         double sharePercent = ComputeRecoverySharePercent(aggregate, totals, hasHealingData, hasBarrierData);
+        string healingValue = hasHealingData ? FormatWholeNumber(aggregate.HealingTotal) : "Unavailable";
+        string healingSecondary = hasHealingData ? "" : "Missing healing extension data";
+        string barrierValue = hasBarrierData ? FormatWholeNumber(aggregate.BarrierTotal) : "Unavailable";
+        string barrierSecondary = hasBarrierData ? "" : "Missing barrier extension data";
+        string negationValue = aggregate.AttributedNegatedDamageTotal > 0.0 ? FormatOneDecimal(aggregate.AttributedNegatedDamageTotal) : "0";
+        var recoveryEvidenceParts = new List<string>
+        {
+            $"{FormatWholeNumber(aggregate.CleansesTotal)} cleanses",
+        };
+        if (hasHealingData)
+        {
+            recoveryEvidenceParts.Add($"{FormatWholeNumber(aggregate.HealingTotal)} healing");
+        }
+        if (hasBarrierData)
+        {
+            recoveryEvidenceParts.Add($"{FormatWholeNumber(aggregate.BarrierTotal)} barrier");
+        }
+        if (aggregate.PetMinionAbsorptionTotal > 0)
+        {
+            recoveryEvidenceParts.Add($"{FormatWholeNumber(aggregate.PetMinionAbsorptionTotal)} pet absorption");
+        }
+        if (aggregate.AttributedNegatedDamageTotal > 0.0)
+        {
+            recoveryEvidenceParts.Add($"{FormatOneDecimal(aggregate.AttributedNegatedDamageTotal)} negated damage");
+        }
         List<CombatReplayPlayerEvaluationDetailSectionDto> detailSections =
         [
             BuildDetailSection("Recovery Metrics",
             [
                 BuildDetailEntry("Cleanses", FormatWholeNumber(aggregate.CleansesTotal), ""),
-                BuildDetailEntry("Healing", hasHealingData ? FormatWholeNumber(aggregate.HealingTotal) : "Unavailable", hasHealingData ? "" : "Missing healing extension data"),
-                BuildDetailEntry("Barrier", hasBarrierData ? FormatWholeNumber(aggregate.BarrierTotal) : "Unavailable", hasBarrierData ? "" : "Missing barrier extension data"),
+                BuildDetailEntry("Healing", healingValue, healingSecondary),
+                BuildDetailEntry("Barrier", barrierValue, barrierSecondary),
+                BuildDetailEntry("Pet absorption", FormatWholeNumber(aggregate.PetMinionAbsorptionTotal), "Incoming damage taken by owned pets and minions"),
+                BuildDetailEntry("Negated damage", negationValue, "Estimated prevented damage from attributed Aegis, Blind, Distortion, Blur, and tracked invulnerability-style effects"),
                 BuildDetailEntry("Response windows", BuildPluralizedLabel(aggregate.DefensiveSupportWindows, "response window", "response windows"), $"{aggregate.DefensiveSupportWindowsTotal} total"),
                 BuildDetailEntry("Defensive condition pressure", FormatWholeNumber((long)Math.Round(aggregate.DefensiveConditionPressure)), "")
             ])
         ];
+        if (aggregate.AttributedNegatedDamageByEffect.Count > 0)
+        {
+            detailSections.Add(BuildDetailSection(
+                "Attributed Negation Breakdown",
+                BuildNamedContributionDetailEntries(aggregate.AttributedNegatedDamageByEffect, "estimated damage")));
+        }
         return new PlayerLaneSnapshot(
             "recovery",
             "Recovery",
@@ -3469,15 +3647,17 @@ internal static class CombatReplayAnalysisBuilder
             aggregate.DefensiveSupportWindowsTotal,
             "response windows",
             GetRateBand(strengthPercent),
-            $"{FormatWholeNumber(aggregate.CleansesTotal)} cleanses{(hasHealingData ? $", {FormatWholeNumber(aggregate.HealingTotal)} healing" : "")}{(hasBarrierData ? $", and {FormatWholeNumber(aggregate.BarrierTotal)} barrier" : "")} helped the squad stabilize under pressure.",
+            $"{string.Join(", ", recoveryEvidenceParts)} helped the squad stabilize under pressure.",
             true,
             "Recovery Detail",
-            "Recovery captures cleansing, healing, barrier, and presence in defensive response windows.",
+            "Recovery captures cleansing, healing, barrier, pet/minion absorption, attributed negated damage, and presence in defensive response windows.",
             detailSections,
             [
                 BuildLaneMetric("cleansesTotal", "Cleanses", aggregate.CleansesTotal, "count"),
                 BuildLaneMetric("healingTotal", "Healing", aggregate.HealingTotal, "healing"),
-                BuildLaneMetric("barrierTotal", "Barrier", aggregate.BarrierTotal, "barrier")
+                BuildLaneMetric("barrierTotal", "Barrier", aggregate.BarrierTotal, "barrier"),
+                BuildLaneMetric("petAbsorptionTotal", "Pet absorption", aggregate.PetMinionAbsorptionTotal, "damage"),
+                BuildLaneMetric("negatedDamageTotal", "Negated damage", aggregate.AttributedNegatedDamageTotal, "damage")
             ]);
     }
 
@@ -3872,19 +4052,27 @@ internal static class CombatReplayAnalysisBuilder
         var weightedShares = new List<(double Share, double Weight)>();
         if (hasHealingData && totals.HealingTotal > 0)
         {
-            weightedShares.Add((aggregate.HealingTotal * 100.0 / totals.HealingTotal, 0.40));
+            weightedShares.Add((aggregate.HealingTotal * 100.0 / totals.HealingTotal, 0.35));
         }
         if (hasBarrierData && totals.BarrierTotal > 0)
         {
-            weightedShares.Add((aggregate.BarrierTotal * 100.0 / totals.BarrierTotal, 0.20));
+            weightedShares.Add((aggregate.BarrierTotal * 100.0 / totals.BarrierTotal, 0.15));
+        }
+        if (totals.PetMinionAbsorptionTotal > 0)
+        {
+            weightedShares.Add((aggregate.PetMinionAbsorptionTotal * 100.0 / totals.PetMinionAbsorptionTotal, 0.15));
+        }
+        if (totals.AttributedNegatedDamageTotal > 0.0)
+        {
+            weightedShares.Add((aggregate.AttributedNegatedDamageTotal * 100.0 / totals.AttributedNegatedDamageTotal, 0.14));
         }
         if (totals.CleansesTotal > 0)
         {
-            weightedShares.Add((aggregate.CleansesTotal * 100.0 / totals.CleansesTotal, hasHealingData || hasBarrierData ? 0.25 : 0.50));
+            weightedShares.Add((aggregate.CleansesTotal * 100.0 / totals.CleansesTotal, 0.21));
         }
         if (totals.DefensiveSupportWindows > 0)
         {
-            weightedShares.Add((aggregate.DefensiveSupportWindows * 100.0 / totals.DefensiveSupportWindows, 0.15));
+            weightedShares.Add((aggregate.DefensiveSupportWindows * 100.0 / totals.DefensiveSupportWindows, 0.18));
         }
         if (weightedShares.Count == 0)
         {
@@ -3908,6 +4096,14 @@ internal static class CombatReplayAnalysisBuilder
         if (hasBarrierData)
         {
             magnitude += aggregate.BarrierTotal / 2500.0;
+        }
+        if (aggregate.PetMinionAbsorptionTotal > 0)
+        {
+            magnitude += aggregate.PetMinionAbsorptionTotal / 2500.0;
+        }
+        if (aggregate.AttributedNegatedDamageTotal > 0.0)
+        {
+            magnitude += aggregate.AttributedNegatedDamageTotal / 2500.0;
         }
         return Math.Round(magnitude, 2);
     }
@@ -3966,9 +4162,23 @@ internal static class CombatReplayAnalysisBuilder
         long totalDamageToSquad = 0;
         long healthDamageToSquad = 0;
         long barrierDamageAbsorbed = 0;
+        long totalPetMinionDamageAbsorbed = 0;
+        var topPetMinionAbsorberContributions = new List<(int? ActorId, string Name, string Icon, double Amount, long EventTime)>();
 
         foreach (SingleActor player in squadPlayers)
         {
+            long playerPetMinionAbsorption = ComputePetMinionAbsorptionTotal(log, player);
+            if (playerPetMinionAbsorption > 0)
+            {
+                totalPetMinionDamageAbsorbed += playerPetMinionAbsorption;
+                topPetMinionAbsorberContributions.Add((
+                    player.UniqueID,
+                    player.Character,
+                    player.GetIcon(),
+                    playerPetMinionAbsorption,
+                    log.LogData.LogEnd));
+            }
+
             foreach (HealthDamageEvent damageEvent in player.GetDamageTakenEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd))
             {
                 if (!damageEvent.HasHit)
@@ -3991,9 +4201,15 @@ internal static class CombatReplayAnalysisBuilder
         summary.TotalDamageToSquad = totalDamageToSquad;
         summary.HealthDamageToSquad = healthDamageToSquad;
         summary.BarrierDamageAbsorbed = barrierDamageAbsorbed;
+        summary.TotalPetMinionDamageAbsorbed = totalPetMinionDamageAbsorbed;
         summary.BarrierAbsorptionPercent = totalDamageToSquad > 0
             ? Math.Round(barrierDamageAbsorbed * 100.0 / totalDamageToSquad, 1)
             : 0.0;
+        summary.PetMinionAbsorptionPercent = totalDamageToSquad + totalPetMinionDamageAbsorbed > 0
+            ? Math.Round(totalPetMinionDamageAbsorbed * 100.0 / (totalDamageToSquad + totalPetMinionDamageAbsorbed), 1)
+            : 0.0;
+        summary.TopPetMinionAbsorbers = BuildTopActorSummaries(topPetMinionAbsorberContributions);
+        summary.NegatedHitSummaries = BuildNegatedHitSummaries(log, squadPlayers);
 
         if (!log.CombatData.HasEXTBarrier)
         {
@@ -4037,16 +4253,328 @@ internal static class CombatReplayAnalysisBuilder
         return summary;
     }
 
+    private static long ComputePetMinionAbsorptionTotal(ParsedEvtcLog log, SingleActor player)
+    {
+        long totalAbsorbed = 0;
+        foreach (Minions minions in player.GetMinions(log))
+        {
+            foreach (HealthDamageEvent damageEvent in minions.GetDamageTakenEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd))
+            {
+                if (!damageEvent.HasHit)
+                {
+                    continue;
+                }
+
+                int totalDamage = damageEvent.HealthDamage;
+                if (totalDamage <= 0)
+                {
+                    continue;
+                }
+
+                totalAbsorbed += totalDamage;
+            }
+        }
+        return totalAbsorbed;
+    }
+
+    private static List<CombatReplayDefenseNegatedHitSummaryDto> BuildNegatedHitSummaries(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers)
+    {
+        var landedDamageLookup = BuildLandedDamageEstimateLookup(log, squadPlayers);
+        long start = log.LogData.LogStart;
+        long end = log.LogData.LogEnd;
+        var summaries = CombatReplayMitigationDefinitions.NegatedEffects
+            .GroupBy(effect => effect.SummaryKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => (Label: group.First().SummaryLabel, Count: 0, EstimatedDamage: 0.0, Fallbacks: 0, Effects: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), Occurrences: new List<CombatReplayDefenseNegatedHitOccurrenceDto>()),
+                StringComparer.OrdinalIgnoreCase);
+        summaries["blind"] = (Label: "Blind Misses", Count: 0, EstimatedDamage: 0.0, Fallbacks: 0, Effects: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), Occurrences: new List<CombatReplayDefenseNegatedHitOccurrenceDto>());
+
+        foreach (SingleActor player in squadPlayers)
+        {
+            Dictionary<string, List<(long Start, long End)>> negatedEffectRanges = BuildNegatedEffectRanges(player, log, start, end);
+            foreach (HealthDamageEvent damageEvent in player.GetDamageTakenEvents(null, log, start, end))
+            {
+                (string? effectName, string? summaryKey) = ClassifyNegatedHit(damageEvent, negatedEffectRanges, includeGenericAbsorbs: true);
+                if (summaryKey == null)
+                {
+                    continue;
+                }
+
+                double estimatedDamage = EstimateNegatedDamage(damageEvent, landedDamageLookup, out bool usedFallback);
+                (string Label, int Count, double EstimatedDamage, int Fallbacks, Dictionary<string, int> Effects, List<CombatReplayDefenseNegatedHitOccurrenceDto> Occurrences) current = summaries[summaryKey];
+                if (!string.IsNullOrEmpty(effectName))
+                {
+                    current.Effects.TryGetValue(effectName, out int currentCount);
+                    current.Effects[effectName] = currentCount + 1;
+                }
+                current.Occurrences.Add(new CombatReplayDefenseNegatedHitOccurrenceDto
+                {
+                    Time = damageEvent.Time,
+                    TimeLabel = FormatTime(damageEvent.Time),
+                    ActorId = player.UniqueID,
+                    PlayerName = player.Character,
+                    EffectName = string.IsNullOrWhiteSpace(effectName) ? "Unknown effect" : effectName,
+                    SkillName = string.IsNullOrWhiteSpace(damageEvent.Skill.Name) ? $"Skill {damageEvent.SkillID}" : damageEvent.Skill.Name,
+                    EstimatedPreventedDamage = Math.Round(estimatedDamage, 1),
+                    UsedFallbackEstimate = usedFallback,
+                });
+                summaries[summaryKey] = (
+                    current.Label,
+                    current.Count + 1,
+                    current.EstimatedDamage + estimatedDamage,
+                    current.Fallbacks + (usedFallback ? 1 : 0),
+                    current.Effects,
+                    current.Occurrences);
+            }
+        }
+
+        return [.. summaries
+            .Where(entry => entry.Value.Count > 0)
+            .Select(entry => new CombatReplayDefenseNegatedHitSummaryDto
+            {
+                Key = entry.Key,
+                Label = entry.Value.Label,
+                NegatedHitCount = entry.Value.Count,
+                EstimatedPreventedDamage = Math.Round(entry.Value.EstimatedDamage, 1),
+                FallbackEstimateCount = entry.Value.Fallbacks,
+                ContributingEffects = [.. entry.Value.Effects
+                    .OrderByDescending(effect => effect.Value)
+                    .ThenBy(effect => effect.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(effect => new CombatReplayEffectCountSummaryDto
+                    {
+                        Name = effect.Key,
+                        Count = effect.Value,
+                    })],
+                Occurrences = [.. entry.Value.Occurrences
+                    .OrderBy(occurrence => occurrence.Time)
+                    .ThenByDescending(occurrence => occurrence.EstimatedPreventedDamage)
+                    .ThenBy(occurrence => occurrence.EffectName, StringComparer.OrdinalIgnoreCase)],
+            })
+            .OrderByDescending(entry => entry.EstimatedPreventedDamage)
+            .ThenByDescending(entry => entry.NegatedHitCount)
+            .ThenBy(entry => entry.Label, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private static Dictionary<int, PlayerAttributedNegationSummary> BuildPlayerAttributedNegationSummaries(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers)
+    {
+        var summaries = squadPlayers.ToDictionary(
+            player => player.UniqueID,
+            _ => new PlayerAttributedNegationSummary());
+        IReadOnlyDictionary<(AgentItem Attacker, long SkillId), (double TotalDamage, int Count)> landedDamageLookup = BuildLandedDamageEstimateLookup(log, squadPlayers);
+        long start = log.LogData.LogStart;
+        long end = log.LogData.LogEnd;
+        foreach (SingleActor recipient in squadPlayers)
+        {
+            Dictionary<string, List<(long Start, long End)>> negatedEffectRanges = BuildNegatedEffectRanges(recipient, log, start, end);
+            foreach (HealthDamageEvent damageEvent in recipient.GetDamageTakenEvents(null, log, start, end))
+            {
+                List<(int ProviderId, string EffectName)> providers = GetAttributedNegationProviders(recipient, damageEvent, log, squadPlayers, negatedEffectRanges);
+                if (providers.Count == 0)
+                {
+                    continue;
+                }
+
+                double estimatedDamage = EstimateNegatedDamage(damageEvent, landedDamageLookup, out _);
+                double splitDamage = estimatedDamage / providers.Count;
+                foreach ((int providerId, string effectName) in providers)
+                {
+                    if (!summaries.TryGetValue(providerId, out PlayerAttributedNegationSummary? summary))
+                    {
+                        continue;
+                    }
+
+                    summary.TotalAmount += splitDamage;
+                    summary.AmountByEffect[effectName] = summary.AmountByEffect.TryGetValue(effectName, out double existing)
+                        ? existing + splitDamage
+                        : splitDamage;
+                }
+            }
+        }
+
+        foreach (PlayerAttributedNegationSummary summary in summaries.Values)
+        {
+            summary.TotalAmount = Math.Round(summary.TotalAmount, 1);
+            foreach (string effectName in summary.AmountByEffect.Keys.ToList())
+            {
+                summary.AmountByEffect[effectName] = Math.Round(summary.AmountByEffect[effectName], 1);
+            }
+        }
+        return summaries;
+    }
+
+    private static Dictionary<(AgentItem Attacker, long SkillId), (double TotalDamage, int Count)> BuildLandedDamageEstimateLookup(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers)
+    {
+        var lookup = new Dictionary<(AgentItem Attacker, long SkillId), (double TotalDamage, int Count)>();
+        foreach (SingleActor player in squadPlayers)
+        {
+            foreach (HealthDamageEvent damageEvent in player.GetDamageTakenEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd))
+            {
+                if (!damageEvent.HasHit || damageEvent.HealthDamage <= 0)
+                {
+                    continue;
+                }
+
+                var key = (damageEvent.CreditedFrom, damageEvent.SkillID);
+                if (lookup.TryGetValue(key, out (double TotalDamage, int Count) current))
+                {
+                    lookup[key] = (current.TotalDamage + damageEvent.HealthDamage, current.Count + 1);
+                }
+                else
+                {
+                    lookup[key] = (damageEvent.HealthDamage, 1);
+                }
+            }
+        }
+        return lookup;
+    }
+
+    private static List<(int ProviderId, string EffectName)> GetAttributedNegationProviders(
+        SingleActor recipient,
+        HealthDamageEvent damageEvent,
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyDictionary<string, List<(long Start, long End)>> negatedEffectRanges)
+    {
+        var providers = new List<(int ProviderId, string EffectName)>();
+        var seenProviders = new HashSet<int>();
+        if (damageEvent.IsBlind)
+        {
+            foreach (SingleActor squadPlayer in squadPlayers)
+            {
+                if (damageEvent.CreditedFrom.GetBuffStatus(log, squadPlayer, Blind, Math.Max(log.LogData.LogStart, damageEvent.Time - 1), Math.Min(log.LogData.LogEnd, damageEvent.Time + 1)).Any(segment => segment.Value > 0)
+                    && seenProviders.Add(squadPlayer.UniqueID))
+                {
+                    providers.Add((squadPlayer.UniqueID, "Blind"));
+                }
+            }
+            return providers;
+        }
+
+        if (damageEvent.IsBlocked)
+        {
+            foreach (SingleActor squadPlayer in squadPlayers)
+            {
+                if (recipient.GetBuffStatus(log, squadPlayer, Aegis, Math.Max(log.LogData.LogStart, damageEvent.Time - 1), Math.Min(log.LogData.LogEnd, damageEvent.Time + 1)).Any(segment => segment.Value > 0)
+                    && seenProviders.Add(squadPlayer.UniqueID))
+                {
+                    providers.Add((squadPlayer.UniqueID, "Aegis"));
+                }
+            }
+            return providers;
+        }
+
+        if (!damageEvent.IsAbsorbed)
+        {
+            return providers;
+        }
+
+        (string? effectName, string? _) = ClassifyNegatedHit(damageEvent, negatedEffectRanges, includeGenericAbsorbs: false);
+        if (string.IsNullOrWhiteSpace(effectName)
+            || string.Equals(effectName, "Unmatched absorb", StringComparison.OrdinalIgnoreCase)
+            || !seenProviders.Add(recipient.UniqueID))
+        {
+            return providers;
+        }
+
+        providers.Add((recipient.UniqueID, effectName));
+        return providers;
+    }
+
+    private static Dictionary<string, List<(long Start, long End)>> BuildNegatedEffectRanges(
+        SingleActor player,
+        ParsedEvtcLog log,
+        long start,
+        long end)
+    {
+        var ranges = new Dictionary<string, List<(long Start, long End)>>(StringComparer.OrdinalIgnoreCase);
+        foreach (TrackedNegatedMitigationEffect effect in CombatReplayMitigationDefinitions.NegatedEffects)
+        {
+            List<(long Start, long End)> effectRanges = GetMergedBuffPresenceRanges(player, log, effect.BuffIds, start, end);
+            if (effectRanges.Count > 0)
+            {
+                ranges[effect.Name] = effectRanges;
+            }
+        }
+        return ranges;
+    }
+
+    private static (string? EffectName, string? SummaryKey) ClassifyNegatedHit(
+        HealthDamageEvent damageEvent,
+        IReadOnlyDictionary<string, List<(long Start, long End)>> negatedEffectRanges,
+        bool includeGenericAbsorbs)
+    {
+        if (damageEvent.IsBlind)
+        {
+            return ("Blind", "blind");
+        }
+
+        foreach (TrackedNegatedMitigationEffect effect in CombatReplayMitigationDefinitions.NegatedEffects)
+        {
+            if ((damageEvent.IsBlocked && effect.Trigger != NegatedHitTrigger.Blocked)
+                || (damageEvent.IsAbsorbed && effect.Trigger != NegatedHitTrigger.Absorbed)
+                || (!damageEvent.IsBlocked && !damageEvent.IsAbsorbed))
+            {
+                continue;
+            }
+
+            if (negatedEffectRanges.TryGetValue(effect.Name, out List<(long Start, long End)>? ranges)
+                && HasMitigationBuffNearTime(ranges, damageEvent.Time))
+            {
+                return (effect.Name, effect.SummaryKey);
+            }
+        }
+
+        if (includeGenericAbsorbs && damageEvent.IsAbsorbed)
+        {
+            return ("Unmatched absorb", "invulnerability");
+        }
+
+        return (null, null);
+    }
+
+    private static double EstimateNegatedDamage(
+        HealthDamageEvent damageEvent,
+        IReadOnlyDictionary<(AgentItem Attacker, long SkillId), (double TotalDamage, int Count)> landedDamageLookup,
+        out bool usedFallback)
+    {
+        if (landedDamageLookup.TryGetValue((damageEvent.CreditedFrom, damageEvent.SkillID), out (double TotalDamage, int Count) landedStats)
+            && landedStats.Count > 0
+            && landedStats.TotalDamage > 0)
+        {
+            usedFallback = false;
+            return Math.Round(landedStats.TotalDamage / landedStats.Count, 1);
+        }
+
+        usedFallback = true;
+        return 50.0;
+    }
+
+    private static bool HasMitigationBuffNearTime(
+        IReadOnlyList<(long Start, long End)> ranges,
+        long time,
+        long graceMilliseconds = 1)
+    {
+        return ranges.Any(range => time >= range.Start && time <= range.End + graceMilliseconds);
+    }
+
     private static CombatReplayDefenseMitigationDto BuildDefenseMitigationAnalysis(
         ParsedEvtcLog log,
         IReadOnlyList<SingleActor> squadPlayers)
     {
+        IReadOnlyDictionary<(AgentItem Attacker, long SkillId), (double TotalDamage, int Count)> landedDamageLookup = BuildLandedDamageEstimateLookup(log, squadPlayers);
         int[] thresholds = [10, 20, 25, 33, 50, 80, 99];
         var result = new CombatReplayDefenseMitigationDto
         {
             Thresholds =
             [
-                .. thresholds.Select(threshold => BuildDefenseMitigationThresholdAnalysis(log, squadPlayers, threshold))
+                .. thresholds.Select(threshold => BuildDefenseMitigationThresholdAnalysis(log, squadPlayers, threshold, landedDamageLookup))
             ],
         };
         return result;
@@ -4055,12 +4583,14 @@ internal static class CombatReplayAnalysisBuilder
     private static CombatReplayDefenseMitigationThresholdDto BuildDefenseMitigationThresholdAnalysis(
         ParsedEvtcLog log,
         IReadOnlyList<SingleActor> squadPlayers,
-        int thresholdPercent)
+        int thresholdPercent,
+        IReadOnlyDictionary<(AgentItem Attacker, long SkillId), (double TotalDamage, int Count)> landedDamageLookup)
     {
         var mitigationEvents = new List<CombatReplayDefenseMitigationEventDto>();
 
         foreach (SingleActor player in squadPlayers)
         {
+            Dictionary<string, List<(long Start, long End)>> negatedEffectRanges = BuildNegatedEffectRanges(player, log, log.LogData.LogStart, log.LogData.LogEnd);
             IReadOnlyList<Segment> healthUpdates = player.GetHealthUpdates(log);
             if (healthUpdates.Count == 0)
             {
@@ -4144,6 +4674,10 @@ internal static class CombatReplayAnalysisBuilder
                         GetEstimatedStrikeMitigation(player, log, mitigationWindowStart, lowestHealthTime > mitigationWindowStart ? lowestHealthTime + 1 : mitigationWindowStart);
                     bool estimatedMitigationSavedPlayer = estimatedMitigationToLowest > 0 && lowestHealthEstimate - estimatedMitigationToLowest <= 0;
                     (double estimatedMitigation, _) = GetEstimatedStrikeMitigation(player, log, mitigationWindowStart, healthSegment.Start);
+                    (double estimatedNegatedDamageToLowest, List<string> estimatedNegatedDamageSavedEffects) =
+                        GetEstimatedNegatedMitigation(player, log, mitigationWindowStart, lowestHealthTime > mitigationWindowStart ? lowestHealthTime + 1 : mitigationWindowStart, landedDamageLookup, negatedEffectRanges);
+                    bool estimatedNegatedDamageSavedPlayer = estimatedNegatedDamageToLowest > 0 && lowestHealthEstimate - estimatedNegatedDamageToLowest <= 0;
+                    (double estimatedNegatedDamage, _) = GetEstimatedNegatedMitigation(player, log, mitigationWindowStart, healthSegment.Start, landedDamageLookup, negatedEffectRanges);
                     double incomingDamage = Math.Round(player
                         .GetDamageTakenEvents(null, log, mitigationWindowStart, healthSegment.Start)
                         .Where(damageEvent => damageEvent.HasHit && (damageEvent.HealthDamage > 0 || damageEvent.ShieldDamage > 0))
@@ -4177,6 +4711,10 @@ internal static class CombatReplayAnalysisBuilder
                         EstimatedMitigation = estimatedMitigation,
                         EstimatedMitigationSavedPlayer = estimatedMitigationSavedPlayer,
                         EstimatedMitigationSavedEffects = estimatedMitigationSavedEffects,
+                        EstimatedNegatedDamageToLowest = estimatedNegatedDamageToLowest,
+                        EstimatedNegatedDamage = estimatedNegatedDamage,
+                        EstimatedNegatedDamageSavedPlayer = estimatedNegatedDamageSavedPlayer,
+                        EstimatedNegatedDamageSavedEffects = estimatedNegatedDamageSavedEffects,
                         IncomingDamage = incomingDamage,
                         IncomingHealing = incomingHealing,
                         Effects = BuildMitigationEffects(log, player, mitigationWindowStart, healthSegment.Start),
@@ -4206,7 +4744,7 @@ internal static class CombatReplayAnalysisBuilder
         }
 
         List<CombatReplayDefenseMitigationEventDto> savedEvents = [.. threshold99.Events.Where(evt =>
-            evt.BarrierSavedPlayer || evt.EstimatedMitigationSavedPlayer)];
+            evt.BarrierSavedPlayer || evt.EstimatedMitigationSavedPlayer || evt.EstimatedNegatedDamageSavedPlayer)];
         if (savedEvents.Count == 0)
         {
             return new CombatReplayDefenseSavedPlayersSummaryDto();
@@ -4214,7 +4752,25 @@ internal static class CombatReplayAnalysisBuilder
 
         int barrierSavedCases = savedEvents.Count(evt => evt.BarrierSavedPlayer);
         int damageReductionSavedCases = savedEvents.Count(evt => evt.EstimatedMitigationSavedPlayer);
+        int negatedDamageSavedCases = savedEvents.Count(evt => evt.EstimatedNegatedDamageSavedPlayer);
         int bothSavedCases = savedEvents.Count(evt => evt.BarrierSavedPlayer && evt.EstimatedMitigationSavedPlayer);
+        int multiSourceSavedCases = savedEvents.Count(evt =>
+        {
+            int sources = 0;
+            if (evt.BarrierSavedPlayer)
+            {
+                sources++;
+            }
+            if (evt.EstimatedMitigationSavedPlayer)
+            {
+                sources++;
+            }
+            if (evt.EstimatedNegatedDamageSavedPlayer)
+            {
+                sources++;
+            }
+            return sources > 1;
+        });
 
         var result = new CombatReplayDefenseSavedPlayersSummaryDto
         {
@@ -4223,9 +4779,12 @@ internal static class CombatReplayAnalysisBuilder
             BarrierSavedCases = barrierSavedCases,
             TotalEstimatedDamageReduction = Math.Round(savedEvents.Sum(evt => evt.EstimatedMitigationToLowest), 0),
             DamageReductionSavedCases = damageReductionSavedCases,
+            TotalEstimatedNegatedDamage = Math.Round(savedEvents.Sum(evt => evt.EstimatedNegatedDamageToLowest), 0),
+            NegatedDamageSavedCases = negatedDamageSavedCases,
             AverageLowestHealthPercent = Math.Round(savedEvents.Average(evt => evt.LowestHealthPercent), 1),
             LowestLowestHealthPercent = Math.Round(savedEvents.Min(evt => evt.LowestHealthPercent), 1),
             BothSavedCases = bothSavedCases,
+            MultiSourceSavedCases = multiSourceSavedCases,
             TotalIncomingDamage = Math.Round(savedEvents.Sum(evt => evt.IncomingDamage), 1),
             TotalIncomingHealing = Math.Round(savedEvents.Sum(evt => evt.IncomingHealing), 1),
         };
@@ -4237,6 +4796,24 @@ internal static class CombatReplayAnalysisBuilder
             .Select(group =>
             {
                 TrackedMitigationReduction? definition = CombatReplayMitigationDefinitions.StrikeReductions
+                    .FirstOrDefault(effect => effect.Name.Equals(group.Key, StringComparison.OrdinalIgnoreCase));
+                return new CombatReplayEventActorSummaryDto
+                {
+                    Name = group.Key,
+                    Icon = definition != null ? GetMitigationEffectIcon(log, definition.BuffIds) : "",
+                    Count = group.Count(),
+                    Amount = group.Count(),
+                };
+            })
+            .OrderByDescending(entry => entry.Count)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)];
+        result.TopNegatedDamageEffects = [.. savedEvents
+            .Where(evt => evt.EstimatedNegatedDamageSavedPlayer && evt.EstimatedNegatedDamageSavedEffects.Count > 0)
+            .SelectMany(evt => evt.EstimatedNegatedDamageSavedEffects.Distinct(StringComparer.OrdinalIgnoreCase))
+            .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                TrackedMitigationBuff? definition = CombatReplayMitigationDefinitions.TrackedEffects
                     .FirstOrDefault(effect => effect.Name.Equals(group.Key, StringComparison.OrdinalIgnoreCase));
                 return new CombatReplayEventActorSummaryDto
                 {
@@ -4528,6 +5105,36 @@ internal static class CombatReplayAnalysisBuilder
             {
                 usedEffects.Add(effect.Name);
             }
+        }
+
+        return (Math.Round(preventedDamage, 1), [.. usedEffects.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)]);
+    }
+
+    private static (double EstimatedNegatedDamage, List<string> UsedEffects) GetEstimatedNegatedMitigation(
+        SingleActor player,
+        ParsedEvtcLog log,
+        long start,
+        long end,
+        IReadOnlyDictionary<(AgentItem Attacker, long SkillId), (double TotalDamage, int Count)> landedDamageLookup,
+        IReadOnlyDictionary<string, List<(long Start, long End)>> negatedEffectRanges)
+    {
+        if (end <= start || negatedEffectRanges.Count == 0)
+        {
+            return (0.0, []);
+        }
+
+        double preventedDamage = 0.0;
+        var usedEffects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (HealthDamageEvent damageEvent in player.GetDamageTakenEvents(null, log, start, end))
+        {
+            (string? effectName, string? _) = ClassifyNegatedHit(damageEvent, negatedEffectRanges, includeGenericAbsorbs: false);
+            if (effectName == null)
+            {
+                continue;
+            }
+
+            preventedDamage += EstimateNegatedDamage(damageEvent, landedDamageLookup, out _);
+            usedEffects.Add(effectName);
         }
 
         return (Math.Round(preventedDamage, 1), [.. usedEffects.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)]);
