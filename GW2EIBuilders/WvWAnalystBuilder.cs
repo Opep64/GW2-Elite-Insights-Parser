@@ -60,6 +60,7 @@ public sealed class WvWAnalystBuilder
         var commanderSummary = BuildCommanderSummary(summary, combatReplayAnalysis, players, commander?.UniqueID ?? 0);
         var threatBoons = BuildThreatBoons(combatReplayAnalysis);
         var defenseSaves = BuildDefenseSaves(combatReplayAnalysis);
+        var mitigationSummary = BuildMitigationSummary(combatReplayAnalysis);
         var obliterate = BuildObliterateSummary(combatReplayAnalysis);
         var topBursts = BuildTopBursts(combatReplayAnalysis, squadPlayers);
         var squadClasses = BuildSideClasses(squadPlayers);
@@ -69,9 +70,9 @@ public sealed class WvWAnalystBuilder
         {
             Meta = new WvWAnalystMetaDto
             {
-                SchemaVersion = "1.9.0",
+                SchemaVersion = "1.10.0",
                 PayloadType = "wvw-analyst-fight",
-                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves+obliterate+side-classes",
+                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
                 ParserVersion = parserVersion.ToString(),
             },
@@ -126,6 +127,7 @@ public sealed class WvWAnalystBuilder
             Execution = BuildExecution(summary),
             CommanderSummary = commanderSummary,
             DefenseSaves = defenseSaves,
+            MitigationSummary = mitigationSummary,
             Obliterate = obliterate,
             ThreatBoons = threatBoons,
             TopBursts = topBursts,
@@ -449,6 +451,58 @@ public sealed class WvWAnalystBuilder
             LowestLowestHealthPercent = summary.LowestLowestHealthPercent,
             TotalIncomingDamage = summary.TotalIncomingDamage,
             TotalIncomingHealing = summary.TotalIncomingHealing,
+        };
+    }
+
+    private static WvWAnalystMitigationSummaryDto? BuildMitigationSummary(CombatReplayAnalysisDto? combatReplayAnalysis)
+    {
+        CombatReplayDefenseAnalysisDto? defense = combatReplayAnalysis?.Defense;
+        CombatReplayDefenseSavedPlayersSummaryDto? savedPlayers = defense?.SavedPlayersSummary;
+        if (defense is null || savedPlayers is null)
+        {
+            return null;
+        }
+
+        return new WvWAnalystMitigationSummaryDto
+        {
+            HasBarrierData = defense.HasBarrierData,
+            BarrierCoverageMayBeIncomplete = defense.BarrierCoverageMayBeIncomplete,
+            TotalDamageToSquad = defense.TotalDamageToSquad,
+            HealthDamageToSquad = defense.HealthDamageToSquad,
+            TotalBarrierAbsorbed = defense.BarrierDamageAbsorbed,
+            BarrierAbsorptionPercent = defense.BarrierAbsorptionPercent,
+            TotalPetMinionAbsorption = defense.TotalPetMinionDamageAbsorbed,
+            PetMinionAbsorptionPercent = defense.PetMinionAbsorptionPercent,
+            SavedCases = savedPlayers.SavedCases,
+            BarrierSavedCases = savedPlayers.BarrierSavedCases,
+            DamageReductionSavedCases = savedPlayers.DamageReductionSavedCases,
+            NegatedDamageSavedCases = savedPlayers.NegatedDamageSavedCases,
+            BothSavedCases = savedPlayers.BothSavedCases,
+            MultiSourceSavedCases = savedPlayers.MultiSourceSavedCases,
+            TotalBarrierAbsorbedInSaves = savedPlayers.TotalBarrierAbsorbed,
+            TotalEstimatedDamageReduction = savedPlayers.TotalEstimatedDamageReduction,
+            TotalEstimatedNegatedDamage = savedPlayers.TotalEstimatedNegatedDamage,
+            AverageLowestHealthPercent = savedPlayers.AverageLowestHealthPercent,
+            LowestLowestHealthPercent = savedPlayers.LowestLowestHealthPercent,
+            TotalIncomingDamage = savedPlayers.TotalIncomingDamage,
+            TotalIncomingHealing = savedPlayers.TotalIncomingHealing,
+            NegatedHitSummaries = defense.NegatedHitSummaries
+                .Select(summary => new WvWAnalystNegatedHitSummaryDto
+                {
+                    Key = summary.Key,
+                    Label = summary.Label,
+                    NegatedHitCount = summary.NegatedHitCount,
+                    EstimatedPreventedDamage = summary.EstimatedPreventedDamage,
+                    FallbackEstimateCount = summary.FallbackEstimateCount,
+                    ContributingEffects = summary.ContributingEffects
+                        .Select(effect => new WvWAnalystEffectCountSummaryDto
+                        {
+                            Name = effect.Name,
+                            Count = effect.Count,
+                        })
+                        .ToArray(),
+                })
+                .ToArray(),
         };
     }
 
@@ -970,6 +1024,7 @@ internal sealed class WvWAnalystFightPayloadDto
     public WvWAnalystExecutionDto Execution { get; set; } = new();
     public WvWAnalystCommanderSummaryDto CommanderSummary { get; set; } = new();
     public WvWAnalystDefenseSaveSummaryDto? DefenseSaves { get; set; }
+    public WvWAnalystMitigationSummaryDto? MitigationSummary { get; set; }
     public WvWAnalystObliterateSummaryDto? Obliterate { get; set; }
     public IReadOnlyList<WvWAnalystThreatBoonSummaryDto> ThreatBoons { get; set; } = Array.Empty<WvWAnalystThreatBoonSummaryDto>();
     public IReadOnlyList<WvWAnalystTopBurstDto> TopBursts { get; set; } = Array.Empty<WvWAnalystTopBurstDto>();
@@ -1192,6 +1247,48 @@ internal sealed class WvWAnalystDefenseSaveSummaryDto
     public double LowestLowestHealthPercent { get; set; }
     public double TotalIncomingDamage { get; set; }
     public double TotalIncomingHealing { get; set; }
+}
+
+internal sealed class WvWAnalystMitigationSummaryDto
+{
+    public bool HasBarrierData { get; set; }
+    public bool BarrierCoverageMayBeIncomplete { get; set; }
+    public double TotalDamageToSquad { get; set; }
+    public double HealthDamageToSquad { get; set; }
+    public double TotalBarrierAbsorbed { get; set; }
+    public double BarrierAbsorptionPercent { get; set; }
+    public double TotalPetMinionAbsorption { get; set; }
+    public double PetMinionAbsorptionPercent { get; set; }
+    public int SavedCases { get; set; }
+    public int BarrierSavedCases { get; set; }
+    public int DamageReductionSavedCases { get; set; }
+    public int NegatedDamageSavedCases { get; set; }
+    public int BothSavedCases { get; set; }
+    public int MultiSourceSavedCases { get; set; }
+    public double TotalBarrierAbsorbedInSaves { get; set; }
+    public double TotalEstimatedDamageReduction { get; set; }
+    public double TotalEstimatedNegatedDamage { get; set; }
+    public double AverageLowestHealthPercent { get; set; }
+    public double LowestLowestHealthPercent { get; set; }
+    public double TotalIncomingDamage { get; set; }
+    public double TotalIncomingHealing { get; set; }
+    public IReadOnlyList<WvWAnalystNegatedHitSummaryDto> NegatedHitSummaries { get; set; } = Array.Empty<WvWAnalystNegatedHitSummaryDto>();
+}
+
+internal sealed class WvWAnalystNegatedHitSummaryDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int NegatedHitCount { get; set; }
+    public double EstimatedPreventedDamage { get; set; }
+    public int FallbackEstimateCount { get; set; }
+    public IReadOnlyList<WvWAnalystEffectCountSummaryDto> ContributingEffects { get; set; } = Array.Empty<WvWAnalystEffectCountSummaryDto>();
+}
+
+internal sealed class WvWAnalystEffectCountSummaryDto
+{
+    public string Name { get; set; } = string.Empty;
+    public int Count { get; set; }
 }
 
 internal sealed class WvWAnalystObliterateSummaryDto
