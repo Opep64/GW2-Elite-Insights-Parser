@@ -1049,6 +1049,36 @@ h6.actor-shorten-cr-compact {
     opacity: 0.82;
 }
 
+.combat-replay-fight-demand-pill-answer {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.combat-replay-fight-demand-pill-answer::before {
+    content: "/";
+    color: rgba(217, 226, 232, 0.48);
+    font-weight: 600;
+}
+
+.combat-replay-fight-demand-pill-answer-met {
+    color: #9ff0bd;
+}
+
+.combat-replay-fight-demand-pill-answer-contested {
+    color: #efd37a;
+}
+
+.combat-replay-fight-demand-pill-answer-gap {
+    color: #f29a9a;
+}
+
+.combat-replay-fight-demand-pill-answer-neutral {
+    color: #b9c2cc;
+}
+
 .combat-replay-player-evaluation-specs {
     display: flex;
     flex-direction: column;
@@ -2106,6 +2136,36 @@ h6.actor-shorten-cr-compact {
     font-size: 0.72rem;
     font-weight: 700;
     opacity: 0.92;
+}
+
+.wvw-summary-demand-badge-answer {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.wvw-summary-demand-badge-answer::before {
+    content: "/";
+    color: rgba(217, 226, 232, 0.48);
+    font-weight: 600;
+}
+
+.wvw-summary-demand-answer-met {
+    color: #9ff0bd;
+}
+
+.wvw-summary-demand-answer-contested {
+    color: #efd37a;
+}
+
+.wvw-summary-demand-answer-gap {
+    color: #f29a9a;
+}
+
+.wvw-summary-demand-answer-neutral {
+    color: #b9c2cc;
 }
 
 .wvw-summary-demand-tone-low {
@@ -3401,6 +3461,26 @@ h6.actor-shorten-cr-compact {
 .theme-yeti .wvw-summary-demand-badge {
     background: rgba(255, 255, 255, 0.86);
     border-color: rgba(92, 108, 126, 0.22);
+}
+
+.theme-yeti .combat-replay-fight-demand-pill-answer::before,
+.theme-yeti .wvw-summary-demand-badge-answer::before {
+    color: rgba(49, 57, 67, 0.45);
+}
+
+.theme-yeti .combat-replay-fight-demand-pill-answer-met,
+.theme-yeti .wvw-summary-demand-answer-met {
+    color: #16794b;
+}
+
+.theme-yeti .combat-replay-fight-demand-pill-answer-contested,
+.theme-yeti .wvw-summary-demand-answer-contested {
+    color: #8a6b08;
+}
+
+.theme-yeti .combat-replay-fight-demand-pill-answer-gap,
+.theme-yeti .wvw-summary-demand-answer-gap {
+    color: #b83232;
 }
 
 .theme-yeti .wvw-summary-subtab {

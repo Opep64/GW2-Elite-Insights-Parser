@@ -90,9 +90,11 @@
                             v-for="lane in fightDemand.lanes"
                             :key="'wvw-summary-fight-demand-' + lane.key"
                             class="wvw-summary-demand-badge"
+                            :data-original-title="lane.evidenceLine + ' ' + lane.responseLine"
                             :class="getDemandToneClass(lane.demandLabel)">
                             <span class="wvw-summary-demand-badge-label">{{lane.label}}</span>
                             <span class="wvw-summary-demand-badge-value">{{formatDemandLabel(lane.demandLabel)}}</span>
+                            <span v-if="lane.responseLabel" class="wvw-summary-demand-badge-answer" :class="getDemandAnswerToneClass(lane.responseTone)">{{lane.responseLabel}}</span>
                         </span>
                     </div>
                 </div>
@@ -418,9 +420,11 @@
                             v-for="lane in fightDemand.lanes"
                             :key="'wvw-summary-spec-demand-' + lane.key"
                             class="wvw-summary-demand-badge"
+                            :data-original-title="lane.evidenceLine + ' ' + lane.responseLine"
                             :class="getDemandToneClass(lane.demandLabel)">
                             <span class="wvw-summary-demand-badge-label">{{lane.label}}</span>
                             <span class="wvw-summary-demand-badge-value">{{formatDemandLabel(lane.demandLabel)}}</span>
+                            <span v-if="lane.responseLabel" class="wvw-summary-demand-badge-answer" :class="getDemandAnswerToneClass(lane.responseTone)">{{lane.responseLabel}}</span>
                         </span>
                     </div>
                 </div>
@@ -1384,6 +1388,9 @@
                     return "wvw-summary-demand-tone-medium";
                 }
                 return "wvw-summary-demand-tone-low";
+            },
+            getDemandAnswerToneClass: function(tone) {
+                return "wvw-summary-demand-answer-" + (tone || "neutral");
             },
             formatSpecEfficiency: function(value) {
                 return this.round1(value || 0) + "x efficiency";

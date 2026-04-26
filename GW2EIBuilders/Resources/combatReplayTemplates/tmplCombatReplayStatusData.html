@@ -4273,9 +4273,10 @@
                             <div class="combat-replay-fight-demand-title">Fight Demand</div>
                             <div class="combat-replay-fight-demand-summary">{{crAnalysis.fightDemand.summary}}</div>
                             <div class="combat-replay-fight-demand-lanes">
-                                <div v-for="lane in crAnalysis.fightDemand.lanes" :key="'fight-demand-' + lane.key" class="combat-replay-fight-demand-pill">
+                                <div v-for="lane in crAnalysis.fightDemand.lanes" :key="'fight-demand-' + lane.key" class="combat-replay-fight-demand-pill" :data-original-title="lane.evidenceLine + ' ' + lane.responseLine">
                                     <span class="combat-replay-fight-demand-pill-label">{{lane.label}}</span>
                                     <span class="combat-replay-fight-demand-pill-value">{{lane.demandLabel}}</span>
+                                    <span v-if="lane.responseLabel" class="combat-replay-fight-demand-pill-answer" :class="'combat-replay-fight-demand-pill-answer-' + (lane.responseTone || 'neutral')">{{lane.responseLabel}}</span>
                                 </div>
                             </div>
                         </div>

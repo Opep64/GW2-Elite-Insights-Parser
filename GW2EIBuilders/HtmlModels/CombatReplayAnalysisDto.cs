@@ -723,6 +723,10 @@ internal class CombatReplayFightDemandLaneDto
     public string Label { get; set; } = "";
     public double DemandScorePercent { get; set; }
     public string DemandLabel { get; set; } = "";
+    public double ResponseScorePercent { get; set; }
+    public string ResponseLabel { get; set; } = "";
+    public string ResponseTone { get; set; } = "";
+    public string ResponseLine { get; set; } = "";
     public double WeightMultiplier { get; set; }
     public string EvidenceLine { get; set; } = "";
 }
@@ -1158,7 +1162,7 @@ internal static class CombatReplayAnalysisBuilder
         var positioningAnalysis = BuildPositioningAnalysis(log, squadPlayers, hostileTargets, commander, times);
         CombatReplayEventAnalysisDto eventAnalysis = BuildEventAnalysis(log, squadPlayers, hostileTargets);
         CombatReplayDefenseAnalysisDto defenseAnalysis = BuildDefenseAnalysis(log, squadPlayers, enemyAnalysis, times);
-        CombatReplayFightDemandDto fightDemand = BuildFightDemand(squadAnalysis, enemyAnalysis, eventAnalysis, defenseAnalysis, times);
+        CombatReplayFightDemandDto fightDemand = BuildFightDemand(squadAnalysis, enemyAnalysis, eventAnalysis, defenseAnalysis, threatAnalysis, times);
         EvaluationBuildResult evaluationData = BuildEvaluationData(
             log,
             squadPlayers,
@@ -2947,6 +2951,7 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayTeamAnalysisDto enemyAnalysis,
         CombatReplayEventAnalysisDto eventAnalysis,
         CombatReplayDefenseAnalysisDto defenseAnalysis,
+        CombatReplayThreatBoonAnalysisDto threatAnalysis,
         IReadOnlyList<long> times)
     {
         int squadBurstWindows = BuildBurstWindows(squadAnalysis, times).Count;
@@ -2966,33 +2971,73 @@ internal static class CombatReplayAnalysisBuilder
         double rescueNeed = 100.0 * Math.Clamp((squadDowns / 6.0) * 0.55 + (squadRecoveries / 4.0) * 0.45, 0.0, 1.0);
         double threatenedBoonNeed = 100.0 * Math.Clamp(defensiveLoad / 100.0 * 0.70 + burstIntensity / 100.0 * 0.30, 0.0, 1.0);
         double conditionPressureNeed = 100.0 * Math.Clamp((eventAnalysis.Downs.SquadSummary.ConditionImpactedDowns / Math.Max((double)squadDowns, 1.0)) * 0.65 + (squadRecoveries / Math.Max((double)squadDowns, 1.0)) * 0.35, 0.0, 1.0);
+        double enemyKillRate = GetPercent(enemyKills, enemyDowns);
+        double enemyRecoveryRate = GetPercent(enemyRecoveries, enemyDowns);
+        double enemyRecoveryDeniedRate = enemyDowns > 0 ? Math.Max(0.0, 100.0 - enemyRecoveryRate) : 0.0;
+        double enemyDownShare = GetPercent(enemyDowns, enemyDowns + squadDowns);
+        double squadBurstShare = GetPercent(squadBurstWindows, squadBurstWindows + enemyBurstWindows);
+        double squadRecoveryRate = GetPercent(squadRecoveries, squadDowns);
+        double squadRezActivityRate = squadRecoveries > 0
+            ? GetPercent(Math.Min(eventAnalysis.Recovered.SquadSummary.TotalRezCasts, squadRecoveries), squadRecoveries)
+            : 0.0;
+        double enemyBurstHeldRate = GetPercent(defenseAnalysis.BurstBarrier.BurstWindowsHeld, enemyBurstWindows);
+        double burstBarrierResponse = Math.Clamp(defenseAnalysis.BurstBarrier.BurstBarrierAbsorptionPercent / 30.0, 0.0, 1.0) * 100.0;
+        double lowHealthSaveResponse = enemyBurstWindows > 0
+            ? Math.Clamp(defenseAnalysis.BurstBarrier.LowHealthSurvivorOccurrences / (double)enemyBurstWindows, 0.0, 1.0) * 100.0
+            : 0.0;
+        double conversionResponse = enemyKills > 0 || enemyRecoveries > 0
+            ? enemyKillRate * 0.75 + enemyRecoveryDeniedRate * 0.25
+            : enemyDowns > 0 ? enemyRecoveryDeniedRate * 0.50 : 0.0;
+        double boonSupportResponse = ComputeThreatBoonResponseScore(threatAnalysis);
+        double pressureResponse = squadBurstShare * 0.35 + enemyDownShare * 0.35 + conversionResponse * 0.30;
+        double stripResponse = (stripSyncedBursts > 0 ? 100.0 : 0.0) * 0.45 + conversionResponse * 0.35 + squadBurstShare * 0.20;
+        double controlResponse = controlNeed;
+        double recoveryResponse = squadRecoveryRate * 0.80 + enemyBurstHeldRate * 0.20;
+        double preventionResponse = enemyBurstHeldRate * 0.55 + burstBarrierResponse * 0.25 + lowHealthSaveResponse * 0.20;
+        double rezResponse = squadRecoveryRate * 0.70 + squadRezActivityRate * 0.30;
 
         var lanes = new List<CombatReplayFightDemandLaneDto>
         {
             BuildFightDemandLane("pressure", "Pressure",
                 burstIntensity * 0.45 + conversionContest * 0.35 + boonCrackNeed * 0.20,
-                $"{enemyDowns} enemy downs and {squadBurstWindows} strong squad burst windows made live-target pressure matter."),
+                pressureResponse,
+                $"{enemyDowns} enemy downs and {squadBurstWindows} strong squad burst windows made live-target pressure matter.",
+                $"{enemyDownShare:0.#}% enemy-down share and {conversionResponse:0.#}% conversion response."),
             BuildFightDemandLane("conversion", "Conversion",
                 conversionContest * 0.55 + burstIntensity * 0.25 + boonCrackNeed * 0.20,
-                $"{enemyKills} enemy kills and {enemyRecoveries} enemy recoveries kept finishes contested."),
+                conversionResponse,
+                $"{enemyKills} enemy kills and {enemyRecoveries} enemy recoveries kept finishes contested.",
+                $"{enemyKillRate:0.#}% enemy down-to-kill rate with {enemyRecoveries} enemy recoveries allowed."),
             BuildFightDemandLane("strip", "Strip",
                 boonCrackNeed * 0.60 + conversionContest * 0.25 + burstIntensity * 0.15,
-                $"{stripSyncedBursts} synced strip bursts and {enemyRecoveries} enemy recoveries increased boon-crack value."),
+                stripResponse,
+                $"{stripSyncedBursts} synced strip bursts and {enemyRecoveries} enemy recoveries increased boon-crack value.",
+                $"{stripSyncedBursts} synced strip burst windows with {conversionResponse:0.#}% conversion response."),
             BuildFightDemandLane("control", "Control",
                 controlNeed * 0.60 + conversionContest * 0.25 + burstIntensity * 0.15,
-                $"{ccImpactedEnemyDowns} enemy downs were visibly CC-impacted."),
+                controlResponse,
+                $"{ccImpactedEnemyDowns} enemy downs were visibly CC-impacted.",
+                $"{ccImpactedEnemyDowns} of {enemyDowns} enemy downs were CC-impacted."),
             BuildFightDemandLane("boonSupport", "Boon Support",
                 defensiveLoad * 0.50 + burstIntensity * 0.25 + threatenedBoonNeed * 0.25,
-                $"{enemyBurstWindows} enemy burst windows raised the value of offensive and defensive boon coverage."),
+                boonSupportResponse,
+                $"{enemyBurstWindows} enemy burst windows raised the value of offensive and defensive boon coverage.",
+                $"{boonSupportResponse:0.#}% weighted threatened support-boon coverage."),
             BuildFightDemandLane("recovery", "Recovery",
                 defensiveLoad * 0.40 + rescueNeed * 0.20 + conditionPressureNeed * 0.40,
-                $"{squadDowns} squad downs and {eventAnalysis.Downs.SquadSummary.ConditionImpactedDowns} condition-impacted squad downs raised post-hit recovery demand."),
+                recoveryResponse,
+                $"{squadDowns} squad downs and {eventAnalysis.Downs.SquadSummary.ConditionImpactedDowns} condition-impacted squad downs raised post-hit recovery demand.",
+                $"{squadRecoveries} of {squadDowns} squad downs recovered."),
             BuildFightDemandLane("prevention", "Prevention",
                 defensiveLoad * 0.60 + threatenedBoonNeed * 0.20 + burstIntensity * 0.10 + rescueNeed * 0.10,
-                $"{enemyBurstWindows} enemy burst windows and {defenseAnalysis.BurstBarrier.LowHealthSurvivorOccurrences} low-health survive moments raised damage-prevention demand."),
+                preventionResponse,
+                $"{enemyBurstWindows} enemy burst windows and {defenseAnalysis.BurstBarrier.LowHealthSurvivorOccurrences} low-health survive moments raised damage-prevention demand.",
+                $"{enemyBurstHeldRate:0.#}% enemy burst windows held without a squad down."),
             BuildFightDemandLane("rez", "Rez",
                 rescueNeed * 0.70 + defensiveLoad * 0.20 + conversionContest * 0.10,
-                $"{squadRecoveries} squad recoveries made downstate rescue materially relevant."),
+                rezResponse,
+                $"{squadRecoveries} squad recoveries made downstate rescue materially relevant.",
+                $"{squadRecoveryRate:0.#}% squad recovery rate with {eventAnalysis.Recovered.SquadSummary.TotalRezCasts} rez casts."),
         };
         lanes = [.. lanes.OrderByDescending(lane => lane.DemandScorePercent).ThenBy(lane => lane.Label)];
         return new CombatReplayFightDemandDto
@@ -3004,10 +3049,18 @@ internal static class CombatReplayAnalysisBuilder
         };
     }
 
-    private static CombatReplayFightDemandLaneDto BuildFightDemandLane(string key, string label, double demandScorePercent, string evidenceLine)
+    private static CombatReplayFightDemandLaneDto BuildFightDemandLane(
+        string key,
+        string label,
+        double demandScorePercent,
+        double responseScorePercent,
+        string evidenceLine,
+        string responseLine)
     {
         demandScorePercent = Math.Clamp(Math.Round(demandScorePercent, 1), 0.0, 100.0);
+        responseScorePercent = Math.Clamp(Math.Round(responseScorePercent, 1), 0.0, 100.0);
         string demandLabel = GetDemandLabel(demandScorePercent);
+        string responseLabel = GetDemandResponseLabel(demandScorePercent, responseScorePercent);
         double weightMultiplier = demandLabel switch
         {
             "Very High" => 1.30,
@@ -3021,8 +3074,77 @@ internal static class CombatReplayAnalysisBuilder
             Label = label,
             DemandScorePercent = demandScorePercent,
             DemandLabel = demandLabel,
+            ResponseScorePercent = responseScorePercent,
+            ResponseLabel = responseLabel,
+            ResponseTone = GetDemandResponseTone(responseLabel),
+            ResponseLine = responseLine,
             WeightMultiplier = weightMultiplier,
             EvidenceLine = evidenceLine,
+        };
+    }
+
+    private static double ComputeThreatBoonResponseScore(CombatReplayThreatBoonAnalysisDto threatAnalysis)
+    {
+        if (threatAnalysis.Boons.Count == 0)
+        {
+            return 0.0;
+        }
+
+        var weights = new Dictionary<long, double>
+        {
+            [Stability] = 0.30,
+            [Protection] = 0.20,
+            [Resolution] = 0.15,
+            [Resistance] = 0.15,
+            [Aegis] = 0.10,
+            [Quickness] = 0.10,
+        };
+        double weightedCoverage = 0.0;
+        double totalWeight = 0.0;
+        foreach (CombatReplayThreatBoonTimelineDto boon in threatAnalysis.Boons)
+        {
+            if (!weights.TryGetValue(boon.Id, out double weight))
+            {
+                continue;
+            }
+
+            weightedCoverage += boon.SummaryCoverage * weight;
+            totalWeight += weight;
+        }
+
+        return totalWeight > 0.0 ? weightedCoverage / totalWeight : 0.0;
+    }
+
+    private static double GetPercent(double numerator, double denominator)
+    {
+        return denominator > 0.0
+            ? Math.Clamp(numerator * 100.0 / denominator, 0.0, 100.0)
+            : 0.0;
+    }
+
+    private static string GetDemandResponseLabel(double demandScorePercent, double responseScorePercent)
+    {
+        if (demandScorePercent < 30.0)
+        {
+            return "Low Signal";
+        }
+        double gap = demandScorePercent - responseScorePercent;
+        return gap switch
+        {
+            <= 10.0 => "Met",
+            <= 30.0 => "Contested",
+            _ => "Gap",
+        };
+    }
+
+    private static string GetDemandResponseTone(string responseLabel)
+    {
+        return responseLabel switch
+        {
+            "Met" => "met",
+            "Contested" => "contested",
+            "Gap" => "gap",
+            _ => "neutral",
         };
     }
 
