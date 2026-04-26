@@ -137,7 +137,14 @@ internal class WvwSummaryDto
         var enemy = BuildSide(log, phase, hostilePlayerTargets, squadActors, squadActors, "Enemy Team");
         var squadDownState = BuildDownStateSide(log, phase, squadActors);
         var enemyDownState = BuildDownStateSide(log, phase, hostilePlayerTargets);
-        List<WvwSummaryMomentDto> moments = BuildMoments(log, phase, combatReplayAnalysis, squadActors, hostilePlayerTargets, squadDownState, enemyDownState);
+        GW2EIBuilders.WvWAnalystFightShapeDto fightShape = GW2EIBuilders.WvWAnalystBuilder.BuildFightShapeDiagnostics(
+            log,
+            phase,
+            squadActors,
+            hostilePlayerTargets,
+            combatReplayAnalysis,
+            BuildFightShapeOutcome(squad, enemy));
+        List<WvwSummaryMomentDto> moments = BuildMoments(log, phase, combatReplayAnalysis, squadActors, hostilePlayerTargets, squadDownState, enemyDownState, fightShape);
 
         return new WvwSummaryDto
         {
@@ -2536,7 +2543,8 @@ internal class WvwSummaryDto
         IReadOnlyList<SingleActor> squadActors,
         IReadOnlyList<SingleActor> hostilePlayerTargets,
         WvwSummaryDownStateSideDto squadDownState,
-        WvwSummaryDownStateSideDto enemyDownState)
+        WvwSummaryDownStateSideDto enemyDownState,
+        GW2EIBuilders.WvWAnalystFightShapeDto? fightShape)
     {
         Player? commander = log.PlayerList.FirstOrDefault(player => !player.IsFakeActor && player.IsCommander(log));
         var requiredCandidates = new List<WvwSummaryMomentCandidate>();
@@ -2553,6 +2561,10 @@ internal class WvwSummaryDto
         if (TryBuildKillMilestoneCandidate(enemyDownState.KillConversionEntries, squadDownState.KillConversionEntries, out WvwSummaryMomentCandidate firstToFiveKills))
         {
             requiredCandidates.Add(firstToFiveKills);
+        }
+        if (TryBuildCompetitiveBoundaryCandidate(fightShape, out WvwSummaryMomentCandidate competitiveBoundary))
+        {
+            requiredCandidates.Add(competitiveBoundary);
         }
 
         List<WvwSummaryFormationSnapshot> enemyFormationSnapshots = BuildGroupFormationSnapshots(log, phase, hostilePlayerTargets, squadActors);
@@ -2657,6 +2669,67 @@ internal class WvwSummaryDto
                     Tone = candidate.Tone,
                 };
             })];
+    }
+
+    private static GW2EIBuilders.WvWAnalystOutcomeDto BuildFightShapeOutcome(WvwSummarySideDto squad, WvwSummarySideDto enemy)
+    {
+        // Keep this winner/tiebreak logic aligned with WvWAnalystBuilder.BuildOutcome; the fight-shape detector
+        // uses final winner only as a hindsight guard against marking reversible fights as cleanup.
+        const string squadSideId = "squad";
+        const string enemySideId = "enemy";
+        string outcomeCode;
+        string winnerSideId;
+        string displayLabel;
+        string decidedBy;
+
+        if (squad.Kills != enemy.Kills)
+        {
+            bool squadWon = squad.Kills > enemy.Kills;
+            outcomeCode = squadWon ? squadSideId : enemySideId;
+            winnerSideId = outcomeCode;
+            displayLabel = squadWon ? squad.Label : enemy.Label;
+            decidedBy = "kills";
+        }
+        else if (squad.Downs != enemy.Downs)
+        {
+            bool squadWon = squad.Downs > enemy.Downs;
+            outcomeCode = squadWon ? squadSideId : enemySideId;
+            winnerSideId = outcomeCode;
+            displayLabel = squadWon ? squad.Label : enemy.Label;
+            decidedBy = "downs";
+        }
+        else if (squad.Deaths != enemy.Deaths)
+        {
+            bool squadWon = squad.Deaths < enemy.Deaths;
+            outcomeCode = squadWon ? squadSideId : enemySideId;
+            winnerSideId = outcomeCode;
+            displayLabel = squadWon ? squad.Label : enemy.Label;
+            decidedBy = "deaths";
+        }
+        else if (squad.Damage != enemy.Damage)
+        {
+            bool squadWon = squad.Damage > enemy.Damage;
+            outcomeCode = squadWon ? squadSideId : enemySideId;
+            winnerSideId = outcomeCode;
+            displayLabel = squadWon ? squad.Label : enemy.Label;
+            decidedBy = "damage";
+        }
+        else
+        {
+            outcomeCode = "draw";
+            winnerSideId = string.Empty;
+            displayLabel = "Draw";
+            decidedBy = "none";
+        }
+
+        return new GW2EIBuilders.WvWAnalystOutcomeDto
+        {
+            OutcomeCode = outcomeCode,
+            WinnerSideId = winnerSideId,
+            DisplayLabel = displayLabel,
+            DecidedBy = decidedBy,
+            TieBreakOrder = ["kills", "downs", "deaths", "damage"],
+        };
     }
 
     private static List<WvwSummaryMomentCandidate> BuildMomentumSwingCandidates(
@@ -2768,6 +2841,34 @@ internal class WvwSummaryDto
             }
         }
         return opposingSteps;
+    }
+
+    private static bool TryBuildCompetitiveBoundaryCandidate(
+        GW2EIBuilders.WvWAnalystFightShapeDto? fightShape,
+        out WvwSummaryMomentCandidate candidate)
+    {
+        candidate = default;
+        if (fightShape?.Available != true || fightShape.CleanupStartTimeMs is not long cleanupStart)
+        {
+            return false;
+        }
+
+        bool squadCleanup = string.Equals(fightShape.CleanupSide, "squad", StringComparison.OrdinalIgnoreCase);
+        string winningLabel = squadCleanup ? "Our Squad" : "Enemy Team";
+        string losingLabel = squadCleanup ? "Enemy Team" : "Our Squad";
+        string tone = squadCleanup ? "positive" : "negative";
+
+        // Surface the same fight-shape detector used by WvWAnalyst as a first-class EI Moment.
+        // The TSV/debug UI stays in WvWAnalyst, but this marker is useful in normal log review.
+        candidate = new WvwSummaryMomentCandidate(
+            cleanupStart,
+            0,
+            "Competitive phase ended",
+            $"{winningLabel} held a sustained advantage and {losingLabel} did not meaningfully recover; later time is treated as cleanup.",
+            tone,
+            squadCleanup ? "competitive-boundary-positive" : "competitive-boundary-negative",
+            90.0);
+        return true;
     }
 
     private static bool TryBuildFirstEventCandidate(

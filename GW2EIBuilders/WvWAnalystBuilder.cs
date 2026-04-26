@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Globalization;
+using System.Numerics;
 using GW2EIBuilders.HtmlModels;
 using GW2EIEvtcParser;
 using GW2EIEvtcParser.EIData;
@@ -10,6 +11,8 @@ namespace GW2EIBuilders;
 
 public sealed class WvWAnalystBuilder
 {
+    private const float FightShapeMaxDistanceFromFight = 5000.0f;
+
     private static readonly JsonSerializerOptions DefaultSerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions IndentedSerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -63,6 +66,7 @@ public sealed class WvWAnalystBuilder
         var mitigationSummary = BuildMitigationSummary(combatReplayAnalysis);
         var obliterate = BuildObliterateSummary(combatReplayAnalysis);
         var topBursts = BuildTopBursts(combatReplayAnalysis, squadPlayers);
+        var fightShape = BuildFightShapeDiagnostics(log, mainPhase, squadPlayers, hostilePlayerTargets, combatReplayAnalysis, outcome);
         var squadClasses = BuildSideClasses(squadPlayers);
         var enemyClasses = BuildSideClasses(hostilePlayerTargets);
 
@@ -70,9 +74,9 @@ public sealed class WvWAnalystBuilder
         {
             Meta = new WvWAnalystMetaDto
             {
-                SchemaVersion = "1.10.0",
+                SchemaVersion = "1.16.0",
                 PayloadType = "wvw-analyst-fight",
-                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes",
+                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes+fight-shape-diagnostics",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
                 ParserVersion = parserVersion.ToString(),
             },
@@ -129,10 +133,756 @@ public sealed class WvWAnalystBuilder
             DefenseSaves = defenseSaves,
             MitigationSummary = mitigationSummary,
             Obliterate = obliterate,
+            FightShape = fightShape,
             ThreatBoons = threatBoons,
             TopBursts = topBursts,
             Players = players,
         };
+    }
+
+    // Shared by the analyst payload and the EI Summary Moments marker. Keep the detector post-fight and conservative:
+    // it identifies when a side can no longer meaningfully contest, not who performed well.
+    internal static WvWAnalystFightShapeDto BuildFightShapeDiagnostics(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostilePlayerTargets,
+        CombatReplayAnalysisDto? combatReplayAnalysis,
+        WvWAnalystOutcomeDto outcome)
+    {
+        const long minimumElapsedMs = 10000;
+        const long minimumCleanupMs = 10000;
+        const long sustainMs = 8000;
+        const long lateRecoverySampleMs = 3000;
+        const double minimumConfidence = 0.65;
+        const double minimumRelaxedSustainConfidence = 0.72;
+
+        long phaseStart = phase.Start;
+        long phaseEnd = phase.End;
+        long durationMs = Math.Max(phase.DurationInMS, 0);
+        if (combatReplayAnalysis is null ||
+            combatReplayAnalysis.Times.Length == 0 ||
+            durationMs < minimumElapsedMs + minimumCleanupMs ||
+            squadPlayers.Count == 0 ||
+            hostilePlayerTargets.Count == 0)
+        {
+            return BuildUnknownFightShape(durationMs, "Insufficient detailed replay data for cleanup diagnostics.");
+        }
+
+        IReadOnlyDictionary<int, long> squadKillTimes = BuildFightShapeKillTimes(combatReplayAnalysis.Events.Kills.Events, isEnemy: false);
+        IReadOnlyDictionary<int, long> enemyKillTimes = BuildFightShapeKillTimes(combatReplayAnalysis.Events.Kills.Events, isEnemy: true);
+
+        FightShapeCandidateDiagnostics? bestCandidate = null;
+        foreach (long time in combatReplayAnalysis.Times)
+        {
+            if (time < phaseStart + minimumElapsedMs || time > phaseEnd - minimumCleanupMs)
+            {
+                continue;
+            }
+
+            WvWAnalystFightShapeSideStateDto squadState = BuildFightShapeSideState(log, squadPlayers, squadKillTimes, hostilePlayerTargets, time);
+            WvWAnalystFightShapeSideStateDto enemyState = BuildFightShapeSideState(log, hostilePlayerTargets, enemyKillTimes, squadPlayers, time);
+            if (!HasEnoughKnownActors(squadState) || !HasEnoughKnownActors(enemyState))
+            {
+                bestCandidate = SelectBetterFightShapeCandidate(
+                    bestCandidate,
+                    new FightShapeCandidateDiagnostics
+                    {
+                        TimeMs = time,
+                        CleanupSide = "unknown",
+                        Confidence = 0.0,
+                        FailureRank = 1,
+                        FailureReason = BuildKnownActorsFailureReason(squadState, enemyState),
+                        FailureDetail = BuildFightShapeCandidateDetail(squadState, enemyState),
+                    });
+                continue;
+            }
+
+            bool squadAdvantage = HasCleanupBodyAdvantage(squadState, enemyState);
+            bool enemyAdvantage = HasCleanupBodyAdvantage(enemyState, squadState);
+            string cleanupSide = squadAdvantage && !enemyAdvantage
+                ? "squad"
+                : enemyAdvantage && !squadAdvantage
+                    ? "enemy"
+                    : "unknown";
+            if (cleanupSide == "unknown")
+            {
+                bestCandidate = SelectBetterFightShapeCandidate(
+                    bestCandidate,
+                    new FightShapeCandidateDiagnostics
+                    {
+                        TimeMs = time,
+                        CleanupSide = "unknown",
+                        Confidence = 0.0,
+                        FailureRank = 2,
+                        FailureReason = squadAdvantage && enemyAdvantage ? "ambiguous_body_advantage" : "no_body_advantage",
+                        FailureDetail = BuildFightShapeCandidateDetail(squadState, enemyState),
+                    });
+                continue;
+            }
+
+            bool cleanupMatchesFinalWinner = HasKnownWinner(outcome) && IsCleanupSideFinalWinner(cleanupSide, outcome);
+            if (HasKnownWinner(outcome) && !cleanupMatchesFinalWinner)
+            {
+                bestCandidate = SelectBetterFightShapeCandidate(
+                    bestCandidate,
+                    new FightShapeCandidateDiagnostics
+                    {
+                        TimeMs = time,
+                        CleanupSide = cleanupSide,
+                        Confidence = ComputeFightShapeBodyConfidence(
+                            cleanupSide == "squad" ? squadState : enemyState,
+                            cleanupSide == "squad" ? enemyState : squadState),
+                        FailureRank = 4,
+                        FailureReason = "cleanup_side_not_final_winner",
+                        FailureDetail = BuildFightShapeCandidateDetail(squadState, enemyState),
+                    });
+                continue;
+            }
+
+            long sustainTime = Math.Min(time + sustainMs, phaseEnd);
+            WvWAnalystFightShapeSideStateDto sustainedSquadState = BuildFightShapeSideState(log, squadPlayers, squadKillTimes, hostilePlayerTargets, sustainTime);
+            WvWAnalystFightShapeSideStateDto sustainedEnemyState = BuildFightShapeSideState(log, hostilePlayerTargets, enemyKillTimes, squadPlayers, sustainTime);
+            bool hasSustainedBodyAdvantage = cleanupSide == "squad"
+                ? HasCleanupBodyAdvantage(sustainedSquadState, sustainedEnemyState)
+                : HasCleanupBodyAdvantage(sustainedEnemyState, sustainedSquadState);
+
+            WvWAnalystFightShapeEventSnapshotDto afterCleanup = BuildFightShapeEventSnapshot(combatReplayAnalysis.Events, time, phaseEnd, includeStart: false);
+            (long squadDamageAfter, long enemyDamageAfter) = ComputeDamageSplit(log, squadPlayers, hostilePlayerTargets, time, phaseEnd);
+            afterCleanup.SquadDamage = squadDamageAfter;
+            afterCleanup.EnemyDamage = enemyDamageAfter;
+            string loserSide = cleanupSide == "squad" ? "enemy" : "squad";
+            int loserCounterDownsAfter = cleanupSide == "squad" ? afterCleanup.SquadMembersDowned : afterCleanup.EnemyPlayersDowned;
+            int loserCounterKillsAfter = cleanupSide == "squad" ? afterCleanup.EnemyKillsSecured : afterCleanup.SquadKillsSecured;
+            int winnerDownsAfter = cleanupSide == "squad" ? afterCleanup.EnemyPlayersDowned : afterCleanup.SquadMembersDowned;
+            int winnerKillsAfter = cleanupSide == "squad" ? afterCleanup.SquadKillsSecured : afterCleanup.EnemyKillsSecured;
+            int loserRecoveriesAfter = cleanupSide == "squad" ? afterCleanup.EnemyRecoveries : afterCleanup.SquadRecoveries;
+            long winnerDamageAfter = cleanupSide == "squad" ? squadDamageAfter : enemyDamageAfter;
+            long loserDamageAfter = cleanupSide == "squad" ? enemyDamageAfter : squadDamageAfter;
+            double confidence = ComputeFightShapeConfidence(
+                cleanupSide == "squad" ? squadState : enemyState,
+                cleanupSide == "squad" ? enemyState : squadState,
+                winnerDamageAfter,
+                loserDamageAfter,
+                loserCounterDownsAfter,
+                loserCounterKillsAfter,
+                phaseEnd - time);
+            if (!HasNoLateComeback(cleanupSide, afterCleanup))
+            {
+                bestCandidate = SelectBetterFightShapeCandidate(
+                    bestCandidate,
+                    new FightShapeCandidateDiagnostics
+                    {
+                        TimeMs = time,
+                        CleanupSide = cleanupSide,
+                        Confidence = confidence,
+                        FailureRank = 5,
+                        FailureReason = "late_comeback",
+                        FailureDetail = $"{BuildFightShapeCandidateDetail(squadState, enemyState)}; {BuildFightShapeAfterDetail(afterCleanup)}",
+                    });
+                continue;
+            }
+
+            FightShapeLateRecoveryDiagnostics? lateRecovery = FindLateBodyRecovery(
+                log,
+                combatReplayAnalysis.Times,
+                time + sustainMs,
+                phaseEnd,
+                lateRecoverySampleMs,
+                cleanupSide,
+                squadPlayers,
+                hostilePlayerTargets,
+                squadKillTimes,
+                enemyKillTimes);
+            if (lateRecovery is not null)
+            {
+                bestCandidate = SelectBetterFightShapeCandidate(
+                    bestCandidate,
+                    new FightShapeCandidateDiagnostics
+                    {
+                        TimeMs = time,
+                        CleanupSide = cleanupSide,
+                        Confidence = confidence,
+                        FailureRank = 5,
+                        FailureReason = "late_body_recovery",
+                        FailureDetail = $"{BuildFightShapeCandidateDetail(squadState, enemyState)}; {BuildFightShapeLateRecoveryDetail(lateRecovery)}",
+                    });
+                continue;
+            }
+
+            bool relaxedSustain = false;
+            if (!hasSustainedBodyAdvantage)
+            {
+                if (cleanupMatchesFinalWinner && confidence >= minimumRelaxedSustainConfidence)
+                {
+                    relaxedSustain = true;
+                }
+                else
+                {
+                    bestCandidate = SelectBetterFightShapeCandidate(
+                        bestCandidate,
+                        new FightShapeCandidateDiagnostics
+                        {
+                            TimeMs = time,
+                            CleanupSide = cleanupSide,
+                            Confidence = confidence,
+                            FailureRank = 3,
+                            FailureReason = "no_sustained_body_advantage",
+                            FailureDetail = $"{BuildFightShapeCandidateDetail(squadState, enemyState, sustainedSquadState, sustainedEnemyState)}; {BuildFightShapeAfterDetail(afterCleanup)}",
+                        });
+                    continue;
+                }
+            }
+
+            if (confidence < minimumConfidence)
+            {
+                bestCandidate = SelectBetterFightShapeCandidate(
+                    bestCandidate,
+                    new FightShapeCandidateDiagnostics
+                    {
+                        TimeMs = time,
+                        CleanupSide = cleanupSide,
+                        Confidence = confidence,
+                        FailureRank = 6,
+                        FailureReason = "confidence_below_minimum",
+                        FailureDetail = $"{BuildFightShapeCandidateDetail(squadState, enemyState)}; {BuildFightShapeAfterDetail(afterCleanup)}",
+                    });
+                continue;
+            }
+
+            WvWAnalystFightShapeEventSnapshotDto atCleanup = BuildFightShapeEventSnapshot(combatReplayAnalysis.Events, phaseStart, time, includeStart: true);
+            (long squadDamageBefore, long enemyDamageBefore) = ComputeDamageSplit(log, squadPlayers, hostilePlayerTargets, phaseStart, time);
+            atCleanup.SquadDamage = squadDamageBefore;
+            atCleanup.EnemyDamage = enemyDamageBefore;
+
+            List<string> rules =
+            [
+                "no_late_comeback"
+            ];
+            rules.Insert(0, relaxedSustain ? "relaxed_sustain_final_winner" : "sustained_body_advantage");
+            if (winnerDamageAfter + loserDamageAfter > 0 && loserDamageAfter <= (winnerDamageAfter + loserDamageAfter) * 0.25)
+            {
+                rules.Add("pressure_collapse");
+            }
+            if (winnerDownsAfter + winnerKillsAfter >= 2)
+            {
+                rules.Add("cleanup_momentum");
+            }
+            if (winnerDownsAfter > 0 && loserRecoveriesAfter == 0)
+            {
+                rules.Add("recovery_collapse");
+            }
+
+            long cleanupDurationMs = Math.Max(phaseEnd - time, 0);
+            return new WvWAnalystFightShapeDto
+            {
+                Available = true,
+                DetectionLabel = "Cleanup candidate",
+                CleanupSide = cleanupSide,
+                LosingSide = loserSide,
+                Confidence = confidence,
+                CompetitiveEndTimeMs = time,
+                CleanupStartTimeMs = time,
+                CompetitiveDurationMs = Math.Max(time - phaseStart, 0),
+                CleanupDurationMs = cleanupDurationMs,
+                CleanupPercent = durationMs > 0 ? Math.Round(cleanupDurationMs * 100.0 / durationMs, 1) : 0.0,
+                Rules = rules,
+                BestCandidateTimeMs = time,
+                BestCandidateCleanupSide = cleanupSide,
+                BestCandidateConfidence = confidence,
+                BestCandidateReason = relaxedSustain ? "accepted_relaxed_sustain" : "accepted",
+                BestCandidateDetail = relaxedSustain
+                    ? $"{BuildFightShapeCandidateDetail(squadState, enemyState, sustainedSquadState, sustainedEnemyState)}; {BuildFightShapeAfterDetail(afterCleanup)}"
+                    : BuildFightShapeCandidateDetail(squadState, enemyState),
+                AtCleanupStart = atCleanup,
+                AfterCleanupStart = afterCleanup,
+                SquadAtCleanupStart = squadState,
+                EnemyAtCleanupStart = enemyState,
+            };
+        }
+
+        return BuildUnknownFightShape(durationMs, "No conservative cleanup boundary detected.", bestCandidate);
+    }
+
+    private static IReadOnlyDictionary<int, long> BuildFightShapeKillTimes(
+        IReadOnlyList<CombatReplayKillEventDto> killEvents,
+        bool isEnemy)
+    {
+        return killEvents
+            .Where(evt => evt.IsEnemy == isEnemy)
+            .GroupBy(evt => evt.ActorId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Min(evt => evt.OutcomeTime ?? evt.Time));
+    }
+
+    private static WvWAnalystFightShapeDto BuildUnknownFightShape(
+        long durationMs,
+        string detail,
+        FightShapeCandidateDiagnostics? bestCandidate = null)
+    {
+        return new WvWAnalystFightShapeDto
+        {
+            Available = false,
+            DetectionLabel = detail,
+            CleanupSide = "unknown",
+            LosingSide = "unknown",
+            Confidence = 0.0,
+            CompetitiveDurationMs = durationMs,
+            CleanupDurationMs = 0,
+            CleanupPercent = 0.0,
+            Rules = ["diagnostic_unknown"],
+            BestCandidateTimeMs = bestCandidate?.TimeMs,
+            BestCandidateCleanupSide = bestCandidate?.CleanupSide ?? string.Empty,
+            BestCandidateConfidence = bestCandidate?.Confidence ?? 0.0,
+            BestCandidateReason = bestCandidate?.FailureReason ?? string.Empty,
+            BestCandidateDetail = bestCandidate?.FailureDetail ?? string.Empty,
+        };
+    }
+
+    private static FightShapeCandidateDiagnostics SelectBetterFightShapeCandidate(
+        FightShapeCandidateDiagnostics? current,
+        FightShapeCandidateDiagnostics candidate)
+    {
+        if (current is null)
+        {
+            return candidate;
+        }
+        if (candidate.FailureRank != current.FailureRank)
+        {
+            return candidate.FailureRank > current.FailureRank ? candidate : current;
+        }
+        if (Math.Abs(candidate.Confidence - current.Confidence) > double.Epsilon)
+        {
+            return candidate.Confidence > current.Confidence ? candidate : current;
+        }
+        return candidate.TimeMs < current.TimeMs ? candidate : current;
+    }
+
+    private static string BuildKnownActorsFailureReason(
+        WvWAnalystFightShapeSideStateDto squadState,
+        WvWAnalystFightShapeSideStateDto enemyState)
+    {
+        bool squadKnown = HasEnoughKnownActors(squadState);
+        bool enemyKnown = HasEnoughKnownActors(enemyState);
+        if (!squadKnown && !enemyKnown)
+        {
+            return "insufficient_known_both";
+        }
+        return squadKnown ? "insufficient_known_enemy" : "insufficient_known_squad";
+    }
+
+    private static string BuildFightShapeCandidateDetail(
+        WvWAnalystFightShapeSideStateDto squadState,
+        WvWAnalystFightShapeSideStateDto enemyState,
+        WvWAnalystFightShapeSideStateDto? sustainedSquadState = null,
+        WvWAnalystFightShapeSideStateDto? sustainedEnemyState = null)
+    {
+        string current = string.Format(
+            CultureInfo.InvariantCulture,
+            "current squad known {0}/{1}, active {2}, downed {3}, deadDc {4}, removed {5}, far {6}, unobserved {7}; enemy known {8}/{9}, active {10}, downed {11}, deadDc {12}, removed {13}, far {14}, unobserved {15}",
+            squadState.Known,
+            squadState.Total,
+            squadState.Active,
+            squadState.Downed,
+            squadState.DeadOrDc,
+            squadState.Removed,
+            squadState.FarFromFight,
+            squadState.Unobserved,
+            enemyState.Known,
+            enemyState.Total,
+            enemyState.Active,
+            enemyState.Downed,
+            enemyState.DeadOrDc,
+            enemyState.Removed,
+            enemyState.FarFromFight,
+            enemyState.Unobserved);
+        if (sustainedSquadState is null || sustainedEnemyState is null)
+        {
+            return current;
+        }
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "{0}; sustained squad known {1}/{2}, active {3}, downed {4}, deadDc {5}, removed {6}, far {7}, unobserved {8}; enemy known {9}/{10}, active {11}, downed {12}, deadDc {13}, removed {14}, far {15}, unobserved {16}",
+            current,
+            sustainedSquadState.Known,
+            sustainedSquadState.Total,
+            sustainedSquadState.Active,
+            sustainedSquadState.Downed,
+            sustainedSquadState.DeadOrDc,
+            sustainedSquadState.Removed,
+            sustainedSquadState.FarFromFight,
+            sustainedSquadState.Unobserved,
+            sustainedEnemyState.Known,
+            sustainedEnemyState.Total,
+            sustainedEnemyState.Active,
+            sustainedEnemyState.Downed,
+            sustainedEnemyState.DeadOrDc,
+            sustainedEnemyState.Removed,
+            sustainedEnemyState.FarFromFight,
+            sustainedEnemyState.Unobserved);
+    }
+
+    private static string BuildFightShapeAfterDetail(WvWAnalystFightShapeEventSnapshotDto afterCleanup)
+    {
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "after downs S/E {0}/{1}, kills S/E {2}/{3}, recoveries S/E {4}/{5}, damage S/E {6}/{7}",
+            afterCleanup.SquadMembersDowned,
+            afterCleanup.EnemyPlayersDowned,
+            afterCleanup.SquadKillsSecured,
+            afterCleanup.EnemyKillsSecured,
+            afterCleanup.SquadRecoveries,
+            afterCleanup.EnemyRecoveries,
+            afterCleanup.SquadDamage,
+            afterCleanup.EnemyDamage);
+    }
+
+    private static string BuildFightShapeLateRecoveryDetail(FightShapeLateRecoveryDiagnostics recovery)
+    {
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "late body recovery at {0}ms: squad active {1}, downed {2}, deadDc {3}, far {4}; enemy active {5}, downed {6}, deadDc {7}, far {8}",
+            recovery.TimeMs,
+            recovery.SquadState.Active,
+            recovery.SquadState.Downed,
+            recovery.SquadState.DeadOrDc,
+            recovery.SquadState.FarFromFight,
+            recovery.EnemyState.Active,
+            recovery.EnemyState.Downed,
+            recovery.EnemyState.DeadOrDc,
+            recovery.EnemyState.FarFromFight);
+    }
+
+    private static WvWAnalystFightShapeSideStateDto BuildFightShapeSideState(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> actors,
+        IReadOnlyDictionary<int, long> killTimes,
+        IReadOnlyList<SingleActor> opposingActors,
+        long time)
+    {
+        var result = new WvWAnalystFightShapeSideStateDto
+        {
+            Total = actors.Count,
+        };
+        IReadOnlyList<Vector3> opposingPositions = BuildFightShapeActivePositions(log, opposingActors, time);
+        foreach (SingleActor actor in actors)
+        {
+            if (actor.FirstAware > time)
+            {
+                continue;
+            }
+
+            if (time > actor.LastAware)
+            {
+                if (killTimes.TryGetValue(actor.UniqueID, out long killTime) && killTime <= time)
+                {
+                    result.Known++;
+                    result.Removed++;
+                    continue;
+                }
+
+                result.Unobserved++;
+                continue;
+            }
+
+            bool isDead = actor.IsDead(log, time);
+            bool isDc = actor.IsDC(log, time);
+            bool isDowned = actor.IsDowned(log, time);
+            result.Known++;
+            if (isDead || isDc)
+            {
+                result.DeadOrDc++;
+            }
+            else if (isDowned)
+            {
+                result.Downed++;
+            }
+            else if (IsFarFromFight(log, actor, opposingPositions, time))
+            {
+                result.FarFromFight++;
+            }
+            else
+            {
+                result.Active++;
+            }
+        }
+        return result;
+    }
+
+    private static IReadOnlyList<Vector3> BuildFightShapeActivePositions(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> actors,
+        long time)
+    {
+        var positions = new List<Vector3>();
+        foreach (SingleActor actor in actors)
+        {
+            if (TryGetFightShapeActivePosition(actor, log, time, out Vector3 position))
+            {
+                positions.Add(position);
+            }
+        }
+        return positions;
+    }
+
+    private static bool IsFarFromFight(
+        ParsedEvtcLog log,
+        SingleActor actor,
+        IReadOnlyList<Vector3> opposingPositions,
+        long time)
+    {
+        if (opposingPositions.Count == 0 ||
+            !TryGetFightShapeActivePosition(actor, log, time, out Vector3 position))
+        {
+            return false;
+        }
+
+        return !opposingPositions.Any(opposingPosition => IsWithinFightShapeRange(position, opposingPosition, FightShapeMaxDistanceFromFight));
+    }
+
+    private static bool TryGetFightShapeActivePosition(SingleActor actor, ParsedEvtcLog log, long time, out Vector3 position)
+    {
+        position = default;
+        if (time < actor.FirstAware ||
+            time > actor.LastAware ||
+            actor.IsDowned(log, time) ||
+            actor.IsDead(log, time) ||
+            actor.IsDC(log, time))
+        {
+            return false;
+        }
+
+        return actor.TryGetCurrentInterpolatedPosition(log, time, out position) ||
+            actor.TryGetCurrentPosition(log, time, out position);
+    }
+
+    private static bool IsWithinFightShapeRange(Vector3 left, Vector3 right, float range)
+    {
+        float dx = left.X - right.X;
+        float dy = left.Y - right.Y;
+        return dx * dx + dy * dy <= range * range;
+    }
+
+    private static bool HasEnoughKnownActors(WvWAnalystFightShapeSideStateDto state)
+    {
+        return state.Total <= 0 || state.Known >= Math.Max(1, (int)Math.Ceiling(state.Total * 0.70));
+    }
+
+    private static bool HasKnownWinner(WvWAnalystOutcomeDto outcome)
+    {
+        return string.Equals(outcome.WinnerSideId, "squad", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(outcome.WinnerSideId, "enemy", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsCleanupSideFinalWinner(string cleanupSide, WvWAnalystOutcomeDto outcome)
+    {
+        return string.Equals(cleanupSide, outcome.WinnerSideId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasCleanupBodyAdvantage(WvWAnalystFightShapeSideStateDto leading, WvWAnalystFightShapeSideStateDto trailing)
+    {
+        if (leading.Active < 5 || trailing.Known == 0)
+        {
+            return false;
+        }
+
+        int activeGap = leading.Active - trailing.Active;
+        double activeRatio = leading.Active / Math.Max((double)trailing.Active, 1.0);
+        int trailingActiveLimit = Math.Max(3, (int)Math.Ceiling(trailing.Known * 0.35));
+        return activeGap >= 4 &&
+            activeRatio >= 1.75 &&
+            trailing.Active <= trailingActiveLimit;
+    }
+
+    private static FightShapeLateRecoveryDiagnostics? FindLateBodyRecovery(
+        ParsedEvtcLog log,
+        IReadOnlyList<long> times,
+        long start,
+        long end,
+        long sampleInterval,
+        string cleanupSide,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostilePlayerTargets,
+        IReadOnlyDictionary<int, long> squadKillTimes,
+        IReadOnlyDictionary<int, long> enemyKillTimes)
+    {
+        long nextSampleTime = start;
+        foreach (long time in times)
+        {
+            if (time < nextSampleTime)
+            {
+                continue;
+            }
+            if (time > end)
+            {
+                break;
+            }
+            nextSampleTime = time + sampleInterval;
+
+            WvWAnalystFightShapeSideStateDto squadState = BuildFightShapeSideState(log, squadPlayers, squadKillTimes, hostilePlayerTargets, time);
+            WvWAnalystFightShapeSideStateDto enemyState = BuildFightShapeSideState(log, hostilePlayerTargets, enemyKillTimes, squadPlayers, time);
+            WvWAnalystFightShapeSideStateDto leading = cleanupSide == "squad" ? squadState : enemyState;
+            WvWAnalystFightShapeSideStateDto trailing = cleanupSide == "squad" ? enemyState : squadState;
+            if (HasLateBodyRecovery(leading, trailing))
+            {
+                return new FightShapeLateRecoveryDiagnostics(time, squadState, enemyState);
+            }
+        }
+
+        return null;
+    }
+
+    private static bool HasLateBodyRecovery(WvWAnalystFightShapeSideStateDto leading, WvWAnalystFightShapeSideStateDto trailing)
+    {
+        if (leading.Active <= 0 || trailing.Active < 5)
+        {
+            return false;
+        }
+
+        int activeGap = leading.Active - trailing.Active;
+        double trailingRatio = trailing.Active / Math.Max((double)leading.Active, 1.0);
+        return activeGap <= 3 || trailingRatio >= 0.70;
+    }
+
+    private static WvWAnalystFightShapeEventSnapshotDto BuildFightShapeEventSnapshot(
+        CombatReplayEventAnalysisDto eventAnalysis,
+        long start,
+        long end,
+        bool includeStart)
+    {
+        bool InWindow(long eventTime) => includeStart
+            ? eventTime >= start && eventTime <= end
+            : eventTime > start && eventTime <= end;
+
+        var result = new WvWAnalystFightShapeEventSnapshotDto();
+        foreach (CombatReplayDownEventDto downEvent in eventAnalysis.Downs.Events.Where(evt => InWindow(evt.Time)))
+        {
+            if (downEvent.IsEnemy)
+            {
+                result.EnemyPlayersDowned++;
+            }
+            else
+            {
+                result.SquadMembersDowned++;
+            }
+        }
+        foreach (CombatReplayKillEventDto killEvent in eventAnalysis.Kills.Events.Where(evt => InWindow(evt.OutcomeTime ?? evt.Time)))
+        {
+            if (killEvent.IsEnemy)
+            {
+                result.SquadKillsSecured++;
+            }
+            else
+            {
+                result.EnemyKillsSecured++;
+            }
+        }
+        foreach (CombatReplayRecoveredEventDto recoveryEvent in eventAnalysis.Recovered.Events.Where(evt => InWindow(evt.OutcomeTime ?? evt.Time)))
+        {
+            if (recoveryEvent.IsEnemy)
+            {
+                result.EnemyRecoveries++;
+            }
+            else
+            {
+                result.SquadRecoveries++;
+            }
+        }
+        return result;
+    }
+
+    private static bool HasNoLateComeback(string cleanupSide, WvWAnalystFightShapeEventSnapshotDto afterCleanup)
+    {
+        int counterDowns;
+        int counterKills;
+        int winnerDowns;
+        int winnerKills;
+        if (cleanupSide == "squad")
+        {
+            counterDowns = afterCleanup.SquadMembersDowned;
+            counterKills = afterCleanup.EnemyKillsSecured;
+            winnerDowns = afterCleanup.EnemyPlayersDowned;
+            winnerKills = afterCleanup.SquadKillsSecured;
+        }
+        else
+        {
+            counterDowns = afterCleanup.EnemyPlayersDowned;
+            counterKills = afterCleanup.SquadKillsSecured;
+            winnerDowns = afterCleanup.SquadMembersDowned;
+            winnerKills = afterCleanup.EnemyKillsSecured;
+        }
+
+        if (counterKills >= 2 || counterDowns >= 4)
+        {
+            return false;
+        }
+
+        return counterKills == 0 ||
+            winnerKills + winnerDowns >= Math.Max(2, counterKills + counterDowns);
+    }
+
+    private static (long SquadDamage, long EnemyDamage) ComputeDamageSplit(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostilePlayerTargets,
+        long start,
+        long end)
+    {
+        long squadDamage = ComputeOutgoingDamage(log, squadPlayers, hostilePlayerTargets, start, end);
+        long enemyDamage = ComputeOutgoingDamage(log, hostilePlayerTargets, squadPlayers, start, end);
+        return (squadDamage, enemyDamage);
+    }
+
+    private static long ComputeOutgoingDamage(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> attackers,
+        IReadOnlyList<SingleActor> targets,
+        long start,
+        long end)
+    {
+        long total = 0;
+        foreach (SingleActor attacker in attackers)
+        {
+            foreach (SingleActor target in targets)
+            {
+                total += attacker.GetDamageStats(target, log, start, end).Damage;
+            }
+        }
+        return total;
+    }
+
+    private static double ComputeFightShapeConfidence(
+        WvWAnalystFightShapeSideStateDto leading,
+        WvWAnalystFightShapeSideStateDto trailing,
+        long winnerDamageAfter,
+        long loserDamageAfter,
+        int loserCounterDownsAfter,
+        int loserCounterKillsAfter,
+        long cleanupDurationMs)
+    {
+        double activeGapScore = Math.Clamp((leading.Active - trailing.Active) / Math.Max((double)leading.Known, 1.0), 0.0, 1.0);
+        double trailingCollapseScore = 1.0 - Math.Clamp(trailing.Active / Math.Max((double)trailing.Known, 1.0), 0.0, 1.0);
+        double bodyScore = activeGapScore * 0.60 + trailingCollapseScore * 0.40;
+        double comebackScore = loserCounterKillsAfter == 0
+            ? loserCounterDownsAfter == 0 ? 1.0 : 0.75
+            : 0.25;
+        double totalDamageAfter = winnerDamageAfter + loserDamageAfter;
+        double pressureScore = totalDamageAfter > 0
+            ? 1.0 - Math.Clamp(loserDamageAfter / totalDamageAfter, 0.0, 1.0)
+            : 0.60;
+        double durationScore = Math.Clamp(cleanupDurationMs / 20000.0, 0.0, 1.0);
+
+        return Math.Round(bodyScore * 0.35 + comebackScore * 0.25 + pressureScore * 0.25 + durationScore * 0.15, 2);
+    }
+
+    private static double ComputeFightShapeBodyConfidence(
+        WvWAnalystFightShapeSideStateDto leading,
+        WvWAnalystFightShapeSideStateDto trailing)
+    {
+        double activeGapScore = Math.Clamp((leading.Active - trailing.Active) / Math.Max((double)leading.Known, 1.0), 0.0, 1.0);
+        double trailingCollapseScore = 1.0 - Math.Clamp(trailing.Active / Math.Max((double)trailing.Known, 1.0), 0.0, 1.0);
+        return Math.Round(activeGapScore * 0.60 + trailingCollapseScore * 0.40, 2);
     }
 
     private static WvWAnalystSideTotalsDto BuildSideTotals(WvwSummarySideDto side)
@@ -1011,6 +1761,21 @@ public sealed class WvWAnalystBuilder
 
         return new string(buffer[..index]);
     }
+
+    private sealed class FightShapeCandidateDiagnostics
+    {
+        public long TimeMs { get; init; }
+        public string CleanupSide { get; init; } = string.Empty;
+        public double Confidence { get; init; }
+        public int FailureRank { get; init; }
+        public string FailureReason { get; init; } = string.Empty;
+        public string FailureDetail { get; init; } = string.Empty;
+    }
+
+    private sealed record FightShapeLateRecoveryDiagnostics(
+        long TimeMs,
+        WvWAnalystFightShapeSideStateDto SquadState,
+        WvWAnalystFightShapeSideStateDto EnemyState);
 }
 
 internal sealed class WvWAnalystFightPayloadDto
@@ -1026,9 +1791,58 @@ internal sealed class WvWAnalystFightPayloadDto
     public WvWAnalystDefenseSaveSummaryDto? DefenseSaves { get; set; }
     public WvWAnalystMitigationSummaryDto? MitigationSummary { get; set; }
     public WvWAnalystObliterateSummaryDto? Obliterate { get; set; }
+    public WvWAnalystFightShapeDto? FightShape { get; set; }
     public IReadOnlyList<WvWAnalystThreatBoonSummaryDto> ThreatBoons { get; set; } = Array.Empty<WvWAnalystThreatBoonSummaryDto>();
     public IReadOnlyList<WvWAnalystTopBurstDto> TopBursts { get; set; } = Array.Empty<WvWAnalystTopBurstDto>();
     public IReadOnlyList<WvWAnalystPlayerSummaryDto> Players { get; set; } = Array.Empty<WvWAnalystPlayerSummaryDto>();
+}
+
+internal sealed class WvWAnalystFightShapeDto
+{
+    public bool Available { get; set; }
+    public string DetectionLabel { get; set; } = string.Empty;
+    public string CleanupSide { get; set; } = string.Empty;
+    public string LosingSide { get; set; } = string.Empty;
+    public double Confidence { get; set; }
+    public long? CompetitiveEndTimeMs { get; set; }
+    public long? CleanupStartTimeMs { get; set; }
+    public long CompetitiveDurationMs { get; set; }
+    public long CleanupDurationMs { get; set; }
+    public double CleanupPercent { get; set; }
+    public IReadOnlyList<string> Rules { get; set; } = Array.Empty<string>();
+    public long? BestCandidateTimeMs { get; set; }
+    public string BestCandidateCleanupSide { get; set; } = string.Empty;
+    public double BestCandidateConfidence { get; set; }
+    public string BestCandidateReason { get; set; } = string.Empty;
+    public string BestCandidateDetail { get; set; } = string.Empty;
+    public WvWAnalystFightShapeEventSnapshotDto? AtCleanupStart { get; set; }
+    public WvWAnalystFightShapeEventSnapshotDto? AfterCleanupStart { get; set; }
+    public WvWAnalystFightShapeSideStateDto? SquadAtCleanupStart { get; set; }
+    public WvWAnalystFightShapeSideStateDto? EnemyAtCleanupStart { get; set; }
+}
+
+internal sealed class WvWAnalystFightShapeEventSnapshotDto
+{
+    public int SquadMembersDowned { get; set; }
+    public int EnemyPlayersDowned { get; set; }
+    public int SquadKillsSecured { get; set; }
+    public int EnemyKillsSecured { get; set; }
+    public int SquadRecoveries { get; set; }
+    public int EnemyRecoveries { get; set; }
+    public long SquadDamage { get; set; }
+    public long EnemyDamage { get; set; }
+}
+
+internal sealed class WvWAnalystFightShapeSideStateDto
+{
+    public int Total { get; set; }
+    public int Known { get; set; }
+    public int Active { get; set; }
+    public int Downed { get; set; }
+    public int DeadOrDc { get; set; }
+    public int Removed { get; set; }
+    public int FarFromFight { get; set; }
+    public int Unobserved { get; set; }
 }
 
 internal sealed class WvWAnalystMetaDto
