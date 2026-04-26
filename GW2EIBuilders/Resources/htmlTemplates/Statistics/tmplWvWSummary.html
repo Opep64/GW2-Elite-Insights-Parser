@@ -154,6 +154,14 @@
                                 <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.context.enemyFormationStyleLabel}}</span>
                             </div>
                             <div class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Enemy Movement</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.context.enemyMovementScore !== null && summary.fightExecutionScore.context.enemyMovementScore !== undefined ? summary.fightExecutionScore.context.enemyMovementScore + ' / 100' : summary.fightExecutionScore.context.enemyMovementScoreLabel}}</span>
+                            </div>
+                            <div v-if="summary.fightExecutionScore.context.threeWayDetected" class="wvw-summary-execution-fact">
+                                <span class="wvw-summary-execution-fact-label">Fight Type</span>
+                                <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.context.threeWayLabel}}</span>
+                            </div>
+                            <div class="wvw-summary-execution-fact">
                                 <span class="wvw-summary-execution-fact-label">Friendly Non-Squad</span>
                                 <span class="wvw-summary-execution-fact-value">{{summary.fightExecutionScore.context.friendlyNonSquadCount}}</span>
                             </div>
@@ -167,6 +175,8 @@
                             </div>
                         </div>
                         <div v-if="summary.fightExecutionScore.context.enemyFormationStyleDetail" class="wvw-summary-execution-detail">{{summary.fightExecutionScore.context.enemyFormationStyleDetail}}</div>
+                        <div v-if="summary.fightExecutionScore.context.enemyMovementScoreDetail" class="wvw-summary-execution-detail">{{summary.fightExecutionScore.context.enemyMovementScoreDetail}}</div>
+                        <div v-if="summary.fightExecutionScore.context.threeWayDetail" class="wvw-summary-execution-detail">{{summary.fightExecutionScore.context.threeWayDetail}}</div>
                         <div class="wvw-summary-execution-detail">{{summary.fightExecutionScore.context.dataConfidenceDetail}}</div>
                         <div v-if="summary.fightExecutionScore.confidence.notes && summary.fightExecutionScore.confidence.notes.length > 0" class="wvw-summary-execution-notes">
                             <div v-for="(note, index) in summary.fightExecutionScore.confidence.notes" :key="'execution-confidence-note-' + index" class="wvw-summary-execution-note">

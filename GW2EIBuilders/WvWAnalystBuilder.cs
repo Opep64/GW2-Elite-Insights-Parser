@@ -74,9 +74,9 @@ public sealed class WvWAnalystBuilder
         {
             Meta = new WvWAnalystMetaDto
             {
-                SchemaVersion = "1.16.0",
+                SchemaVersion = "1.18.0",
                 PayloadType = "wvw-analyst-fight",
-                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes+fight-shape-diagnostics",
+                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
                 ParserVersion = parserVersion.ToString(),
             },
@@ -956,6 +956,17 @@ public sealed class WvWAnalystBuilder
                 EnemyFormationStyleCode = Slugify(execution.Context.EnemyFormationStyleLabel),
                 EnemyFormationStyleLabel = execution.Context.EnemyFormationStyleLabel,
                 EnemyFormationStyleDetail = execution.Context.EnemyFormationStyleDetail,
+                EnemyMovementScore = execution.Context.EnemyMovementScore,
+                EnemyMovementScoreLabel = execution.Context.EnemyMovementScoreLabel,
+                EnemyMovementScoreDetail = execution.Context.EnemyMovementScoreDetail,
+                EnemyMovementCenterTightShare = execution.Context.EnemyMovementCenterTightShare,
+                EnemyMovementAverageDistanceToCenter = execution.Context.EnemyMovementAverageDistanceToCenter,
+                EnemyMovementSampleCount = execution.Context.EnemyMovementSampleCount,
+                ThreeWayDetected = execution.Context.ThreeWayDetected,
+                ThreeWayLabel = execution.Context.ThreeWayLabel,
+                ThreeWayDetail = execution.Context.ThreeWayDetail,
+                ThreeWayStartTimeMs = execution.Context.ThreeWayStartTimeMs,
+                ThreeWaySecondEnemyPeakCount = execution.Context.ThreeWaySecondEnemyPeakCount,
                 DataConfidenceLabel = execution.Context.DataConfidenceLabel,
                 DataConfidenceDetail = execution.Context.DataConfidenceDetail,
             },
@@ -1975,6 +1986,17 @@ internal sealed class WvWAnalystExecutionContextDto
     public string EnemyFormationStyleCode { get; set; } = string.Empty;
     public string EnemyFormationStyleLabel { get; set; } = string.Empty;
     public string EnemyFormationStyleDetail { get; set; } = string.Empty;
+    public int? EnemyMovementScore { get; set; }
+    public string EnemyMovementScoreLabel { get; set; } = string.Empty;
+    public string EnemyMovementScoreDetail { get; set; } = string.Empty;
+    public double? EnemyMovementCenterTightShare { get; set; }
+    public double? EnemyMovementAverageDistanceToCenter { get; set; }
+    public int EnemyMovementSampleCount { get; set; }
+    public bool ThreeWayDetected { get; set; }
+    public string ThreeWayLabel { get; set; } = string.Empty;
+    public string ThreeWayDetail { get; set; } = string.Empty;
+    public long? ThreeWayStartTimeMs { get; set; }
+    public int ThreeWaySecondEnemyPeakCount { get; set; }
     public string DataConfidenceLabel { get; set; } = string.Empty;
     public string DataConfidenceDetail { get; set; } = string.Empty;
 }

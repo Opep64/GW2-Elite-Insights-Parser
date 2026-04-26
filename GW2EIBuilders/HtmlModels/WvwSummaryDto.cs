@@ -20,6 +20,13 @@ internal class WvwSummaryDto
     private const double ExecutionSizeGapScoreCap = 15.0;
     private const double ExecutionMinimumHealingCoverage = 0.4;
     private const double ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute = 15.0;
+    private const int ThreeWayMinimumSecondEnemyCount = 15;
+    private const int ThreeWayMinimumCombinedEnemyCountWithoutColor = 65;
+    private const long ThreeWayMinimumSustainMs = 8000;
+    private const float ThreeWayMaxDistanceFromSquad = 5000.0f;
+    private const float ThreeWaySandwichRange = 600.0f;
+    private const float ThreeWaySandwichExitRange = 900.0f;
+    private const long ThreeWaySandwichReseparationMs = 5000;
     private static readonly IReadOnlyList<long> OffensiveConditionBuffIds =
     [
         Vulnerability,
@@ -158,7 +165,7 @@ internal class WvwSummaryDto
             HasHealingData = log.CombatData.HasEXTHealing,
             HasBarrierData = log.CombatData.HasEXTBarrier,
             HasCrowdControlData = log.CombatData.HasCrowdControlData,
-            FightExecutionScore = BuildFightExecutionScore(log, phase, combatReplayAnalysis, squadActors, friendlyActors, hostilePlayerTargets, squad, enemy, squadDownState, enemyDownState),
+            FightExecutionScore = BuildFightExecutionScore(log, phase, combatReplayAnalysis, squadActors, friendlyActors, hostilePlayerTargets, squad, enemy, squadDownState, enemyDownState, fightShape),
             Squad = squad,
             Enemy = enemy,
             MetricRows = BuildMetricRows(durationInMilliseconds, squad, enemy, squadDownState, enemyDownState, friendlyActors.Count),
@@ -198,11 +205,12 @@ internal class WvwSummaryDto
         WvwSummarySideDto squad,
         WvwSummarySideDto enemy,
         WvwSummaryDownStateSideDto squadDownState,
-        WvwSummaryDownStateSideDto enemyDownState)
+        WvwSummaryDownStateSideDto enemyDownState,
+        GW2EIBuilders.WvWAnalystFightShapeDto? fightShape)
     {
         var result = new WvwSummaryFightExecutionScoreDto
         {
-            Context = BuildFightExecutionContext(log, phase, squadActors, hostilePlayerTargets, friendlyActors.Count),
+            Context = BuildFightExecutionContext(log, phase, squadActors, hostilePlayerTargets, friendlyActors.Count, fightShape),
             Outcome = BuildFightExecutionOutcome(log, phase, squadActors, hostilePlayerTargets, squad, enemy, squadDownState, enemyDownState),
             Summary = "Raw execution is scored separately from context and outcome. A numbers-adjusted interpretation is shown beside it when the active player gap is material. Comp, terrain, opponent difficulty, and raw win/loss are intentionally excluded from the raw execution score.",
             Detail = "Uses only high-confidence inputs already present in the detailed WvW summary and combat replay. If a scored metric is unavailable, that metric is neutralized at 50 instead of guessed.",
@@ -600,7 +608,8 @@ internal class WvwSummaryDto
         PhaseData phase,
         IReadOnlyList<SingleActor> squadActors,
         IReadOnlyList<SingleActor> hostilePlayerTargets,
-        int friendlyNonSquadCount)
+        int friendlyNonSquadCount,
+        GW2EIBuilders.WvWAnalystFightShapeDto? fightShape)
     {
         var context = new WvwSummaryExecutionContextDto
         {
@@ -609,7 +618,7 @@ internal class WvwSummaryDto
             FriendlyNonSquadCount = friendlyNonSquadCount,
             PhaseDuration = ToDurationString(Math.Max(phase.DurationInMS, 1)),
         };
-        PopulateEnemyFormationStyleContext(log, phase, hostilePlayerTargets, squadActors, context);
+        PopulateEnemyFormationStyleContext(log, phase, hostilePlayerTargets, squadActors, fightShape, context);
         return context;
     }
 
@@ -618,11 +627,18 @@ internal class WvwSummaryDto
         PhaseData phase,
         IReadOnlyList<SingleActor> hostilePlayerTargets,
         IReadOnlyList<SingleActor> squadActors,
+        GW2EIBuilders.WvWAnalystFightShapeDto? fightShape,
         WvwSummaryExecutionContextDto context)
     {
         const long ignoreTailWindow = 10000;
 
         List<WvwSummaryFormationSnapshot> enemyFormationSnapshots = BuildGroupFormationSnapshots(log, phase, hostilePlayerTargets, squadActors);
+        WvwSummaryThreeWayContext threeWayContext = BuildThreeWayContext(log, phase, squadActors, hostilePlayerTargets);
+        context.ThreeWayDetected = threeWayContext.Detected;
+        context.ThreeWayStartTimeMs = threeWayContext.StartTimeMs;
+        context.ThreeWaySecondEnemyPeakCount = threeWayContext.SecondEnemyPeakCount;
+        context.ThreeWayLabel = threeWayContext.Label;
+        context.ThreeWayDetail = threeWayContext.Detail;
         int peakPlayers = enemyFormationSnapshots.Select(snapshot => snapshot.PlayerCount).DefaultIfEmpty(0).Max();
         int minimumEligibleCount = Math.Max(5, (int)Math.Ceiling(peakPlayers * 0.6));
         int eligibleSnapshotCount = 0;
@@ -651,6 +667,8 @@ internal class WvwSummaryDto
         {
             context.EnemyFormationStyleLabel = "Insufficient data";
             context.EnemyFormationStyleDetail = "Could not evaluate enough engaged enemy replay snapshots to judge whether the enemy moved as an organized group, cloud, or mixed formation.";
+            context.EnemyMovementScoreLabel = "Insufficient data";
+            context.EnemyMovementScoreDetail = "Could not evaluate enough engaged pre-cleanup enemy replay samples for a movement tightness score.";
             return;
         }
 
@@ -662,6 +680,280 @@ internal class WvwSummaryDto
                 ? "Cloud"
                 : "Mixed";
         context.EnemyFormationStyleDetail = $"{FormatDecimal(organizedRate)}% organized snapshots and {FormatDecimal(cloudRate)}% cloud snapshots across {eligibleSnapshotCount.ToString("N0", CultureInfo.InvariantCulture)} engaged replay samples. Ignores the last 10s and routed cleanup after the enemy falls below 60% of peak active count.";
+        PopulateEnemyMovementScoreContext(phase, enemyFormationSnapshots, fightShape, context);
+    }
+
+    private static void PopulateEnemyMovementScoreContext(
+        PhaseData phase,
+        IReadOnlyList<WvwSummaryFormationSnapshot> enemyFormationSnapshots,
+        GW2EIBuilders.WvWAnalystFightShapeDto? fightShape,
+        WvwSummaryExecutionContextDto context)
+    {
+        const long ignoreTailWindow = 10000;
+
+        int peakPlayers = enemyFormationSnapshots.Select(snapshot => snapshot.PlayerCount).DefaultIfEmpty(0).Max();
+        int minimumEligibleCount = Math.Max(5, (int)Math.Ceiling(peakPlayers * 0.6));
+        long evaluationEnd = phase.End - ignoreTailWindow;
+        string stopReason = "the final 10s and routed cleanup below 60% of peak active enemies were ignored";
+        if (fightShape?.Available == true &&
+            fightShape.CleanupStartTimeMs is long cleanupStart &&
+            string.Equals(fightShape.LosingSide, "enemy", StringComparison.OrdinalIgnoreCase))
+        {
+            evaluationEnd = Math.Min(evaluationEnd, cleanupStart);
+            stopReason = $"evaluation stopped at the detected enemy cleanup boundary ({ToDurationString(Math.Max(0, cleanupStart - phase.Start))})";
+        }
+
+        List<WvwSummaryFormationSnapshot> eligibleSnapshots = enemyFormationSnapshots
+            .Where(snapshot => snapshot.Time <= evaluationEnd && snapshot.PlayerCount >= minimumEligibleCount)
+            .ToList();
+        if (eligibleSnapshots.Count == 0)
+        {
+            context.EnemyMovementScoreLabel = "Insufficient data";
+            context.EnemyMovementScoreDetail = "Could not evaluate enough engaged pre-cleanup enemy replay samples for a movement tightness score.";
+            return;
+        }
+
+        double score = eligibleSnapshots.Average(ComputeEnemyMovementSnapshotScore);
+        double centerTightShare = eligibleSnapshots.Average(snapshot => snapshot.CentroidTightShare) * 100.0;
+        double averageDistanceToCenter = eligibleSnapshots.Average(snapshot => snapshot.AverageDistanceToCentroid);
+
+        context.EnemyMovementScore = (int)Math.Round(score);
+        context.EnemyMovementScoreLabel = GetEnemyMovementScoreLabel(score);
+        context.EnemyMovementCenterTightShare = Math.Round(centerTightShare, 1);
+        context.EnemyMovementAverageDistanceToCenter = Math.Round(averageDistanceToCenter);
+        context.EnemyMovementSampleCount = eligibleSnapshots.Count;
+        context.EnemyMovementScoreDetail = $"{context.EnemyMovementScoreLabel} movement: {FormatDecimal(centerTightShare)}% of active enemy positions were within 600 units of their center, averaging {FormatWholeNumber(averageDistanceToCenter)} units from center across {eligibleSnapshots.Count.ToString("N0", CultureInfo.InvariantCulture)} engaged pre-cleanup samples; {stopReason}.";
+    }
+
+    private static double ComputeEnemyMovementSnapshotScore(WvwSummaryFormationSnapshot snapshot)
+    {
+        const double eliteAverageDistance = 240.0;
+        const double organizedAverageDistance = 600.0;
+        const double scatteredAverageDistance = 1000.0;
+
+        double averageDistanceScore;
+        if (snapshot.AverageDistanceToCentroid <= eliteAverageDistance)
+        {
+            averageDistanceScore = 100.0;
+        }
+        else if (snapshot.AverageDistanceToCentroid <= organizedAverageDistance)
+        {
+            averageDistanceScore = 70.0 + (organizedAverageDistance - snapshot.AverageDistanceToCentroid) * 30.0 / (organizedAverageDistance - eliteAverageDistance);
+        }
+        else
+        {
+            averageDistanceScore = Math.Max(0.0, 70.0 - (snapshot.AverageDistanceToCentroid - organizedAverageDistance) * 70.0 / (scatteredAverageDistance - organizedAverageDistance));
+        }
+
+        return snapshot.CentroidTightShare * 100.0 * 0.6 + averageDistanceScore * 0.4;
+    }
+
+    private static string GetEnemyMovementScoreLabel(double score)
+    {
+        if (score >= 92.0)
+        {
+            return "Elite tight";
+        }
+        if (score >= 84.0)
+        {
+            return "Tight";
+        }
+        if (score >= 72.0)
+        {
+            return "Organized";
+        }
+        if (score >= 58.0)
+        {
+            return "Loose";
+        }
+        return "Scattered";
+    }
+
+    private static WvwSummaryThreeWayContext BuildThreeWayContext(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> squadActors,
+        IReadOnlyList<SingleActor> hostilePlayerTargets)
+    {
+        List<WvwSummaryThreeWaySnapshot> snapshots = BuildThreeWaySnapshots(log, phase, squadActors, hostilePlayerTargets);
+        List<WvwSummaryThreeWaySnapshot> sustainedSegment = GetFirstSustainedThreeWaySegment(snapshots);
+        if (sustainedSegment.Count == 0)
+        {
+            return new WvwSummaryThreeWayContext(false, null, 0, string.Empty, string.Empty);
+        }
+
+        WvwSummaryThreeWaySnapshot first = sustainedSegment[0];
+        int secondEnemyPeakCount = sustainedSegment.Max(snapshot => snapshot.SecondEnemyCount);
+        double averageEnemyCenterSeparation = sustainedSegment.Average(snapshot => snapshot.EnemyCenterDistance);
+        double averagePrimaryDistanceToSquad = sustainedSegment.Average(snapshot => snapshot.PrimaryDistanceToSquad);
+        double averageSecondDistanceToSquad = sustainedSegment.Average(snapshot => snapshot.SecondaryDistanceToSquad);
+        string detail = $"3-way detected from {ToDurationString(Math.Max(0, first.Time - phase.Start))}: two enemy teams each had at least {ThreeWayMinimumSecondEnemyCount} active visible players and at least {ThreeWayMinimumCombinedEnemyCountWithoutColor} combined active visible players for {FormatDecimal(ThreeWayMinimumSustainMs / 1000.0)}s. Enemy team centers averaged {FormatWholeNumber(averageEnemyCenterSeparation)} units apart, with team {FormatTeamId(first.PrimaryTeamId)} averaging {FormatWholeNumber(averagePrimaryDistanceToSquad)} units from our squad and team {FormatTeamId(first.SecondaryTeamId)} averaging {FormatWholeNumber(averageSecondDistanceToSquad)} units from our squad.";
+        return new WvwSummaryThreeWayContext(true, first.Time, secondEnemyPeakCount, "3-way", detail);
+    }
+
+    private static List<WvwSummaryThreeWaySnapshot> BuildThreeWaySnapshots(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> squadActors,
+        IReadOnlyList<SingleActor> hostilePlayerTargets)
+    {
+        const long sampleInterval = 1000;
+
+        var snapshots = new List<WvwSummaryThreeWaySnapshot>();
+        for (long time = phase.Start; time <= phase.End; time += sampleInterval)
+        {
+            List<Vector3> squadPositions = BuildEligiblePositions(log, squadActors, time);
+            if (squadPositions.Count == 0)
+            {
+                continue;
+            }
+
+            Vector3 squadCentroid = ComputeCentroid(squadPositions);
+            Dictionary<ulong, List<Vector3>> enemyPositionsByTeam = BuildEnemyPositionsByTeam(log, hostilePlayerTargets, time);
+            List<WvwSummaryEnemyTeamSnapshot> enemyTeams = enemyPositionsByTeam
+                .Where(pair => pair.Value.Count >= ThreeWayMinimumSecondEnemyCount)
+                .Select(pair =>
+                {
+                    Vector3 centroid = ComputeCentroid(pair.Value);
+                    return new WvwSummaryEnemyTeamSnapshot(
+                        pair.Key,
+                        pair.Value.Count,
+                        centroid,
+                        GetDistance2D(centroid, squadCentroid));
+                })
+                .Where(team => team.DistanceToSquad <= ThreeWayMaxDistanceFromSquad)
+                .OrderByDescending(team => team.PlayerCount)
+                .ThenBy(team => team.DistanceToSquad)
+                .Take(2)
+                .ToList();
+
+            if (enemyTeams.Count < 2)
+            {
+                continue;
+            }
+
+            WvwSummaryEnemyTeamSnapshot primary = enemyTeams[0];
+            WvwSummaryEnemyTeamSnapshot secondary = enemyTeams[1];
+            if (!HasKnownDifferentWvWColors(primary.TeamId, secondary.TeamId) &&
+                primary.PlayerCount + secondary.PlayerCount < ThreeWayMinimumCombinedEnemyCountWithoutColor)
+            {
+                continue;
+            }
+
+            snapshots.Add(new WvwSummaryThreeWaySnapshot(
+                time,
+                primary.TeamId,
+                secondary.TeamId,
+                primary.PlayerCount,
+                secondary.PlayerCount,
+                primary.DistanceToSquad,
+                secondary.DistanceToSquad,
+                GetDistance2D(primary.Centroid, secondary.Centroid)));
+        }
+
+        return snapshots;
+    }
+
+    private static List<Vector3> BuildEligiblePositions(ParsedEvtcLog log, IReadOnlyList<SingleActor> actors, long time)
+    {
+        var positions = new List<Vector3>();
+        foreach (SingleActor actor in actors)
+        {
+            if (TryGetEligiblePosition(actor, log, time, out Vector3 position))
+            {
+                positions.Add(position);
+            }
+        }
+        return positions;
+    }
+
+    private static Dictionary<ulong, List<Vector3>> BuildEnemyPositionsByTeam(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> hostilePlayerTargets,
+        long time)
+    {
+        var positionsByTeam = new Dictionary<ulong, List<Vector3>>();
+        foreach (SingleActor actor in hostilePlayerTargets)
+        {
+            if (!TryGetEligiblePosition(actor, log, time, out Vector3 position))
+            {
+                continue;
+            }
+
+            ulong teamId = GetActorTeamId(actor, log, time);
+            if (teamId == 0)
+            {
+                continue;
+            }
+
+            if (!positionsByTeam.TryGetValue(teamId, out List<Vector3>? positions))
+            {
+                positions = [];
+                positionsByTeam[teamId] = positions;
+            }
+            positions.Add(position);
+        }
+        return positionsByTeam;
+    }
+
+    private static ulong GetActorTeamId(SingleActor actor, ParsedEvtcLog log, long time)
+    {
+        IReadOnlyList<TeamChangeEvent> teamChanges = log.CombatData.GetTeamChangeEvents(actor.EnglobingAgentItem);
+        TeamChangeEvent? teamChange = teamChanges.LastOrDefault(evt => evt.Time <= time)
+            ?? teamChanges.LastOrDefault(evt => evt.Time <= actor.LastAware)
+            ?? teamChanges.LastOrDefault();
+        if (teamChange is null)
+        {
+            return 0;
+        }
+        if (teamChange.TeamIDInto > 0)
+        {
+            return teamChange.TeamIDInto;
+        }
+        return teamChange.TeamIDComingFrom;
+    }
+
+    private static List<WvwSummaryThreeWaySnapshot> GetFirstSustainedThreeWaySegment(IReadOnlyList<WvwSummaryThreeWaySnapshot> snapshots)
+    {
+        var currentSegment = new List<WvwSummaryThreeWaySnapshot>();
+        WvwSummaryThreeWaySnapshot? previousSnapshot = null;
+        foreach (WvwSummaryThreeWaySnapshot snapshot in snapshots.OrderBy(snapshot => snapshot.Time))
+        {
+            bool sameSegment = previousSnapshot.HasValue &&
+                snapshot.Time - previousSnapshot.Value.Time <= 1500 &&
+                UsesSameEnemyTeams(previousSnapshot.Value, snapshot);
+            if (!sameSegment)
+            {
+                currentSegment.Clear();
+            }
+
+            currentSegment.Add(snapshot);
+            previousSnapshot = snapshot;
+            if (currentSegment[^1].Time - currentSegment[0].Time >= ThreeWayMinimumSustainMs)
+            {
+                return [.. currentSegment];
+            }
+        }
+
+        return [];
+    }
+
+    private static bool UsesSameEnemyTeams(WvwSummaryThreeWaySnapshot left, WvwSummaryThreeWaySnapshot right)
+    {
+        return (left.PrimaryTeamId == right.PrimaryTeamId && left.SecondaryTeamId == right.SecondaryTeamId) ||
+            (left.PrimaryTeamId == right.SecondaryTeamId && left.SecondaryTeamId == right.PrimaryTeamId);
+    }
+
+    private static bool HasKnownDifferentWvWColors(ulong primaryTeamId, ulong secondaryTeamId)
+    {
+        // The parser has numeric arcDPS team IDs, but no local Red/Green/Blue color mapping here.
+        // Keep the stricter combined-count threshold until a reliable color map is available.
+        return false;
+    }
+
+    private static string FormatTeamId(ulong teamId)
+    {
+        return teamId.ToString(CultureInfo.InvariantCulture);
     }
 
     private static WvwSummaryExecutionOutcomeDto BuildFightExecutionOutcome(
@@ -2568,6 +2860,7 @@ internal class WvwSummaryDto
         }
 
         List<WvwSummaryFormationSnapshot> enemyFormationSnapshots = BuildGroupFormationSnapshots(log, phase, hostilePlayerTargets, squadActors);
+        requiredCandidates.AddRange(BuildThreeWaySandwichMomentCandidates(log, phase, squadActors, hostilePlayerTargets));
         foreach (WvwSummaryMomentCandidate momentumSwing in BuildMomentumSwingCandidates(log, phase, squadActors, hostilePlayerTargets, commander))
         {
             optionalCandidates.Add(momentumSwing);
@@ -2730,6 +3023,73 @@ internal class WvwSummaryDto
             DecidedBy = decidedBy,
             TieBreakOrder = ["kills", "downs", "deaths", "damage"],
         };
+    }
+
+    private static List<WvwSummaryMomentCandidate> BuildThreeWaySandwichMomentCandidates(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> squadActors,
+        IReadOnlyList<SingleActor> hostilePlayerTargets)
+    {
+        List<WvwSummaryThreeWaySnapshot> snapshots = BuildThreeWaySnapshots(log, phase, squadActors, hostilePlayerTargets);
+        if (snapshots.Count == 0)
+        {
+            return [];
+        }
+
+        var candidates = new List<WvwSummaryMomentCandidate>();
+        bool inSandwich = false;
+        long? separatedSince = null;
+        long? previousSnapshotTime = null;
+
+        foreach (WvwSummaryThreeWaySnapshot snapshot in snapshots.OrderBy(snapshot => snapshot.Time))
+        {
+            if (previousSnapshotTime.HasValue && snapshot.Time - previousSnapshotTime.Value >= ThreeWaySandwichReseparationMs)
+            {
+                inSandwich = false;
+                separatedSince = null;
+            }
+
+            bool sandwich = snapshot.PrimaryDistanceToSquad <= ThreeWaySandwichRange &&
+                snapshot.SecondaryDistanceToSquad <= ThreeWaySandwichRange;
+            if (sandwich)
+            {
+                if (!inSandwich)
+                {
+                    string detail = $"Both enemy team centers were within {FormatWholeNumber(ThreeWaySandwichRange)} units of our squad center at the same time: team {FormatTeamId(snapshot.PrimaryTeamId)} was {FormatWholeNumber(snapshot.PrimaryDistanceToSquad)} units away, team {FormatTeamId(snapshot.SecondaryTeamId)} was {FormatWholeNumber(snapshot.SecondaryDistanceToSquad)} units away, and the enemy centers were {FormatWholeNumber(snapshot.EnemyCenterDistance)} units apart. This marks a three-way sandwich/contact point; it may be enemy pressure on us or our squad moving into two already-engaged enemy groups.";
+                    double score = 72.0 + Math.Max(0.0, ThreeWaySandwichRange - Math.Max(snapshot.PrimaryDistanceToSquad, snapshot.SecondaryDistanceToSquad)) / 20.0;
+                    candidates.Add(new WvwSummaryMomentCandidate(
+                        snapshot.Time,
+                        0,
+                        "Three-way sandwich",
+                        detail,
+                        "neutral",
+                        "three-way-sandwich",
+                        score));
+                    inSandwich = true;
+                }
+                separatedSince = null;
+            }
+            else if (inSandwich &&
+                (snapshot.PrimaryDistanceToSquad >= ThreeWaySandwichExitRange ||
+                    snapshot.SecondaryDistanceToSquad >= ThreeWaySandwichExitRange))
+            {
+                separatedSince ??= snapshot.Time;
+                if (snapshot.Time - separatedSince.Value >= ThreeWaySandwichReseparationMs)
+                {
+                    inSandwich = false;
+                    separatedSince = null;
+                }
+            }
+            else
+            {
+                separatedSince = null;
+            }
+
+            previousSnapshotTime = snapshot.Time;
+        }
+
+        return candidates;
     }
 
     private static List<WvwSummaryMomentCandidate> BuildMomentumSwingCandidates(
@@ -3348,6 +3708,7 @@ internal class WvwSummaryDto
 
             double clusteredShare = clusteredPlayers / (double)playerCount;
             double averageDistanceToCentroid = totalDistanceToCentroid / playerCount;
+            double centroidTightShare = participatingGroupPositions.Count(position => GetDistance2D(position, groupCentroid) <= enemyAllyRange) / (double)playerCount;
             double compactnessScore = Clamp01((740.0 - averageDistanceToCentroid) / 500.0);
             double snapshotScore = Math.Round((clusteredShare * 0.5 + compactnessScore * 0.5) * 100.0, 1);
 
@@ -3357,6 +3718,7 @@ internal class WvwSummaryDto
                 participatingOpposingPositions.Count,
                 clusteredShare,
                 compactnessScore,
+                centroidTightShare,
                 averageDistanceToCentroid,
                 snapshotScore,
                 GetDistance2D(groupCentroid, opposingCentroid)));
@@ -4348,6 +4710,17 @@ internal class WvwSummaryExecutionContextDto
     public int EnemyPlayerCount { get; set; }
     public string EnemyFormationStyleLabel { get; set; } = "";
     public string EnemyFormationStyleDetail { get; set; } = "";
+    public int? EnemyMovementScore { get; set; }
+    public string EnemyMovementScoreLabel { get; set; } = "";
+    public string EnemyMovementScoreDetail { get; set; } = "";
+    public double? EnemyMovementCenterTightShare { get; set; }
+    public double? EnemyMovementAverageDistanceToCenter { get; set; }
+    public int EnemyMovementSampleCount { get; set; }
+    public bool ThreeWayDetected { get; set; }
+    public string ThreeWayLabel { get; set; } = "";
+    public string ThreeWayDetail { get; set; } = "";
+    public long? ThreeWayStartTimeMs { get; set; }
+    public int ThreeWaySecondEnemyPeakCount { get; set; }
     public int FriendlyNonSquadCount { get; set; }
     public string PhaseDuration { get; set; } = "";
     public string DataConfidenceLabel { get; set; } = "";
@@ -4432,9 +4805,33 @@ internal readonly record struct WvwSummaryFormationSnapshot(
     int OpposingPlayerCount,
     double ClusteredShare,
     double CompactnessScore,
+    double CentroidTightShare,
     double AverageDistanceToCentroid,
     double SnapshotScore,
     double DistanceToOpposingCentroid);
+
+internal readonly record struct WvwSummaryThreeWayContext(
+    bool Detected,
+    long? StartTimeMs,
+    int SecondEnemyPeakCount,
+    string Label,
+    string Detail);
+
+internal readonly record struct WvwSummaryEnemyTeamSnapshot(
+    ulong TeamId,
+    int PlayerCount,
+    Vector3 Centroid,
+    double DistanceToSquad);
+
+internal readonly record struct WvwSummaryThreeWaySnapshot(
+    long Time,
+    ulong PrimaryTeamId,
+    ulong SecondaryTeamId,
+    int PrimaryEnemyCount,
+    int SecondEnemyCount,
+    double PrimaryDistanceToSquad,
+    double SecondaryDistanceToSquad,
+    double EnemyCenterDistance);
 
 internal readonly record struct WvwSummaryMomentumSnapshot(
     long Time,
