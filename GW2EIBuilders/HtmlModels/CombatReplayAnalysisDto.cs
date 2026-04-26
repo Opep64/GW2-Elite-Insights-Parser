@@ -2957,7 +2957,7 @@ internal static class CombatReplayAnalysisBuilder
         int squadDowns = eventAnalysis.Downs.Events.Count(evt => !evt.IsEnemy);
         int squadRecoveries = eventAnalysis.Recovered.Events.Count(evt => !evt.IsEnemy && evt.UsesSupportView);
         int ccImpactedEnemyDowns = eventAnalysis.Downs.Events.Count(evt => evt.IsEnemy && evt.CcImpacted);
-        int stripSyncedBursts = squadAnalysis.StripSynced.Count(value => value);
+        int stripSyncedBursts = squadBurstWindows;
         double burstIntensity = 100.0 * Math.Clamp((squadBurstWindows + enemyBurstWindows) / 6.0, 0.0, 1.0);
         double conversionContest = 100.0 * Math.Clamp((enemyDowns + enemyKills + enemyRecoveries) / 8.0, 0.0, 1.0);
         double boonCrackNeed = 100.0 * Math.Clamp((stripSyncedBursts / 6.0) * 0.65 + (enemyRecoveries / Math.Max((double)enemyDowns, 1.0)) * 0.35, 0.0, 1.0);
@@ -6085,7 +6085,7 @@ internal static class CombatReplayAnalysisBuilder
 
         foreach (HealthDamageEvent damageEvent in damageEvents)
         {
-            int totalDamage = damageEvent.HealthDamage + damageEvent.ShieldDamage;
+            int totalDamage = damageEvent.HealthDamage;
             if (totalDamage <= 0)
             {
                 continue;
@@ -6135,7 +6135,7 @@ internal static class CombatReplayAnalysisBuilder
                 : totalDamage;
         }
 
-        int totalDamageTaken = damageEvents.Sum(damageEvent => damageEvent.HealthDamage + damageEvent.ShieldDamage);
+        int totalDamageTaken = damageEvents.Sum(damageEvent => damageEvent.HealthDamage);
         int barrierDamageTaken = damageEvents.Sum(damageEvent => damageEvent.ShieldDamage);
         List<CombatReplayEventContributionDto> conditions = BuildDownConditionList(log, actor, conditionSnapshotTime);
         List<CombatReplayEventContributionDto> conditionDamageBreakdown = [.. conditionDamageBySkill.Values
@@ -6915,8 +6915,9 @@ internal static class CombatReplayAnalysisBuilder
     {
         return [.. damageEvents.Select(damageEvent =>
         {
+            int healthDamage = Math.Max(damageEvent.HealthDamage - damageEvent.ShieldDamage, 0);
             string value = damageEvent.ShieldDamage > 0
-                ? $"{FormatWholeNumber(damageEvent.HealthDamage)} health, {FormatWholeNumber(damageEvent.ShieldDamage)} barrier removed"
+                ? $"{FormatWholeNumber(healthDamage)} health, {FormatWholeNumber(damageEvent.ShieldDamage)} barrier removed ({FormatWholeNumber(damageEvent.HealthDamage)} total)"
                 : $"{FormatWholeNumber(damageEvent.HealthDamage)} health";
             AgentItem sourceAgent = !damageEvent.CreditedFrom.IsUnknown
                 ? damageEvent.CreditedFrom
@@ -6943,8 +6944,9 @@ internal static class CombatReplayAnalysisBuilder
     {
         return [.. damageEvents.Select(damageEvent =>
         {
+            int healthDamage = Math.Max(damageEvent.HealthDamage - damageEvent.ShieldDamage, 0);
             string value = damageEvent.ShieldDamage > 0
-                ? $"{FormatWholeNumber(damageEvent.HealthDamage)} health, {FormatWholeNumber(damageEvent.ShieldDamage)} barrier removed"
+                ? $"{FormatWholeNumber(healthDamage)} health, {FormatWholeNumber(damageEvent.ShieldDamage)} barrier removed ({FormatWholeNumber(damageEvent.HealthDamage)} total)"
                 : $"{FormatWholeNumber(damageEvent.HealthDamage)} health";
             string secondary = "";
             if (!damageEvent.CreditedFrom.IsUnknown)
@@ -7938,7 +7940,7 @@ internal static class CombatReplayAnalysisBuilder
             {
                 continue;
             }
-            if (TryGetPosition(attacker, log, time, out var position))
+            if (TryGetEligiblePosition(attacker, log, time, out var position))
             {
                 attackerPositions[attacker.UniqueID] = position;
             }
@@ -7951,7 +7953,7 @@ internal static class CombatReplayAnalysisBuilder
             {
                 continue;
             }
-            if (TryGetPosition(target, log, time, out var position))
+            if (TryGetEligiblePosition(target, log, time, out var position))
             {
                 targetPositions[target.UniqueID] = position;
             }

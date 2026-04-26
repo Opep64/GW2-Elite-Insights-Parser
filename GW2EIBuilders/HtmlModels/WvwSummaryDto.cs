@@ -428,11 +428,13 @@ internal class WvwSummaryDto
         int healAddonPlayerCount = GetHealingAddonPlayerCount(log, squadActors);
         double healAddonCoverage = squadActors.Count > 0 ? healAddonPlayerCount * 1.0 / squadActors.Count : 0.0;
         string healAddonCoverageLabel = $"{healAddonPlayerCount}/{squadActors.Count} squad players ({FormatDecimal(healAddonCoverage * 100.0)}%) had Healing Stats";
-        int squadHealthDamageTaken = (int)Math.Max(0, combatReplayAnalysis.Defense.HealthDamageToSquad);
+        (long squadHealthDamageTaken, long squadBarrierAbsorbed) = ComputePhaseSquadIncomingDamage(log, squadActors, phase);
+        double squadNegatedDamage = ComputePhaseEstimatedNegatedDamage(combatReplayAnalysis.Defense, phase);
+        long squadPetMinionAbsorption = ComputePhasePetMinionAbsorption(log, squadActors, phase);
         long squadHealingTotal = log.CombatData.HasEXTHealing
             ? squadActors.Sum(actor => actor.EXTHealing.GetOutgoingHealStats(null, log, phase.Start, phase.End).Healing)
             : 0;
-        CombatReplayDefenseSavedPlayersSummaryDto savedPlayersSummary = combatReplayAnalysis.Defense.SavedPlayersSummary;
+        CombatReplayDefenseSavedPlayersSummaryDto savedPlayersSummary = BuildPhaseSavedPlayersSummary(combatReplayAnalysis.Defense, phase);
 
         var supportMetrics = new List<WvwSummaryExecutionMetricDto>(5);
         if (log.CombatData.HasEXTHealing && healAddonCoverage >= ExecutionMinimumHealingCoverage && squadHealthDamageTaken > 0)
@@ -477,7 +479,13 @@ internal class WvwSummaryDto
                 "Weighted support boon coverage",
                 "Neutralized at 50: the squad never had threatened replay samples for weighted support-boon coverage in this phase."));
         }
-        WvwSummaryExecutionMetricDto preventionMetric = BuildPreventionExecutionMetric(combatReplayAnalysis, savedPlayersSummary, out string preventionSummary);
+        WvwSummaryExecutionMetricDto preventionMetric = BuildPreventionExecutionMetric(
+            squadBarrierAbsorbed,
+            squadNegatedDamage,
+            squadPetMinionAbsorption,
+            squadHealthDamageTaken,
+            savedPlayersSummary,
+            out string preventionSummary);
         supportMetrics.Add(preventionMetric);
         if (savedPlayersSummary.SavedCases > 0 || squadDownState.Downs > 0)
         {
@@ -886,36 +894,141 @@ internal class WvwSummaryDto
     }
 
     private static WvwSummaryExecutionMetricDto BuildPreventionExecutionMetric(
-        CombatReplayAnalysisDto combatReplayAnalysis,
+        long barrierAbsorbed,
+        double negatedDamage,
+        long petMinionAbsorption,
+        long squadHealthDamageTaken,
         CombatReplayDefenseSavedPlayersSummaryDto savedPlayersSummary,
         out string summary)
     {
         const string label = "Prevention value";
 
-        double barrierAbsorbed = Math.Max(0.0, combatReplayAnalysis.Defense.BarrierDamageAbsorbed);
-        double negatedDamage = Math.Max(0.0, combatReplayAnalysis.Defense.NegatedHitSummaries.Sum(entry => entry.EstimatedPreventedDamage));
-        double petMinionAbsorption = Math.Max(0.0, combatReplayAnalysis.Defense.TotalPetMinionDamageAbsorbed);
-        double totalPrevention = barrierAbsorbed + negatedDamage + petMinionAbsorption;
-        double squadHealthDamageTaken = Math.Max(0.0, combatReplayAnalysis.Defense.HealthDamageToSquad);
+        double phaseBarrierAbsorbed = Math.Max(0.0, barrierAbsorbed);
+        double phaseNegatedDamage = Math.Max(0.0, negatedDamage);
+        double phasePetMinionAbsorption = Math.Max(0.0, petMinionAbsorption);
+        double phaseHealthDamageTaken = Math.Max(0.0, squadHealthDamageTaken);
+        double totalPrevention = phaseBarrierAbsorbed + phaseNegatedDamage + phasePetMinionAbsorption;
 
-        summary = $"{FormatWholeNumber((long)Math.Round(barrierAbsorbed))} barrier absorbed, {FormatWholeNumber((long)Math.Round(negatedDamage))} estimated negated damage, and {FormatWholeNumber((long)Math.Round(petMinionAbsorption))} pet/minion absorption reduced incoming pressure before recovery work.";
-        if (totalPrevention <= 0.0 && squadHealthDamageTaken <= 0.0)
+        summary = $"{FormatWholeNumber((long)Math.Round(phaseBarrierAbsorbed))} barrier absorbed, {FormatWholeNumber((long)Math.Round(phaseNegatedDamage))} estimated negated damage, and {FormatWholeNumber((long)Math.Round(phasePetMinionAbsorption))} pet/minion absorption reduced incoming pressure before recovery work.";
+        if (totalPrevention <= 0.0 && phaseHealthDamageTaken <= 0.0)
         {
             summary = "Prevention value was neutralized because this phase had no tracked barrier, negation, pet/minion absorption, or squad health damage to compare.";
             return BuildNeutralizedExecutionMetric(label, summary);
         }
 
-        double totalPressure = totalPrevention + squadHealthDamageTaken;
+        double totalPressure = totalPrevention + phaseHealthDamageTaken;
         double preventionShare = totalPressure > 0.0 ? totalPrevention * 100.0 / totalPressure : 0.0;
         int score = ComputePreventionExecutionScore(preventionShare);
-        string note = $"{FormatWholeNumber((long)Math.Round(barrierAbsorbed))} barrier absorbed + {FormatWholeNumber((long)Math.Round(negatedDamage))} estimated negated damage + {FormatWholeNumber((long)Math.Round(petMinionAbsorption))} pet/minion absorption. Scores against realistic prevention-share bands rather than expecting prevention to match damage taken. {savedPlayersSummary.BarrierSavedCases} barrier saves and {savedPlayersSummary.NegatedDamageSavedCases} negated-damage saves were detected.";
+        string note = $"{FormatWholeNumber((long)Math.Round(phaseBarrierAbsorbed))} barrier absorbed + {FormatWholeNumber((long)Math.Round(phaseNegatedDamage))} estimated negated damage + {FormatWholeNumber((long)Math.Round(phasePetMinionAbsorption))} pet/minion absorption. Scores against realistic prevention-share bands rather than expecting prevention to match damage taken. {savedPlayersSummary.BarrierSavedCases} barrier saves and {savedPlayersSummary.NegatedDamageSavedCases} negated-damage saves were detected.";
         return new WvwSummaryExecutionMetricDto
         {
             Label = label,
-            Value = $"{FormatDecimal(preventionShare)}% of total incoming pressure prevented ({FormatWholeNumber((long)Math.Round(totalPrevention))} prevention vs {FormatWholeNumber((long)Math.Round(squadHealthDamageTaken))} squad health damage)",
+            Value = $"{FormatDecimal(preventionShare)}% of total incoming pressure prevented ({FormatWholeNumber((long)Math.Round(totalPrevention))} prevention vs {FormatWholeNumber((long)Math.Round(phaseHealthDamageTaken))} squad health damage)",
             Note = note,
             Available = true,
             Score = score,
+        };
+    }
+
+    private static (long HealthDamage, long BarrierAbsorbed) ComputePhaseSquadIncomingDamage(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadActors,
+        PhaseData phase)
+    {
+        long healthDamage = 0;
+        long barrierAbsorbed = 0;
+        foreach (SingleActor actor in squadActors)
+        {
+            foreach (HealthDamageEvent damageEvent in actor.GetDamageTakenEvents(null, log, phase.Start, phase.End))
+            {
+                if (!damageEvent.HasHit || damageEvent.HealthDamage <= 0)
+                {
+                    continue;
+                }
+
+                healthDamage += Math.Max(damageEvent.HealthDamage - damageEvent.ShieldDamage, 0);
+                barrierAbsorbed += damageEvent.ShieldDamage;
+            }
+        }
+        return (healthDamage, barrierAbsorbed);
+    }
+
+    private static double ComputePhaseEstimatedNegatedDamage(
+        CombatReplayDefenseAnalysisDto defense,
+        PhaseData phase)
+    {
+        return Math.Round(defense.NegatedHitSummaries
+            .SelectMany(summary => summary.Occurrences)
+            .Where(occurrence => occurrence.Time >= phase.Start && occurrence.Time <= phase.End)
+            .Sum(occurrence => occurrence.EstimatedPreventedDamage), 1);
+    }
+
+    private static long ComputePhasePetMinionAbsorption(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadActors,
+        PhaseData phase)
+    {
+        long totalAbsorbed = 0;
+        foreach (SingleActor actor in squadActors)
+        {
+            foreach (Minions minions in actor.GetMinions(log))
+            {
+                foreach (HealthDamageEvent damageEvent in minions.GetDamageTakenEvents(null, log, phase.Start, phase.End))
+                {
+                    if (damageEvent.HasHit && damageEvent.HealthDamage > 0)
+                    {
+                        totalAbsorbed += damageEvent.HealthDamage;
+                    }
+                }
+            }
+        }
+        return totalAbsorbed;
+    }
+
+    private static CombatReplayDefenseSavedPlayersSummaryDto BuildPhaseSavedPlayersSummary(
+        CombatReplayDefenseAnalysisDto defense,
+        PhaseData phase)
+    {
+        CombatReplayDefenseMitigationThresholdDto? threshold99 = defense.Mitigation.Thresholds
+            .FirstOrDefault(threshold => threshold.ThresholdPercent == 99);
+        if (threshold99 == null || threshold99.Events.Count == 0)
+        {
+            return new CombatReplayDefenseSavedPlayersSummaryDto();
+        }
+
+        List<CombatReplayDefenseMitigationEventDto> savedEvents = [.. threshold99.Events.Where(evt =>
+            evt.RecoveryTime >= phase.Start &&
+            evt.Time <= phase.End &&
+            (evt.BarrierSavedPlayer || evt.EstimatedMitigationSavedPlayer || evt.EstimatedNegatedDamageSavedPlayer))];
+        if (savedEvents.Count == 0)
+        {
+            return new CombatReplayDefenseSavedPlayersSummaryDto();
+        }
+
+        int barrierSavedCases = savedEvents.Count(evt => evt.BarrierSavedPlayer);
+        int damageReductionSavedCases = savedEvents.Count(evt => evt.EstimatedMitigationSavedPlayer);
+        int negatedDamageSavedCases = savedEvents.Count(evt => evt.EstimatedNegatedDamageSavedPlayer);
+        int bothSavedCases = savedEvents.Count(evt => evt.BarrierSavedPlayer && evt.EstimatedMitigationSavedPlayer);
+        int multiSourceSavedCases = savedEvents.Count(evt =>
+            (evt.BarrierSavedPlayer ? 1 : 0) +
+            (evt.EstimatedMitigationSavedPlayer ? 1 : 0) +
+            (evt.EstimatedNegatedDamageSavedPlayer ? 1 : 0) > 1);
+
+        return new CombatReplayDefenseSavedPlayersSummaryDto
+        {
+            SavedCases = savedEvents.Count,
+            TotalBarrierAbsorbed = Math.Round(savedEvents.Sum(evt => evt.BarrierAbsorbedToLowest), 1),
+            BarrierSavedCases = barrierSavedCases,
+            TotalEstimatedDamageReduction = Math.Round(savedEvents.Sum(evt => evt.EstimatedMitigationToLowest), 0),
+            DamageReductionSavedCases = damageReductionSavedCases,
+            TotalEstimatedNegatedDamage = Math.Round(savedEvents.Sum(evt => evt.EstimatedNegatedDamageToLowest), 0),
+            NegatedDamageSavedCases = negatedDamageSavedCases,
+            AverageLowestHealthPercent = Math.Round(savedEvents.Average(evt => evt.LowestHealthPercent), 1),
+            LowestLowestHealthPercent = Math.Round(savedEvents.Min(evt => evt.LowestHealthPercent), 1),
+            BothSavedCases = bothSavedCases,
+            MultiSourceSavedCases = multiSourceSavedCases,
+            TotalIncomingDamage = Math.Round(savedEvents.Sum(evt => evt.IncomingDamage), 1),
+            TotalIncomingHealing = Math.Round(savedEvents.Sum(evt => evt.IncomingHealing), 1),
         };
     }
 
@@ -4022,7 +4135,19 @@ internal class WvwSummaryDto
 
     private static string BuildHealStatsNotice(int healAddonPlayers, int totalPlayers)
     {
-        return $"Heal stats are incomplete: Healing Stats add-on detected for {healAddonPlayers} of {totalPlayers} players in this phase.";
+        if (totalPlayers <= 0)
+        {
+            return "Healing Stats add-on coverage is unavailable because this phase has no active squad players.";
+        }
+        if (healAddonPlayers >= totalPlayers)
+        {
+            return $"Healing Stats add-on detected for all {totalPlayers} active squad players in this phase.";
+        }
+        if (healAddonPlayers > 0)
+        {
+            return $"Heal stats are incomplete: Healing Stats add-on detected for {healAddonPlayers} of {totalPlayers} active squad players in this phase.";
+        }
+        return $"Healing Stats add-on data is unavailable for active squad players in this phase.";
     }
 
     private static int GetHealingAddonPlayerCount(ParsedEvtcLog log, IReadOnlyList<SingleActor> squadActors)

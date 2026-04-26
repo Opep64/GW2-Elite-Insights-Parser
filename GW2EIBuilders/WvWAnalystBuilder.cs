@@ -280,7 +280,7 @@ public sealed class WvWAnalystBuilder
             CombatSeconds = Math.Round(player.GetTimeSpentInCombat(log, phase.Start, phase.End) / 1000.0, 1),
             Damage = damage,
             Downs = downs,
-            Kills = Math.Min(kills, downs),
+            Kills = kills,
             Strips = support.BoonStripCount,
             OutgoingCleanses = support.ConditionCleanseCount,
             Healing = log.CombatData.HasEXTHealing ? player.EXTHealing.GetOutgoingHealStats(null, log, phase.Start, phase.End).Healing : 0,
