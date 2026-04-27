@@ -65,7 +65,9 @@ public sealed class WvWAnalystBuilder
         var defenseSaves = BuildDefenseSaves(combatReplayAnalysis);
         var mitigationSummary = BuildMitigationSummary(combatReplayAnalysis);
         var obliterate = BuildObliterateSummary(combatReplayAnalysis);
-        var topBursts = BuildTopBursts(combatReplayAnalysis, squadPlayers);
+        var topBursts = BuildTopBursts(combatReplayAnalysis, squadPlayers, analysis => analysis.Squad);
+        var enemyTopBursts = BuildTopBursts(combatReplayAnalysis, hostilePlayerTargets, analysis => analysis.Enemy);
+        var enemyPlayers = BuildEnemyPlayerSummaries(log, mainPhase, hostilePlayerTargets, squadPlayers);
         var fightShape = BuildFightShapeDiagnostics(log, mainPhase, squadPlayers, hostilePlayerTargets, combatReplayAnalysis, outcome);
         var squadClasses = BuildSideClasses(squadPlayers);
         var enemyClasses = BuildSideClasses(hostilePlayerTargets);
@@ -74,9 +76,9 @@ public sealed class WvWAnalystBuilder
         {
             Meta = new WvWAnalystMetaDto
             {
-                SchemaVersion = "1.18.0",
+                SchemaVersion = "1.19.0",
                 PayloadType = "wvw-analyst-fight",
-                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context",
+                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+enemy-player-performance+enemy-top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
                 ParserVersion = parserVersion.ToString(),
             },
@@ -136,7 +138,9 @@ public sealed class WvWAnalystBuilder
             FightShape = fightShape,
             ThreatBoons = threatBoons,
             TopBursts = topBursts,
+            EnemyTopBursts = enemyTopBursts,
             Players = players,
+            EnemyPlayers = enemyPlayers,
         };
     }
 
@@ -1072,6 +1076,49 @@ public sealed class WvWAnalystBuilder
         };
     }
 
+    private static IReadOnlyList<WvWAnalystEnemyPlayerSummaryDto> BuildEnemyPlayerSummaries(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        IReadOnlyList<SingleActor> hostilePlayerTargets,
+        IReadOnlyList<SingleActor> squadPlayers)
+    {
+        double durationSeconds = Math.Max(phase.DurationInMS / 1000.0, 1.0);
+        double durationMinutes = durationSeconds / 60.0;
+
+        return hostilePlayerTargets
+            .Select(enemy =>
+            {
+                long damage = 0;
+                foreach (SingleActor target in squadPlayers)
+                {
+                    DamageStatistics damageStats = enemy.GetDamageStats(target, log, phase.Start, phase.End);
+                    damage += damageStats.Damage;
+                }
+
+                SupportStatistics support = enemy.GetToAllySupportStats(log, phase.Start, phase.End);
+                int strips = support.BoonStripCount;
+
+                return new WvWAnalystEnemyPlayerSummaryDto
+                {
+                    ActorId = enemy.UniqueID,
+                    Profession = enemy.BaseSpec.ToString(),
+                    EliteSpec = enemy.Spec.ToString(),
+                    Icon = enemy.GetIcon(),
+                    ActiveSeconds = Math.Round(enemy.GetActiveDuration(log, phase.Start, phase.End) / 1000.0, 1),
+                    CombatSeconds = Math.Round(enemy.GetTimeSpentInCombat(log, phase.Start, phase.End) / 1000.0, 1),
+                    Damage = damage,
+                    Dps = Math.Round(damage / durationSeconds, 1),
+                    Strips = strips,
+                    StripsPerMinute = Math.Round(strips / durationMinutes, 1),
+                };
+            })
+            .OrderBy(enemy => BuildClassLabel(enemy.Profession, enemy.EliteSpec), StringComparer.OrdinalIgnoreCase)
+            .ThenByDescending(enemy => enemy.Dps)
+            .ThenByDescending(enemy => enemy.StripsPerMinute)
+            .ThenBy(enemy => enemy.ActorId)
+            .ToArray();
+    }
+
     private static WvWAnalystCommanderSummaryDto BuildCommanderSummary(
         WvwSummaryDto summary,
         CombatReplayAnalysisDto? combatReplayAnalysis,
@@ -1284,19 +1331,24 @@ public sealed class WvWAnalystBuilder
 
     private static IReadOnlyList<WvWAnalystTopBurstDto> BuildTopBursts(
         CombatReplayAnalysisDto? combatReplayAnalysis,
-        IReadOnlyList<SingleActor> squadPlayers)
+        IReadOnlyList<SingleActor> actors,
+        Func<CombatReplayAnalysisDto, CombatReplayTeamAnalysisDto> teamSelector)
     {
-        if (combatReplayAnalysis?.Squad?.TopBursts is null ||
-            combatReplayAnalysis.Squad.TopBursts.Count == 0 ||
-            combatReplayAnalysis.Times.Length == 0)
+        if (combatReplayAnalysis is null || combatReplayAnalysis.Times.Length == 0)
         {
             return Array.Empty<WvWAnalystTopBurstDto>();
         }
 
-        var playersById = squadPlayers.ToDictionary(player => player.UniqueID);
+        CombatReplayTeamAnalysisDto teamAnalysis = teamSelector(combatReplayAnalysis);
+        if (teamAnalysis.TopBursts is null || teamAnalysis.TopBursts.Count == 0)
+        {
+            return Array.Empty<WvWAnalystTopBurstDto>();
+        }
 
-        return combatReplayAnalysis.Squad.TopBursts
-            .Select(burst => BuildTopBurst(combatReplayAnalysis, playersById, burst))
+        var actorsById = actors.ToDictionary(actor => actor.UniqueID);
+
+        return teamAnalysis.TopBursts
+            .Select(burst => BuildTopBurst(combatReplayAnalysis, teamAnalysis, actorsById, burst))
             .Where(burst => burst is not null)
             .Select(burst => burst!)
             .ToArray();
@@ -1304,7 +1356,8 @@ public sealed class WvWAnalystBuilder
 
     private static WvWAnalystTopBurstDto? BuildTopBurst(
         CombatReplayAnalysisDto combatReplayAnalysis,
-        IReadOnlyDictionary<int, SingleActor> playersById,
+        CombatReplayTeamAnalysisDto teamAnalysis,
+        IReadOnlyDictionary<int, SingleActor> actorsById,
         CombatReplayAnalysisBurstSummaryDto burst)
     {
         var snapshotIndex = Array.BinarySearch(combatReplayAnalysis.Times, burst.Time);
@@ -1312,6 +1365,17 @@ public sealed class WvWAnalystBuilder
         {
             return null;
         }
+
+        var topPressureActors = BuildTopBurstActorSummaries(
+            actorsById,
+            teamAnalysis.TopDamageActorIds,
+            teamAnalysis.TopDamageValues,
+            snapshotIndex);
+        var topStripActors = BuildTopBurstActorSummaries(
+            actorsById,
+            teamAnalysis.TopStripActorIds,
+            teamAnalysis.TopStripValues,
+            snapshotIndex);
 
         return new WvWAnalystTopBurstDto
         {
@@ -1321,16 +1385,10 @@ public sealed class WvWAnalystBuilder
             Strips = burst.Strips,
             Downs = burst.Downs,
             Kills = burst.Kills,
-            TopPressure = BuildTopBurstActorSummary(
-                playersById,
-                combatReplayAnalysis.Squad.TopDamageActorIds,
-                combatReplayAnalysis.Squad.TopDamageValues,
-                snapshotIndex),
-            TopStrips = BuildTopBurstActorSummary(
-                playersById,
-                combatReplayAnalysis.Squad.TopStripActorIds,
-                combatReplayAnalysis.Squad.TopStripValues,
-                snapshotIndex),
+            TopPressure = topPressureActors.FirstOrDefault() ?? new WvWAnalystTopBurstActorDto(),
+            TopStrips = topStripActors.FirstOrDefault() ?? new WvWAnalystTopBurstActorDto(),
+            TopPressureActors = topPressureActors,
+            TopStripActors = topStripActors,
         };
     }
 
@@ -1339,8 +1397,8 @@ public sealed class WvWAnalystBuilder
         return $"{(time / 1000.0).ToString("0.000", CultureInfo.InvariantCulture)}s";
     }
 
-    private static WvWAnalystTopBurstActorDto BuildTopBurstActorSummary<TValue>(
-        IReadOnlyDictionary<int, SingleActor> playersById,
+    private static IReadOnlyList<WvWAnalystTopBurstActorDto> BuildTopBurstActorSummaries<TValue>(
+        IReadOnlyDictionary<int, SingleActor> actorsById,
         IReadOnlyList<int[]> actorIdsBySnapshot,
         IReadOnlyList<TValue[]> valuesBySnapshot,
         int snapshotIndex)
@@ -1350,36 +1408,44 @@ public sealed class WvWAnalystBuilder
             snapshotIndex >= actorIdsBySnapshot.Count ||
             snapshotIndex >= valuesBySnapshot.Count)
         {
-            return new WvWAnalystTopBurstActorDto();
+            return Array.Empty<WvWAnalystTopBurstActorDto>();
         }
 
         var actorIds = actorIdsBySnapshot[snapshotIndex];
         var values = valuesBySnapshot[snapshotIndex];
         if (actorIds is null || values is null || actorIds.Length == 0 || values.Length == 0)
         {
-            return new WvWAnalystTopBurstActorDto();
+            return Array.Empty<WvWAnalystTopBurstActorDto>();
         }
 
-        var actorId = actorIds[0];
-        if (!playersById.TryGetValue(actorId, out var player))
+        var limit = Math.Min(actorIds.Length, values.Length);
+        var result = new List<WvWAnalystTopBurstActorDto>(limit);
+        for (var index = 0; index < limit; index++)
         {
-            return new WvWAnalystTopBurstActorDto
+            var actorId = actorIds[index];
+            if (!actorsById.TryGetValue(actorId, out var actor))
+            {
+                result.Add(new WvWAnalystTopBurstActorDto
+                {
+                    ActorId = actorId,
+                    Amount = Convert.ToDouble(values[index], CultureInfo.InvariantCulture),
+                });
+                continue;
+            }
+
+            result.Add(new WvWAnalystTopBurstActorDto
             {
                 ActorId = actorId,
-                Amount = Convert.ToDouble(values[0], CultureInfo.InvariantCulture),
-            };
+                Account = actor.Account,
+                Character = actor.Character,
+                Profession = actor.BaseSpec.ToString(),
+                EliteSpec = actor.Spec.ToString(),
+                Icon = actor.GetIcon(),
+                Amount = Convert.ToDouble(values[index], CultureInfo.InvariantCulture),
+            });
         }
 
-        return new WvWAnalystTopBurstActorDto
-        {
-            ActorId = actorId,
-            Account = player.Account,
-            Character = player.Character,
-            Profession = player.BaseSpec.ToString(),
-            EliteSpec = player.Spec.ToString(),
-            Icon = player.GetIcon(),
-            Amount = Convert.ToDouble(values[0], CultureInfo.InvariantCulture),
-        };
+        return result;
     }
 
     private static IReadOnlyList<WvWAnalystPlayerThreatBoonSummaryDto> BuildPlayerThreatBoons(
@@ -1805,7 +1871,9 @@ internal sealed class WvWAnalystFightPayloadDto
     public WvWAnalystFightShapeDto? FightShape { get; set; }
     public IReadOnlyList<WvWAnalystThreatBoonSummaryDto> ThreatBoons { get; set; } = Array.Empty<WvWAnalystThreatBoonSummaryDto>();
     public IReadOnlyList<WvWAnalystTopBurstDto> TopBursts { get; set; } = Array.Empty<WvWAnalystTopBurstDto>();
+    public IReadOnlyList<WvWAnalystTopBurstDto> EnemyTopBursts { get; set; } = Array.Empty<WvWAnalystTopBurstDto>();
     public IReadOnlyList<WvWAnalystPlayerSummaryDto> Players { get; set; } = Array.Empty<WvWAnalystPlayerSummaryDto>();
+    public IReadOnlyList<WvWAnalystEnemyPlayerSummaryDto> EnemyPlayers { get; set; } = Array.Empty<WvWAnalystEnemyPlayerSummaryDto>();
 }
 
 internal sealed class WvWAnalystFightShapeDto
@@ -2177,6 +2245,20 @@ internal sealed class WvWAnalystPlayerSummaryDto
     public IReadOnlyList<WvWAnalystPlayerProvidedBoonSummaryDto> ProvidedBoons { get; set; } = Array.Empty<WvWAnalystPlayerProvidedBoonSummaryDto>();
 }
 
+internal sealed class WvWAnalystEnemyPlayerSummaryDto
+{
+    public int ActorId { get; set; }
+    public string Profession { get; set; } = string.Empty;
+    public string EliteSpec { get; set; } = string.Empty;
+    public string Icon { get; set; } = string.Empty;
+    public double ActiveSeconds { get; set; }
+    public double CombatSeconds { get; set; }
+    public long Damage { get; set; }
+    public double Dps { get; set; }
+    public int Strips { get; set; }
+    public double StripsPerMinute { get; set; }
+}
+
 internal sealed class WvWAnalystPlayerRoleMixEntryDto
 {
     public string Label { get; set; } = string.Empty;
@@ -2228,6 +2310,8 @@ internal sealed class WvWAnalystTopBurstDto
     public int Kills { get; set; }
     public WvWAnalystTopBurstActorDto TopPressure { get; set; } = new();
     public WvWAnalystTopBurstActorDto TopStrips { get; set; } = new();
+    public IReadOnlyList<WvWAnalystTopBurstActorDto> TopPressureActors { get; set; } = Array.Empty<WvWAnalystTopBurstActorDto>();
+    public IReadOnlyList<WvWAnalystTopBurstActorDto> TopStripActors { get; set; } = Array.Empty<WvWAnalystTopBurstActorDto>();
 }
 
 internal sealed class WvWAnalystTopBurstActorDto
