@@ -4281,6 +4281,23 @@
                             </div>
                         </div>
 
+                        <div v-if="selectedPlayerEvaluation.fightImpact && selectedPlayerEvaluation.fightImpact.score > 0" class="combat-replay-fight-demand">
+                            <div class="combat-replay-fight-demand-title">Fight Impact</div>
+                            <div class="combat-replay-fight-demand-summary">
+                                {{formatAmount(selectedPlayerEvaluation.fightImpact.score)}} / 100 fight coverage.
+                                {{selectedPlayerEvaluation.fightImpact.label || ''}}.
+                                Impact points are lane strength multiplied by this fight's demand weight.
+                                {{selectedPlayerEvaluation.fightImpact.summary}}
+                            </div>
+                            <div v-if="selectedPlayerEvaluation.fightImpact.lanes && selectedPlayerEvaluation.fightImpact.lanes.length > 0" class="combat-replay-fight-demand-lanes">
+                                <div v-for="lane in selectedPlayerEvaluation.fightImpact.lanes.slice(0, 4)" :key="'player-fight-impact-' + lane.key" class="combat-replay-fight-demand-pill" :data-original-title="formatPercent(lane.strengthPercent) + ' lane strength x ' + formatPercent(lane.demandWeightPercent) + ' fight-demand weight. ' + (lane.evidenceLine || selectedPlayerEvaluation.fightImpact.detail)">
+                                    <span class="combat-replay-fight-demand-pill-label">{{lane.label}}</span>
+                                    <span class="combat-replay-fight-demand-pill-value">{{formatAmount(lane.impactScore)}}/{{formatAmount(lane.demandWeightPercent)}} pts</span>
+                                    <span class="combat-replay-fight-demand-pill-answer combat-replay-fight-demand-pill-answer-neutral">{{formatPercent(lane.strengthPercent)}} strength / {{lane.demandLabel}} demand</span>
+                                </div>
+                            </div>
+                        </div>
+
                         <div v-if="selectedPlayerEvaluation.lanes && selectedPlayerEvaluation.lanes.length > 0" class="combat-replay-player-lane-list">
                             <component
                                 v-for="lane in selectedPlayerEvaluation.lanes"

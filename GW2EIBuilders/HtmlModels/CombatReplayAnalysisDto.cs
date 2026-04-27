@@ -668,6 +668,7 @@ internal class CombatReplayPlayerEvaluationDto
     public string FitSummary { get; set; } = "";
     public string DemandFitSummary { get; set; } = "";
     public CombatReplayContributionConfidenceDto Confidence { get; set; } = new();
+    public CombatReplayPlayerFightImpactDto FightImpact { get; set; } = new();
     public List<CombatReplayPlayerContributionLaneDto> Lanes { get; set; } = [];
     public List<CombatReplayPlayerEvaluationModifierDto> Modifiers { get; set; } = [];
     public List<string> EvidenceSnapshot { get; set; } = [];
@@ -675,6 +676,30 @@ internal class CombatReplayPlayerEvaluationDto
     public string KeyContributionSummary { get; set; } = "";
     public List<CombatReplayPlayerRoleMixEntryDto> RoleMix { get; set; } = [];
     public List<CombatReplayPlayerEvaluationAreaDto> Areas { get; set; } = [];
+}
+
+internal class CombatReplayPlayerFightImpactDto
+{
+    public double Score { get; set; }
+    public string Label { get; set; } = "";
+    public string Summary { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public string ConfidenceLabel { get; set; } = "";
+    public List<string> Caveats { get; set; } = [];
+    public List<CombatReplayPlayerFightImpactLaneDto> Lanes { get; set; } = [];
+}
+
+internal class CombatReplayPlayerFightImpactLaneDto
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public double StrengthPercent { get; set; }
+    public double SharePercent { get; set; }
+    public double DemandScorePercent { get; set; }
+    public string DemandLabel { get; set; } = "";
+    public double DemandWeightPercent { get; set; }
+    public double ImpactScore { get; set; }
+    public string EvidenceLine { get; set; } = "";
 }
 
 internal class CombatReplaySpecCapabilityDto
@@ -688,8 +713,35 @@ internal class CombatReplaySpecCapabilityDto
     public string FitSummary { get; set; } = "";
     public string DemandFitSummary { get; set; } = "";
     public string DependencySummary { get; set; } = "";
+    public CombatReplaySpecFightCoverageDto FightCoverage { get; set; } = new();
     public List<CombatReplaySpecCapabilityLaneDto> Lanes { get; set; } = [];
     public List<string> EvidenceSnapshot { get; set; } = [];
+}
+
+internal class CombatReplaySpecFightCoverageDto
+{
+    public double Score { get; set; }
+    public string Label { get; set; } = "";
+    public string Summary { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public List<string> Caveats { get; set; } = [];
+    public List<CombatReplaySpecFightCoverageLaneDto> Lanes { get; set; } = [];
+}
+
+internal class CombatReplaySpecFightCoverageLaneDto
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public double StrengthPercent { get; set; }
+    public double SharePercent { get; set; }
+    public double PerSlotEfficiency { get; set; }
+    public int PlayersContributing { get; set; }
+    public int PlayerCount { get; set; }
+    public double DemandScorePercent { get; set; }
+    public string DemandLabel { get; set; } = "";
+    public double DemandWeightPercent { get; set; }
+    public double CoverageScore { get; set; }
+    public string EvidenceLine { get; set; } = "";
 }
 
 internal class CombatReplaySpecCapabilityLaneDto
@@ -2252,6 +2304,7 @@ internal static class CombatReplayAnalysisBuilder
         ];
         laneSnapshots = [.. laneSnapshots.OrderByDescending(lane => lane.StrengthPercent).ThenByDescending(lane => lane.SharePercent).ThenBy(lane => lane.Label)];
         CombatReplayContributionConfidenceDto confidence = BuildPlayerEvaluationConfidence(aggregate, hasHealingData, hasBarrierData);
+        CombatReplayPlayerFightImpactDto fightImpact = BuildPlayerFightImpact(laneSnapshots, fightDemand, confidence, hasHealingData, hasBarrierData);
         string fitSummary = BuildPlayerFitSummary(aggregate, laneSnapshots, fightDemand, confidence);
         string demandFitSummary = BuildPlayerDemandFitSummary(aggregate, laneSnapshots, fightDemand, confidence);
         string contributionProfile = BuildLegacyContributionProfile(laneSnapshots);
@@ -2262,6 +2315,7 @@ internal static class CombatReplayAnalysisBuilder
             FitSummary = fitSummary,
             DemandFitSummary = demandFitSummary,
             Confidence = confidence,
+            FightImpact = fightImpact,
             Lanes = [.. laneSnapshots.Select(snapshot => new CombatReplayPlayerContributionLaneDto
             {
                 Key = snapshot.Key,
@@ -2432,6 +2486,7 @@ internal static class CombatReplayAnalysisBuilder
             .OrderByDescending(lane => lane.StrengthPercent)
             .ThenByDescending(lane => lane.SharePercent)
             .ThenBy(lane => lane.Label, StringComparer.OrdinalIgnoreCase)];
+        CombatReplaySpecFightCoverageDto fightCoverage = BuildSpecFightCoverage(laneSnapshots, fightDemand, hasHealingData, hasBarrierData);
         return new CombatReplaySpecCapabilityDto
         {
             Key = spec.Key,
@@ -2443,6 +2498,7 @@ internal static class CombatReplayAnalysisBuilder
             FitSummary = BuildSpecFitSummary(laneSnapshots, fightDemand),
             DemandFitSummary = BuildSpecDemandFitSummary(laneSnapshots, fightDemand),
             DependencySummary = BuildSpecDependencySummary(spec, laneSnapshots),
+            FightCoverage = fightCoverage,
             Lanes = [.. laneSnapshots.Select(snapshot => new CombatReplaySpecCapabilityLaneDto
             {
                 Key = snapshot.Key,
@@ -3964,6 +4020,232 @@ internal static class CombatReplayAnalysisBuilder
             Label = label,
             Detail = detail,
             Caveats = caveats,
+        };
+    }
+
+    private static CombatReplayPlayerFightImpactDto BuildPlayerFightImpact(
+        IReadOnlyList<PlayerLaneSnapshot> laneSnapshots,
+        CombatReplayFightDemandDto fightDemand,
+        CombatReplayContributionConfidenceDto confidence,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        var demandByKey = (fightDemand.Lanes ?? [])
+            .Where(lane => !string.IsNullOrWhiteSpace(lane.Key))
+            .GroupBy(lane => lane.Key, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var weightedLanes = laneSnapshots
+            .Select(lane =>
+            {
+                demandByKey.TryGetValue(lane.Key, out CombatReplayFightDemandLaneDto? demand);
+                return new
+                {
+                    Lane = lane,
+                    Demand = demand,
+                    RawWeight = demand is null ? 0.0 : ComputeFightImpactDemandWeight(demand)
+                };
+            })
+            .Where(entry => entry.RawWeight > 0.0 && entry.Demand is not null)
+            .ToArray();
+        double totalRawWeight = weightedLanes.Sum(entry => entry.RawWeight);
+        if (weightedLanes.Length == 0 || totalRawWeight <= 0.0)
+        {
+            return new CombatReplayPlayerFightImpactDto
+            {
+                Label = "No Signal",
+                Summary = "Fight impact could not be weighted because lane demand was unavailable.",
+                Detail = "Raw lane strengths are still available, but demand-adjusted impact needs fight demand scores.",
+                ConfidenceLabel = confidence.Label,
+                Caveats = [.. confidence.Caveats],
+            };
+        }
+
+        List<CombatReplayPlayerFightImpactLaneDto> lanes = [.. weightedLanes
+            .Select(entry =>
+            {
+                PlayerLaneSnapshot lane = entry.Lane;
+                CombatReplayFightDemandLaneDto demand = entry.Demand!;
+                double demandWeightPercent = entry.RawWeight * 100.0 / totalRawWeight;
+                double impactScore = lane.StrengthPercent * demandWeightPercent / 100.0;
+                return new CombatReplayPlayerFightImpactLaneDto
+                {
+                    Key = lane.Key,
+                    Label = lane.Label,
+                    StrengthPercent = lane.StrengthPercent,
+                    SharePercent = lane.SharePercent,
+                    DemandScorePercent = demand.DemandScorePercent,
+                    DemandLabel = demand.DemandLabel,
+                    DemandWeightPercent = Math.Round(demandWeightPercent, 1),
+                    ImpactScore = Math.Round(impactScore, 1),
+                    EvidenceLine = $"{demand.DemandLabel} demand: {demand.EvidenceLine}",
+                };
+            })
+            .OrderByDescending(lane => lane.ImpactScore)
+            .ThenByDescending(lane => lane.DemandScorePercent)
+            .ThenByDescending(lane => lane.StrengthPercent)
+            .ThenBy(lane => lane.Label, StringComparer.OrdinalIgnoreCase)];
+        double score = Math.Round(lanes.Sum(lane => lane.ImpactScore), 1);
+        string label = GetFightImpactLabel(score);
+        var caveats = new List<string>(confidence.Caveats);
+        if (!hasHealingData && lanes.Any(lane => lane.Key == "recovery" && lane.DemandScorePercent >= 30.0))
+        {
+            caveats.Insert(0, "Recovery impact may be undercounted because healing extension data is missing");
+        }
+        if (!hasBarrierData && lanes.Any(lane => lane.Key == "prevention" && lane.DemandScorePercent >= 30.0))
+        {
+            caveats.Insert(0, "Prevention impact may be undercounted because barrier extension data is missing");
+        }
+
+        return new CombatReplayPlayerFightImpactDto
+        {
+            Score = score,
+            Label = label,
+            Summary = BuildPlayerFightImpactSummary(score, lanes),
+            Detail = "Weights this player's raw lane strengths by replay-visible lane demand, then sums the weighted lane points. Raw lane scores are unchanged.",
+            ConfidenceLabel = confidence.Label,
+            Caveats = [.. caveats.Distinct(StringComparer.OrdinalIgnoreCase)],
+            Lanes = lanes,
+        };
+    }
+
+    private static CombatReplaySpecFightCoverageDto BuildSpecFightCoverage(
+        IReadOnlyList<SpecLaneSnapshot> laneSnapshots,
+        CombatReplayFightDemandDto fightDemand,
+        bool hasHealingData,
+        bool hasBarrierData)
+    {
+        var demandByKey = (fightDemand.Lanes ?? [])
+            .Where(lane => !string.IsNullOrWhiteSpace(lane.Key))
+            .GroupBy(lane => lane.Key, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var weightedLanes = laneSnapshots
+            .Select(lane =>
+            {
+                demandByKey.TryGetValue(lane.Key, out CombatReplayFightDemandLaneDto? demand);
+                return new
+                {
+                    Lane = lane,
+                    Demand = demand,
+                    RawWeight = demand is null ? 0.0 : ComputeFightImpactDemandWeight(demand)
+                };
+            })
+            .Where(entry => entry.RawWeight > 0.0 && entry.Demand is not null)
+            .ToArray();
+        double totalRawWeight = weightedLanes.Sum(entry => entry.RawWeight);
+        if (weightedLanes.Length == 0 || totalRawWeight <= 0.0)
+        {
+            return new CombatReplaySpecFightCoverageDto
+            {
+                Label = "No Signal",
+                Summary = "Spec fight coverage could not be weighted because lane demand was unavailable.",
+                Detail = "Raw spec lane capability remains available, but demand-adjusted coverage needs fight demand scores.",
+            };
+        }
+
+        List<CombatReplaySpecFightCoverageLaneDto> lanes = [.. weightedLanes
+            .Select(entry =>
+            {
+                SpecLaneSnapshot lane = entry.Lane;
+                CombatReplayFightDemandLaneDto demand = entry.Demand!;
+                double demandWeightPercent = entry.RawWeight * 100.0 / totalRawWeight;
+                double coverageScore = lane.StrengthPercent * demandWeightPercent / 100.0;
+                return new CombatReplaySpecFightCoverageLaneDto
+                {
+                    Key = lane.Key,
+                    Label = lane.Label,
+                    StrengthPercent = lane.StrengthPercent,
+                    SharePercent = lane.SharePercent,
+                    PerSlotEfficiency = lane.PerSlotEfficiency,
+                    PlayersContributing = lane.PlayersContributing,
+                    PlayerCount = lane.PlayerCount,
+                    DemandScorePercent = demand.DemandScorePercent,
+                    DemandLabel = demand.DemandLabel,
+                    DemandWeightPercent = Math.Round(demandWeightPercent, 1),
+                    CoverageScore = Math.Round(coverageScore, 1),
+                    EvidenceLine = $"{demand.DemandLabel} demand: {demand.EvidenceLine}",
+                };
+            })
+            .OrderByDescending(lane => lane.CoverageScore)
+            .ThenByDescending(lane => lane.DemandScorePercent)
+            .ThenByDescending(lane => lane.StrengthPercent)
+            .ThenBy(lane => lane.Label, StringComparer.OrdinalIgnoreCase)];
+        double score = Math.Round(lanes.Sum(lane => lane.CoverageScore), 1);
+        var caveats = new List<string>();
+        if (!hasHealingData && lanes.Any(lane => lane.Key == "recovery" && lane.DemandScorePercent >= 30.0))
+        {
+            caveats.Add("Recovery coverage may be undercounted because healing extension data is missing");
+        }
+        if (!hasBarrierData && lanes.Any(lane => lane.Key == "prevention" && lane.DemandScorePercent >= 30.0))
+        {
+            caveats.Add("Prevention coverage may be undercounted because barrier extension data is missing");
+        }
+
+        return new CombatReplaySpecFightCoverageDto
+        {
+            Score = score,
+            Label = GetSpecFightCoverageLabel(score),
+            Summary = BuildSpecFightCoverageSummary(score, lanes),
+            Detail = "Weights this spec's raw lane capability by replay-visible lane demand, then sums the weighted coverage points. Raw spec lane capability scores are unchanged.",
+            Caveats = [.. caveats.Distinct(StringComparer.OrdinalIgnoreCase)],
+            Lanes = lanes,
+        };
+    }
+
+    private static string BuildSpecFightCoverageSummary(double score, IReadOnlyList<CombatReplaySpecFightCoverageLaneDto> lanes)
+    {
+        var topLanes = lanes
+            .Where(lane => lane.CoverageScore > 0.0)
+            .Take(3)
+            .Select(lane => $"{lane.Label} {FormatOneDecimal(lane.CoverageScore)}")
+            .ToArray();
+        if (topLanes.Length == 0 || score <= 0.0)
+        {
+            return "No demand-adjusted spec coverage stood out in this fight.";
+        }
+        return $"Demand-adjusted spec coverage came through {string.Join(", ", topLanes)}.";
+    }
+
+    private static string GetSpecFightCoverageLabel(double score)
+    {
+        return score switch
+        {
+            >= 75.0 => "Huge spec coverage",
+            >= 55.0 => "Major spec coverage",
+            >= 30.0 => "Strong spec coverage",
+            > 0.0 => "Focused spec coverage",
+            _ => "No Signal",
+        };
+    }
+
+    private static double ComputeFightImpactDemandWeight(CombatReplayFightDemandLaneDto demand)
+    {
+        double normalizedDemand = Math.Clamp(demand.DemandScorePercent / 100.0, 0.0, 1.0);
+        return Math.Pow(normalizedDemand, 1.15) * Math.Max(demand.WeightMultiplier, 0.01);
+    }
+
+    private static string BuildPlayerFightImpactSummary(double score, IReadOnlyList<CombatReplayPlayerFightImpactLaneDto> lanes)
+    {
+        var topLanes = lanes
+            .Where(lane => lane.ImpactScore > 0.0)
+            .Take(3)
+            .Select(lane => $"{lane.Label} {FormatOneDecimal(lane.ImpactScore)}")
+            .ToArray();
+        if (topLanes.Length == 0 || score <= 0.0)
+        {
+            return "No demand-adjusted contribution stood out in this fight.";
+        }
+        return $"Demand-adjusted value came through {string.Join(", ", topLanes)}.";
+    }
+
+    private static string GetFightImpactLabel(double score)
+    {
+        return score switch
+        {
+            >= 75.0 => "Huge fight share",
+            >= 55.0 => "Major fight share",
+            >= 30.0 => "Strong fight share",
+            > 0.0 => "Focused fight share",
+            _ => "No Signal",
         };
     }
 

@@ -69,16 +69,16 @@ public sealed class WvWAnalystBuilder
         var enemyTopBursts = BuildTopBursts(combatReplayAnalysis, hostilePlayerTargets, analysis => analysis.Enemy);
         var enemyPlayers = BuildEnemyPlayerSummaries(log, mainPhase, hostilePlayerTargets, squadPlayers);
         var fightShape = BuildFightShapeDiagnostics(log, mainPhase, squadPlayers, hostilePlayerTargets, combatReplayAnalysis, outcome);
-        var squadClasses = BuildSideClasses(squadPlayers);
+        var squadClasses = BuildSideClasses(squadPlayers, combatReplayAnalysis?.SpecCapabilities);
         var enemyClasses = BuildSideClasses(hostilePlayerTargets);
 
         return new WvWAnalystFightPayloadDto
         {
             Meta = new WvWAnalystMetaDto
             {
-                SchemaVersion = "1.19.0",
+                SchemaVersion = "1.21.0",
                 PayloadType = "wvw-analyst-fight",
-                DetailLevel = "summary+players+boons+lane-metrics+player-boons+provided-boons+top-bursts+enemy-player-performance+enemy-top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context",
+                DetailLevel = "summary+players+boons+lane-metrics+player-fight-impact+spec-fight-coverage+player-boons+provided-boons+top-bursts+enemy-player-performance+enemy-top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
                 ParserVersion = parserVersion.ToString(),
             },
@@ -909,8 +909,15 @@ public sealed class WvWAnalystBuilder
         };
     }
 
-    private static IReadOnlyList<WvWAnalystSideClassSummaryDto> BuildSideClasses(IReadOnlyList<SingleActor> actors)
+    private static IReadOnlyList<WvWAnalystSideClassSummaryDto> BuildSideClasses(
+        IReadOnlyList<SingleActor> actors,
+        IReadOnlyList<CombatReplaySpecCapabilityDto>? specCapabilities = null)
     {
+        var specCapabilityByLabel = (specCapabilities ?? Array.Empty<CombatReplaySpecCapabilityDto>())
+            .Where(spec => !string.IsNullOrWhiteSpace(spec.Label))
+            .GroupBy(spec => spec.Label, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
         return actors
             .Select(actor => new
             {
@@ -924,10 +931,51 @@ public sealed class WvWAnalystBuilder
                 ClassLabel = group.First().ClassLabel,
                 Icon = group.Select(entry => entry.Icon).FirstOrDefault(icon => !string.IsNullOrWhiteSpace(icon)) ?? string.Empty,
                 Count = group.Count(),
+                FightCoverage = BuildSpecFightCoverage(specCapabilityByLabel.GetValueOrDefault(group.First().ClassLabel)),
             })
             .OrderByDescending(entry => entry.Count)
             .ThenBy(entry => entry.ClassLabel, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static WvWAnalystSpecFightCoverageDto? BuildSpecFightCoverage(CombatReplaySpecCapabilityDto? spec)
+    {
+        CombatReplaySpecFightCoverageDto? coverage = spec?.FightCoverage;
+        if (coverage is null || coverage.Score <= 0.0)
+        {
+            return null;
+        }
+
+        return new WvWAnalystSpecFightCoverageDto
+        {
+            Score = coverage.Score,
+            Label = coverage.Label,
+            Summary = coverage.Summary,
+            Detail = coverage.Detail,
+            Caveats = coverage.Caveats?.ToArray() ?? Array.Empty<string>(),
+            Lanes = coverage.Lanes?
+                .Where(lane => lane.CoverageScore > 0.0 || lane.StrengthPercent > 0.0)
+                .OrderByDescending(lane => lane.CoverageScore)
+                .ThenByDescending(lane => lane.DemandScorePercent)
+                .ThenByDescending(lane => lane.StrengthPercent)
+                .Select(lane => new WvWAnalystSpecFightCoverageLaneDto
+                {
+                    Key = lane.Key,
+                    Label = lane.Label,
+                    StrengthPercent = lane.StrengthPercent,
+                    SharePercent = lane.SharePercent,
+                    PerSlotEfficiency = lane.PerSlotEfficiency,
+                    PlayersContributing = lane.PlayersContributing,
+                    PlayerCount = lane.PlayerCount,
+                    DemandScorePercent = lane.DemandScorePercent,
+                    DemandLabel = lane.DemandLabel,
+                    DemandWeightPercent = lane.DemandWeightPercent,
+                    CoverageScore = lane.CoverageScore,
+                    EvidenceLine = lane.EvidenceLine,
+                })
+                .ToArray()
+                ?? Array.Empty<WvWAnalystSpecFightCoverageLaneDto>(),
+        };
     }
 
     private static WvWAnalystExecutionDto BuildExecution(WvwSummaryDto summary)
@@ -1065,6 +1113,13 @@ public sealed class WvWAnalystBuilder
             DemandFitSummary = evaluation?.DemandFitSummary ?? string.Empty,
             ContributionProfile = evaluation?.ContributionProfile ?? string.Empty,
             KeyContributionSummary = evaluation?.KeyContributionSummary ?? string.Empty,
+            FightImpactScore = evaluation?.FightImpact.Score ?? 0.0,
+            FightImpactLabel = evaluation?.FightImpact.Label ?? string.Empty,
+            FightImpactSummary = evaluation?.FightImpact.Summary ?? string.Empty,
+            FightImpactDetail = evaluation?.FightImpact.Detail ?? string.Empty,
+            FightImpactConfidenceLabel = evaluation?.FightImpact.ConfidenceLabel ?? string.Empty,
+            FightImpactCaveats = evaluation?.FightImpact.Caveats?.ToArray() ?? Array.Empty<string>(),
+            FightImpactLanes = BuildPlayerFightImpactLanes(evaluation),
             EvaluationConfidenceLabel = evaluation?.Confidence.Label ?? string.Empty,
             EvaluationConfidenceDetail = evaluation?.Confidence.Detail ?? string.Empty,
             EvaluationCaveats = evaluation?.Confidence.Caveats?.ToArray() ?? Array.Empty<string>(),
@@ -1210,6 +1265,33 @@ public sealed class WvWAnalystBuilder
                         Aggregation = metric.Aggregation,
                     })
                     .ToArray(),
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlyList<WvWAnalystPlayerFightImpactLaneDto> BuildPlayerFightImpactLanes(CombatReplayPlayerEvaluationDto? evaluation)
+    {
+        if (evaluation?.FightImpact?.Lanes is null || evaluation.FightImpact.Lanes.Count == 0)
+        {
+            return Array.Empty<WvWAnalystPlayerFightImpactLaneDto>();
+        }
+
+        return evaluation.FightImpact.Lanes
+            .Where(lane => lane.ImpactScore > 0.0 || lane.StrengthPercent > 0.0)
+            .OrderByDescending(lane => lane.ImpactScore)
+            .ThenByDescending(lane => lane.DemandScorePercent)
+            .Take(4)
+            .Select(lane => new WvWAnalystPlayerFightImpactLaneDto
+            {
+                Key = lane.Key,
+                Label = lane.Label,
+                StrengthPercent = lane.StrengthPercent,
+                SharePercent = lane.SharePercent,
+                DemandScorePercent = lane.DemandScorePercent,
+                DemandLabel = lane.DemandLabel,
+                DemandWeightPercent = lane.DemandWeightPercent,
+                ImpactScore = lane.ImpactScore,
+                EvidenceLine = lane.EvidenceLine,
             })
             .ToArray();
     }
@@ -1984,6 +2066,33 @@ internal sealed class WvWAnalystSideClassSummaryDto
     public string ClassLabel { get; set; } = string.Empty;
     public string Icon { get; set; } = string.Empty;
     public int Count { get; set; }
+    public WvWAnalystSpecFightCoverageDto? FightCoverage { get; set; }
+}
+
+internal sealed class WvWAnalystSpecFightCoverageDto
+{
+    public double Score { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string Detail { get; set; } = string.Empty;
+    public IReadOnlyList<string> Caveats { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<WvWAnalystSpecFightCoverageLaneDto> Lanes { get; set; } = Array.Empty<WvWAnalystSpecFightCoverageLaneDto>();
+}
+
+internal sealed class WvWAnalystSpecFightCoverageLaneDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public double StrengthPercent { get; set; }
+    public double SharePercent { get; set; }
+    public double PerSlotEfficiency { get; set; }
+    public int PlayersContributing { get; set; }
+    public int PlayerCount { get; set; }
+    public double DemandScorePercent { get; set; }
+    public string DemandLabel { get; set; } = string.Empty;
+    public double DemandWeightPercent { get; set; }
+    public double CoverageScore { get; set; }
+    public string EvidenceLine { get; set; } = string.Empty;
 }
 
 internal sealed class WvWAnalystCommanderDto
@@ -2235,6 +2344,13 @@ internal sealed class WvWAnalystPlayerSummaryDto
     public string DemandFitSummary { get; set; } = string.Empty;
     public string ContributionProfile { get; set; } = string.Empty;
     public string KeyContributionSummary { get; set; } = string.Empty;
+    public double FightImpactScore { get; set; }
+    public string FightImpactLabel { get; set; } = string.Empty;
+    public string FightImpactSummary { get; set; } = string.Empty;
+    public string FightImpactDetail { get; set; } = string.Empty;
+    public string FightImpactConfidenceLabel { get; set; } = string.Empty;
+    public IReadOnlyList<string> FightImpactCaveats { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<WvWAnalystPlayerFightImpactLaneDto> FightImpactLanes { get; set; } = Array.Empty<WvWAnalystPlayerFightImpactLaneDto>();
     public string EvaluationConfidenceLabel { get; set; } = string.Empty;
     public string EvaluationConfidenceDetail { get; set; } = string.Empty;
     public IReadOnlyList<string> EvaluationCaveats { get; set; } = Array.Empty<string>();
@@ -2286,6 +2402,19 @@ internal sealed class WvWAnalystPlayerLaneMetricDto
     public double Value { get; set; }
     public string Unit { get; set; } = string.Empty;
     public string Aggregation { get; set; } = string.Empty;
+}
+
+internal sealed class WvWAnalystPlayerFightImpactLaneDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public double StrengthPercent { get; set; }
+    public double SharePercent { get; set; }
+    public double DemandScorePercent { get; set; }
+    public string DemandLabel { get; set; } = string.Empty;
+    public double DemandWeightPercent { get; set; }
+    public double ImpactScore { get; set; }
+    public string EvidenceLine { get; set; } = string.Empty;
 }
 
 internal sealed class WvWAnalystThreatBoonSummaryDto

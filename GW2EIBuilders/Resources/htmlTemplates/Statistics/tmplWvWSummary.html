@@ -326,14 +326,14 @@
                         <button type="button" class="wvw-summary-modal-close" aria-label="Close player standouts help" @click="showStandoutsHelp = false">&times;</button>
                         <div class="wvw-summary-modal-title">Player Standouts Help</div>
                         <div class="wvw-summary-modal-subtitle">
-                            Player standouts now surface replay-visible lane leaders. These cards are ordered by lane strength, while the visible top line shows squad share or total lane signal.
+                            Player standouts surface replay-visible lane leaders plus a demand-adjusted Fight Impact card. Lane cards show squad share; Fight Impact shows weighted impact points.
                         </div>
                         <div class="combat-replay-overview-help-section">
-                            <div class="combat-replay-overview-help-heading">Overall Impact</div>
+                            <div class="combat-replay-overview-help-heading">Fight Impact</div>
                             <ul class="combat-replay-overview-help-list">
-                                <li><strong>What it is</strong>: total visible contribution across all measured lanes in this fight</li>
-                                <li><strong>Top line</strong>: total lane signal, which is the sum of that player's lane strengths</li>
-                                <li><strong>Ordering</strong>: highest total lane signal first</li>
+                                <li><strong>What it is</strong>: demand-adjusted visible contribution across all measured lanes in this fight</li>
+                                <li><strong>Top line</strong>: fight impact, which weights raw lane strength by replay-visible lane demand</li>
+                                <li><strong>Ordering</strong>: highest fight impact first</li>
                             </ul>
                         </div>
                         <div class="combat-replay-overview-help-section">
@@ -404,7 +404,9 @@
                             <div class="combat-replay-overview-help-heading">Card Notes</div>
                             <ul class="combat-replay-overview-help-list">
                                 <li>These cards are built from replay player evaluations, so they only appear when replay analysis is available</li>
-                                <li>The cards are ordered by lane strength, not by the visible squad-share line</li>
+                                <li>Lane cards are ordered by lane strength, not by the visible squad-share line</li>
+                                <li>The Fight Impact card is ordered by demand-adjusted impact score</li>
+                                <li>Fight Impact uses lane demand to compare across lanes; the lane cards keep showing raw lane leaders</li>
                                 <li>Lane weights shown above are raw constants; when some inputs are unavailable, the remaining weights are re-normalized</li>
                                 <li>A player can appear in multiple lane cards if they were strong in multiple kinds of contribution</li>
                                 <li>Lane ordering is based on replay-visible contribution, not profession expectation or assignment intent</li>
@@ -416,7 +418,7 @@
             <div v-if="activeSummaryTab === 'specs'" class="wvw-summary-spec-layout">
                 <div class="wvw-summary-side-panel">
                     <div class="wvw-summary-side-panel-title">Squad Spec Capability</div>
-                    <div class="wvw-summary-side-panel-subtitle">Replay-visible contribution by spec in this fight. Lane badges and ordering lean on average per-player impact, while share remains total squad share.</div>
+                    <div class="wvw-summary-side-panel-subtitle">Replay-visible contribution by spec in this fight. Fight Coverage weights spec capability by this fight's demand; lane cards below remain raw capability and squad share.</div>
                     <div class="wvw-summary-spec-detail">This is observed contribution, not assignment success. A spec with one exceptional player can still look strong, but it will no longer look strong solely because more copies of that spec were present.</div>
                 </div>
                 <div v-if="fightDemand && fightDemand.lanes && fightDemand.lanes.length > 0" class="wvw-summary-demand-panel">
@@ -463,6 +465,23 @@
                         <div class="combat-replay-spec-capability-summary">{{spec.fitSummary}}</div>
                         <div v-if="spec.demandFitSummary" class="combat-replay-spec-capability-text">{{spec.demandFitSummary}}</div>
                         <div v-if="spec.dependencySummary" class="combat-replay-spec-capability-text combat-replay-spec-capability-text-secondary">{{spec.dependencySummary}}</div>
+                        <div v-if="spec.fightCoverage" class="combat-replay-spec-fight-coverage">
+                            <div class="combat-replay-spec-fight-coverage-header">
+                                <span class="combat-replay-spec-fight-coverage-title">Fight Coverage</span>
+                                <span class="combat-replay-spec-fight-coverage-score">{{round1(spec.fightCoverage.score)}} / 100</span>
+                            </div>
+                            <div class="combat-replay-spec-capability-text">{{spec.fightCoverage.label}}. {{spec.fightCoverage.summary}}</div>
+                            <div v-if="spec.fightCoverage.lanes && spec.fightCoverage.lanes.length > 0" class="combat-replay-spec-capability-lane-chips">
+                                <span
+                                    v-for="lane in spec.fightCoverage.lanes.slice(0, 3)"
+                                    :key="'wvw-summary-spec-coverage-' + spec.key + '-' + lane.key"
+                                    class="combat-replay-spec-capability-lane-chip"
+                                    :data-original-title="lane.evidenceLine">
+                                    {{lane.label}} {{round1(lane.coverageScore)}}/{{round1(lane.demandWeightPercent)}} pts
+                                </span>
+                            </div>
+                            <div v-if="spec.fightCoverage.caveats && spec.fightCoverage.caveats.length > 0" class="combat-replay-spec-capability-text combat-replay-spec-capability-text-secondary">{{spec.fightCoverage.caveats.join('; ')}}</div>
+                        </div>
                         <div class="combat-replay-player-evaluation-hint">Click card to compare players</div>
                         <div v-if="spec.lanes && spec.lanes.length > 0" class="combat-replay-spec-capability-lanes">
                             <component
@@ -1556,6 +1575,26 @@
                 return this.getOverviewEvaluationPlayers()
                     .map(player => {
                         const lanes = player.evaluation && player.evaluation.lanes ? player.evaluation.lanes : [];
+                        const fightImpact = player.evaluation && player.evaluation.fightImpact ? player.evaluation.fightImpact : null;
+                        if (fightImpact && fightImpact.score > 0) {
+                            const impactLanes = fightImpact.lanes || [];
+                            const topImpactLanes = impactLanes
+                                .filter(lane => lane && lane.impactScore > 0)
+                                .slice(0, 3)
+                                .map(lane => lane.label + " " + this.round1(lane.impactScore));
+                            return {
+                                playerIndex: player.playerIndex,
+                                name: player.name,
+                                account: player.account,
+                                profession: player.profession,
+                                icon: player.icon,
+                                roleLabel: this.round1(fightImpact.score) + "/100 fight coverage",
+                                whyLine: fightImpact.summary || player.evaluation.demandFitSummary || player.evaluation.fitSummary || "",
+                                evidenceTags: topImpactLanes,
+                                totalContribution: fightImpact.score || 0,
+                                topLaneStrength: impactLanes.length > 0 ? (impactLanes[0].impactScore || 0) : 0,
+                            };
+                        }
                         const totalContribution = lanes.reduce((total, lane) => total + (lane && lane.strengthPercent ? lane.strengthPercent : 0), 0);
                         const topLanes = [...lanes]
                             .sort((left, right) => {
@@ -1579,6 +1618,7 @@
                             topLaneStrength: lanes.length > 0 ? (lanes[0].strengthPercent || 0) : 0,
                         };
                     })
+                    .filter(entry => entry.totalContribution > 0)
                     .sort((left, right) => {
                         if (right.totalContribution !== left.totalContribution) {
                             return right.totalContribution - left.totalContribution;
@@ -2239,8 +2279,8 @@
                 if (overallEntries.length > 0) {
                     cards.push({
                         key: "overallImpact",
-                        label: "Overall Impact",
-                        detail: "Top total visible contribution across all replay contribution lanes in this fight.",
+                        label: "Fight Impact",
+                        detail: "Top demand-adjusted visible contribution across all replay contribution lanes in this fight.",
                         entries: overallEntries,
                     });
                 }
@@ -2271,7 +2311,7 @@
                 if (this.overviewStandoutCards.length === 0) {
                     return "";
                 }
-                return "Top 3 players by replay-visible contribution lane, plus overall impact.";
+                return "Top 3 players by replay-visible contribution lane, plus demand-adjusted fight impact.";
             },
             fightDemand: function() {
                 const analysis = typeof crData !== "undefined" && crData && crData.analysis ? crData.analysis : null;
