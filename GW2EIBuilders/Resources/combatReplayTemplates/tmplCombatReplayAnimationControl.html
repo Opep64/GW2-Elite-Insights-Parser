@@ -33,6 +33,10 @@
                         <span :style="hoverDamageOverlayValueStyle">{{formatHoverDamageOverlayValue(stickySelectedDamageOverlayInfo)}}</span>
                         <span :style="hoverDamageOverlayWindowStyle">{{formatHoverDamageOverlayWindow(stickySelectedDamageOverlayInfo)}}</span>
                     </div>
+                    <div v-if="stickySelectedPositionOverlayInfo" :style="positionOverlayInfoStyle">
+                        <span :style="positionOverlayInfoLabelStyle">Position</span>
+                        <span :style="positionOverlayInfoValueStyle">{{formatPositionOverlayReasons(stickySelectedPositionOverlayInfo)}}</span>
+                    </div>
                     <div v-if="stickySelectedDamageContributors.length > 0" :style="stickyDamageContributorListStyle">
                         <div :style="stickyDamageContributorHeaderStyle">Top damage sources</div>
                         <div v-for="(entry, index) in stickySelectedDamageContributors" :key="'sticky-player-damage-source-' + index + '-' + entry.sourceId + '-' + entry.skillId" :style="stickyDamageContributorRowStyle(index)">
@@ -83,6 +87,10 @@
                         <span :style="hoverDamageOverlayValueStyle">{{formatHoverDamageOverlayValue(hoverDamageOverlayInfo)}}</span>
                         <span :style="hoverDamageOverlayWindowStyle">{{formatHoverDamageOverlayWindow(hoverDamageOverlayInfo)}}</span>
                     </div>
+                    <div v-if="hoverPositionOverlayInfo" :style="positionOverlayInfoStyle">
+                        <span :style="positionOverlayInfoLabelStyle">Position</span>
+                        <span :style="positionOverlayInfoValueStyle">{{formatPositionOverlayReasons(hoverPositionOverlayInfo)}}</span>
+                    </div>
                 </div>
                 <div v-else-if="showHoverTargetCard" class="combat-replay-hover-player-card" :style="hoverActorCardStyle">
                     <combat-replay-target-stats-component
@@ -114,6 +122,12 @@
                     <div v-if="hasDamageOverlay" @click="toggleDamageOverlay();" class="btn btn-small"
                         :class="{'active': damageOverlayEnabled, 'btn-dark': !light, 'btn-light': light}"
                         title="Show recent damage taken on replay actors">Damage Overlay</div>
+                    <div v-if="hasPositionOverlay" @click="togglePositionOverlay();" class="btn btn-small"
+                        :class="{'active': positionOverlayEnabled, 'btn-dark': !light, 'btn-light': light}"
+                        title="Show commander-relative positioning rules and out-of-position players">Position Overlay</div>
+                    <div v-if="hasEnemyPositionOverlay" @click="toggleEnemyPositionOverlay();" class="btn btn-small"
+                        :class="{'active': enemyPositionOverlayEnabled, 'btn-dark': !light, 'btn-light': light}"
+                        title="Show the estimated enemy center and enemy ball radius">Enemy Position</div>
                     <div @click="toggleStickySelectedInfo();" class="btn btn-small"
                         :class="{'active': stickySelectedInfoEnabled, 'btn-dark': !light, 'btn-light': light}"
                         title="Pin the selected actor info card on the replay">Sticky Info</div>
@@ -154,6 +168,8 @@
                 backwards: false,
                 sliderDelimiter: sliderDelimiter,
                 damageOverlayEnabled: false,
+                positionOverlayEnabled: false,
+                enemyPositionOverlayEnabled: false,
                 stickySelectedInfoEnabled: false,
                 hoverBuffsToShow: ["Boons", "Conditions", "Encounter Specifics", "Shared", "Consumables", "Others"],
                 hoverTargetBuffsToShow: ["Boons", "Conditions", "Encounter Specifics", "Shared", "Others"],
@@ -174,6 +190,8 @@
         mounted() {
             animator.attachDOM(this.htmlElementIDs.mainCanvasID, this.htmlElementIDs.bgCanvasID, this.htmlElementIDs.pickCanvasID, this.htmlElementIDs.timeRangeID, this.htmlElementIDs.timeRangeDisplayID);
             this.damageOverlayEnabled = !!(animator && animator.displaySettings && animator.displaySettings.displayDamageOverlay);
+            this.positionOverlayEnabled = !!(animator && animator.displaySettings && animator.displaySettings.displayPositionOverlay);
+            this.enemyPositionOverlayEnabled = !!(animator && animator.displaySettings && animator.displaySettings.displayEnemyPositionOverlay);
             const encounterPhase = this.encounterPhase;
             this.updateAnimatorTimes(encounterPhase);
         },
@@ -218,6 +236,12 @@
             },
             hasDamageOverlay: function () {
                 return !!(animator && animator.hasDamageTakenOverlay && animator.hasDamageTakenOverlay());
+            },
+            hasPositionOverlay: function () {
+                return !!(animator && animator.hasPositionOverlay && animator.hasPositionOverlay());
+            },
+            hasEnemyPositionOverlay: function () {
+                return !!(animator && animator.hasEnemyPositionOverlay && animator.hasEnemyPositionOverlay());
             },
             speeds: function () {
                 return [0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
@@ -316,6 +340,14 @@
                 const info = this.stickySelectedDamageOverlayInfo;
                 return info && Array.isArray(info.topContributors) ? info.topContributors : [];
             },
+            stickySelectedPositionOverlayInfo: function () {
+                const actorId = this.animationStatus.selectedActorID;
+                const time = this.animationStatus.time;
+                if (!this.stickySelectedInfoEnabled || actorId == null || time == null || !animator || !animator.getPositionOverlayInfo) {
+                    return null;
+                }
+                return animator.getPositionOverlayInfo(actorId);
+            },
             hoverDamageOverlayInfo: function () {
                 const actorId = this.animationStatus.hoveredActorID;
                 const time = this.animationStatus.time;
@@ -323,6 +355,14 @@
                     return null;
                 }
                 return animator.getDamageOverlayInfo(actorId);
+            },
+            hoverPositionOverlayInfo: function () {
+                const actorId = this.animationStatus.hoveredActorID;
+                const time = this.animationStatus.time;
+                if (actorId == null || time == null || !animator || !animator.getPositionOverlayInfo) {
+                    return null;
+                }
+                return animator.getPositionOverlayInfo(actorId);
             },
             hoverDamageOverlayStyle: function () {
                 return this.getDamageOverlayStyle(this.hoverDamageOverlayInfo);
@@ -344,6 +384,35 @@
                 return {
                     color: 'rgba(244, 246, 249, 0.72)',
                     whiteSpace: 'nowrap',
+                };
+            },
+            positionOverlayInfoStyle: function () {
+                return {
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    marginTop: '8px',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    background: 'rgba(69, 26, 82, 0.75)',
+                    border: '1px solid rgba(236, 92, 255, 0.36)',
+                    color: '#F4F6F9',
+                    fontSize: '12px',
+                    lineHeight: '1.2',
+                };
+            },
+            positionOverlayInfoLabelStyle: function () {
+                return {
+                    color: 'rgba(244, 246, 249, 0.78)',
+                    fontWeight: '600',
+                    whiteSpace: 'nowrap',
+                };
+            },
+            positionOverlayInfoValueStyle: function () {
+                return {
+                    fontWeight: '700',
+                    textAlign: 'right',
                 };
             },
             stickyDamageContributorListStyle: function () {
@@ -530,6 +599,12 @@
             toggleDamageOverlay: function () {
                 this.damageOverlayEnabled = animator.toggleDamageOverlay();
             },
+            togglePositionOverlay: function () {
+                this.positionOverlayEnabled = animator.togglePositionOverlay();
+            },
+            toggleEnemyPositionOverlay: function () {
+                this.enemyPositionOverlayEnabled = animator.toggleEnemyPositionOverlay();
+            },
             toggleAnimate: function () {
                 animator.toggleAnimate();
             },
@@ -580,6 +655,24 @@
             formatDamageContributorDamage: function (entry) {
                 const damage = entry ? Number(entry.damage || 0) : 0;
                 return damage.toLocaleString();
+            },
+            formatPositionOverlayReason: function (reason) {
+                switch (reason) {
+                    case "overextended":
+                        return "overextended";
+                    case "lateralRisk":
+                        return "left/right exposed";
+                    case "tooFar":
+                        return "too far";
+                    default:
+                        return reason || "";
+                }
+            },
+            formatPositionOverlayReasons: function (info) {
+                if (!info || !Array.isArray(info.reasons) || info.reasons.length === 0) {
+                    return "";
+                }
+                return info.reasons.map(reason => this.formatPositionOverlayReason(reason)).join(", ");
             }
         },
     });

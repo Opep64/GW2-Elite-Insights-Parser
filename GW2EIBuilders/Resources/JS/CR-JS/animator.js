@@ -90,6 +90,7 @@ var animator = null;
 const reactiveAnimationData = {
     time: getDefaultCombatReplayTime(),
     selectedActorID: null,
+    selectedActorSource: null,
     hoveredActorKind: null,
     hoveredActorID: null,
     hoveredActorX: 0,
@@ -264,6 +265,8 @@ class Animator {
             useActorHitboxWidth: false,
             displayDamageOverlay: false,
             displayStickyDamageOverlayLinks: false,
+            displayPositionOverlay: false,
+            displayEnemyPositionOverlay: false,
             followSelected: false
         };
         this.coneControl = {
@@ -292,6 +295,7 @@ class Animator {
         this.agentDataPerParentID = new Map();
         this.selectedActor = null;
         this.damageOverlayData = this._buildDamageOverlayData(options ? options.analysis : null);
+        this.positionOverlayData = this._buildPositionOverlayData(options ? options.analysis : null);
         // maps
         this.backgroundImages = new RenderablesRoot(start, end);
         // animation
@@ -669,7 +673,17 @@ class Animator {
         }
     }
 
-    selectActor(actorId, keepIfEqual = false) {
+    _setSelectedActor(actorId, source) {
+        const currentActorId = this.reactiveDataStatus.selectedActorID;
+        const currentValue = currentActorId == null ? null : String(currentActorId);
+        const nextValue = actorId == null ? null : String(actorId);
+        if (currentValue !== nextValue) {
+            this.reactiveDataStatus.selectedActorSource = source || "external";
+        }
+        this.reactiveDataStatus.selectedActorID = actorId;
+    }
+
+    selectActor(actorId, keepIfEqual = false, source = "external") {
         if (DEBUG) {
             const inLogActor = logData.players.filter(x => x.uniqueID === actorId)[0] || logData.targets.filter(x => x.uniqueID === actorId)[0];
             if (inLogActor) {
@@ -681,10 +695,10 @@ class Animator {
         let actor = this.getActorData(actorId);
         if (!actor || (!keepIfEqual && this.selectedActor === actor)) {
             this.selectedActor = null;
-            this.reactiveDataStatus.selectedActorID = null;
+            this._setSelectedActor(null, source);
         } else {
             this.selectedActor = actor;
-            this.reactiveDataStatus.selectedActorID = actorId;
+            this._setSelectedActor(actorId, source);
         }
         if (this.animation === null) {
             animateCanvas(noUpdateTime);
@@ -700,7 +714,7 @@ class Animator {
             return;
         }
         this.selectedActor = actor;
-        this.reactiveDataStatus.selectedActorID = actorId;
+        this._setSelectedActor(actorId, "external");
         this._reselectIfEnglobed();
         const selectedActor = this.selectedActor;
         const pos = selectedActor ? selectedActor.getPosition() : null;
@@ -764,7 +778,7 @@ class Animator {
                     }
                 }
                 this.selectedActor = actor || this.selectedActor;
-                this.reactiveDataStatus.selectedActorID = this.selectedActor.id;             
+                this._setSelectedActor(this.selectedActor.id, "external");
             }
         }
     }
@@ -825,6 +839,26 @@ class Animator {
         return this.displaySettings.displayDamageOverlay;
     }
 
+    togglePositionOverlay() {
+        if (!this.hasPositionOverlay()) {
+            this.displaySettings.displayPositionOverlay = false;
+            return false;
+        }
+        this.displaySettings.displayPositionOverlay = !this.displaySettings.displayPositionOverlay;
+        animateCanvas(noUpdateTime);
+        return this.displaySettings.displayPositionOverlay;
+    }
+
+    toggleEnemyPositionOverlay() {
+        if (!this.hasEnemyPositionOverlay()) {
+            this.displaySettings.displayEnemyPositionOverlay = false;
+            return false;
+        }
+        this.displaySettings.displayEnemyPositionOverlay = !this.displaySettings.displayEnemyPositionOverlay;
+        animateCanvas(noUpdateTime);
+        return this.displaySettings.displayEnemyPositionOverlay;
+    }
+
     setStickyDamageOverlayLinksEnabled(enabled) {
         this.displaySettings.displayStickyDamageOverlayLinks = !!enabled;
         if (this.animation === null) {
@@ -837,6 +871,20 @@ class Animator {
             this.damageOverlayData.entries &&
             this.damageOverlayData.entries.length > 0 &&
             this.damageOverlayData.scaleValue > 0);
+    }
+
+    hasPositionOverlay() {
+        return !!(this.positionOverlayData &&
+            this.positionOverlayData.hasCommander &&
+            this.positionOverlayData.commanderId > 0 &&
+            this.positionOverlayData.times &&
+            this.positionOverlayData.times.length > 0 &&
+            this.positionOverlayData.players &&
+            Object.keys(this.positionOverlayData.players).length > 0);
+    }
+
+    hasEnemyPositionOverlay() {
+        return this.hasPositionOverlay() && !!(logData && logData.targets && logData.targets.length > 0);
     }
 
     getDamageOverlayInfo(actorId) {
@@ -1232,7 +1280,7 @@ class Animator {
         document.body.addEventListener('mouseup', function (evt) {
             if (_this.mouseDown && Date.now() - _this.mouseDown.time < 150) {
                 const pickedActor = _this._pickActorAtScreenPoint(_this.lastX, _this.lastY);
-                _this.selectActor(pickedActor ? pickedActor.id : 0, true);
+                _this.selectActor(pickedActor ? pickedActor.id : 0, true, "map");
             }
             _this.mouseDown = null;
         }, false);
@@ -1524,8 +1572,31 @@ class Animator {
         };
     }
 
-    _findDamageOverlaySnapshotIndex(time) {
-        const times = this.damageOverlayData ? this.damageOverlayData.times : null;
+    _buildPositionOverlayData(analysis) {
+        if (!analysis || !analysis.times || analysis.times.length === 0 || !analysis.positioning) {
+            return null;
+        }
+        const positioning = analysis.positioning;
+        if (!positioning.hasCommander || !positioning.commanderId || !positioning.players) {
+            return null;
+        }
+        return {
+            times: analysis.times,
+            hasCommander: !!positioning.hasCommander,
+            commanderId: Number(positioning.commanderId || 0),
+            desiredCommanderDistance: Number(positioning.desiredCommanderDistance || 240),
+            mingledCommanderDistance: Number(positioning.mingledCommanderDistance || 180),
+            ignoreCommanderDistance: Number(positioning.ignoreCommanderDistance || 3000),
+            engageRange: Number(positioning.engageRange || 1200),
+            mingledRange: Number(positioning.mingledRange || 100),
+            mingled: positioning.mingled || [],
+            engagedEnemyCount: positioning.engagedEnemyCount || [],
+            eligiblePlayerCount: positioning.eligiblePlayerCount || [],
+            players: positioning.players || {},
+        };
+    }
+
+    _findSnapshotIndex(times, time) {
         if (!times || times.length === 0) {
             return -1;
         }
@@ -1543,6 +1614,16 @@ class Animator {
             return 0;
         }
         return Math.abs(times[low] - time) < Math.abs(times[low - 1] - time) ? low : low - 1;
+    }
+
+    _findDamageOverlaySnapshotIndex(time) {
+        const times = this.damageOverlayData ? this.damageOverlayData.times : null;
+        return this._findSnapshotIndex(times, time);
+    }
+
+    _findPositionOverlaySnapshotIndex(time) {
+        const times = this.positionOverlayData ? this.positionOverlayData.times : null;
+        return this._findSnapshotIndex(times, time);
     }
 
     _drawDamageOverlayPulse(ctx, position, actorSize, damage, scaleValue, targetSide) {
@@ -1692,6 +1773,279 @@ class Animator {
         }
     }
 
+    _getPositionOverlaySnapshot() {
+        if (!this.displaySettings.displayPositionOverlay || !this.hasPositionOverlay()) {
+            return null;
+        }
+        const snapshotIndex = this._findPositionOverlaySnapshotIndex(this.reactiveDataStatus.time);
+        if (snapshotIndex < 0) {
+            return null;
+        }
+        const overlayData = this.positionOverlayData;
+        const commanderActor = this.getActorData(overlayData.commanderId);
+        if (!commanderActor || !commanderActor.canDraw()) {
+            return null;
+        }
+        const commanderPosition = commanderActor.getPosition();
+        if (commanderPosition === null) {
+            return null;
+        }
+        const mingled = !!overlayData.mingled[snapshotIndex];
+        return {
+            overlayData: overlayData,
+            snapshotIndex: snapshotIndex,
+            commanderActor: commanderActor,
+            commanderPosition: commanderPosition,
+            mingled: mingled,
+            stackDistance: mingled ? overlayData.mingledCommanderDistance : overlayData.desiredCommanderDistance,
+            engagedEnemyCount: Number(overlayData.engagedEnemyCount[snapshotIndex] || 0),
+            eligiblePlayerCount: Number(overlayData.eligiblePlayerCount[snapshotIndex] || 0),
+        };
+    }
+
+    _drawPositionOverlayRing(ctx, position, radiusUnits, strokeStyle, fillStyle, lineWidth, dash) {
+        if (radiusUnits <= 0) {
+            return;
+        }
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(position.x, position.y, InchToPixel * radiusUnits, 0, 2 * Math.PI);
+        if (dash && dash.length > 0) {
+            ctx.setLineDash(dash.map(value => value / this.scale));
+        }
+        if (fillStyle) {
+            ctx.fillStyle = fillStyle;
+            ctx.fill();
+        }
+        ctx.lineWidth = lineWidth / this.scale;
+        ctx.strokeStyle = strokeStyle;
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    _drawPositionOverlayRules() {
+        const snapshot = this._getPositionOverlaySnapshot();
+        if (!snapshot) {
+            return;
+        }
+        const ctx = this.mainContext;
+        const overlayData = snapshot.overlayData;
+        const commanderPosition = snapshot.commanderPosition;
+        const stackStroke = snapshot.mingled ? "rgba(255, 216, 92, 0.72)" : "rgba(111, 255, 166, 0.62)";
+        const stackFill = snapshot.mingled ? "rgba(255, 216, 92, 0.075)" : "rgba(111, 255, 166, 0.06)";
+        const mingledStroke = snapshot.mingled ? "rgba(255, 116, 234, 0.78)" : "rgba(126, 232, 255, 0.25)";
+
+        this._drawPositionOverlayRing(ctx, commanderPosition, overlayData.engageRange, "rgba(116, 188, 255, 0.28)", null, 1.4, [9, 7]);
+        this._drawPositionOverlayRing(ctx, commanderPosition, snapshot.stackDistance, stackStroke, stackFill, 2.2, []);
+        this._drawPositionOverlayRing(ctx, commanderPosition, overlayData.mingledRange, mingledStroke, snapshot.mingled ? "rgba(255, 116, 234, 0.08)" : null, snapshot.mingled ? 2.0 : 1.2, [4, 4]);
+    }
+
+    _getMedian(values) {
+        if (!values || values.length === 0) {
+            return 0;
+        }
+        const sorted = [...values].sort((left, right) => left - right);
+        const middle = Math.floor(sorted.length / 2);
+        if (sorted.length % 2 === 1) {
+            return sorted[middle];
+        }
+        return (sorted[middle - 1] + sorted[middle]) / 2;
+    }
+
+    _getEnemyPositionOverlayState() {
+        if (!this.displaySettings.displayEnemyPositionOverlay || !this.hasEnemyPositionOverlay()) {
+            return null;
+        }
+        const snapshot = this._getPositionOverlaySnapshot();
+        if (!snapshot || snapshot.engagedEnemyCount <= 0) {
+            return null;
+        }
+        const enemyPositions = [];
+        for (let i = 0; i < logData.targets.length; i++) {
+            const target = logData.targets[i];
+            if (!target || target.uniqueID == null) {
+                continue;
+            }
+            const actor = this.getActorData(target.uniqueID);
+            if (!actor || !actor.canDraw()) {
+                continue;
+            }
+            const position = actor.getPosition();
+            if (position === null) {
+                continue;
+            }
+            if (!this._isPositionWithinRange(position, snapshot.commanderPosition, snapshot.overlayData.engageRange)) {
+                continue;
+            }
+            enemyPositions.push(position);
+        }
+        if (enemyPositions.length === 0) {
+            return null;
+        }
+        return {
+            center: {
+                x: this._getMedian(enemyPositions.map(position => position.x)),
+                y: this._getMedian(enemyPositions.map(position => position.y)),
+            },
+            count: enemyPositions.length,
+            radius: snapshot.overlayData.desiredCommanderDistance,
+        };
+    }
+
+    _isPositionWithinRange(left, right, rangeUnits) {
+        const range = InchToPixel * rangeUnits;
+        const dx = left.x - right.x;
+        const dy = left.y - right.y;
+        return dx * dx + dy * dy <= range * range;
+    }
+
+    _drawEnemyPositionOverlay() {
+        const state = this._getEnemyPositionOverlayState();
+        if (!state) {
+            return;
+        }
+        const ctx = this.mainContext;
+        const center = state.center;
+        this._drawPositionOverlayRing(ctx, center, state.radius, "rgba(255, 92, 92, 0.72)", "rgba(255, 92, 92, 0.065)", 2.2, []);
+
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.lineWidth = 2.2 / this.scale;
+        ctx.strokeStyle = "rgba(255, 92, 92, 0.88)";
+        ctx.fillStyle = "rgba(255, 92, 92, 0.72)";
+        const markerRadius = 6 / this.scale;
+        const markerArm = 12 / this.scale;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, markerRadius, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(center.x - markerArm, center.y);
+        ctx.lineTo(center.x + markerArm, center.y);
+        ctx.moveTo(center.x, center.y - markerArm);
+        ctx.lineTo(center.x, center.y + markerArm);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    _getPositionOverlayPlayerState(timeline, snapshotIndex) {
+        if (!timeline || !timeline.eligible || !timeline.eligible[snapshotIndex]) {
+            return null;
+        }
+        const reasons = [];
+        if (timeline.overextended && timeline.overextended[snapshotIndex]) {
+            reasons.push("overextended");
+        }
+        if (timeline.lateralRisk && timeline.lateralRisk[snapshotIndex]) {
+            reasons.push("lateralRisk");
+        }
+        if (timeline.tooFar && timeline.tooFar[snapshotIndex]) {
+            reasons.push("tooFar");
+        }
+        return {
+            inPosition: !!(timeline.inPosition && timeline.inPosition[snapshotIndex]),
+            reasons: reasons,
+        };
+    }
+
+    getPositionOverlayInfo(actorId) {
+        if (!this.displaySettings.displayPositionOverlay || actorId == null) {
+            return null;
+        }
+        const snapshot = this._getPositionOverlaySnapshot();
+        if (!snapshot || snapshot.engagedEnemyCount <= 0) {
+            return null;
+        }
+        if (String(actorId) === String(snapshot.overlayData.commanderId)) {
+            return null;
+        }
+        const timeline = snapshot.overlayData.players[String(actorId)] || snapshot.overlayData.players[actorId];
+        const state = this._getPositionOverlayPlayerState(timeline, snapshot.snapshotIndex);
+        if (!state || state.inPosition || state.reasons.length === 0) {
+            return null;
+        }
+        const distance = timeline.distanceToCommander ? Number(timeline.distanceToCommander[snapshot.snapshotIndex] || 0) : 0;
+        const enemiesCloser = timeline.enemiesCloserThanCommander ? Number(timeline.enemiesCloserThanCommander[snapshot.snapshotIndex] || 0) : 0;
+        const enemiesAhead = timeline.enemiesAheadOfCommander ? Number(timeline.enemiesAheadOfCommander[snapshot.snapshotIndex] || 0) : 0;
+        return {
+            actorId: Number(actorId),
+            reasons: state.reasons,
+            distanceToCommander: distance,
+            enemiesCloserThanCommander: enemiesCloser,
+            enemiesAheadOfCommander: enemiesAhead,
+            stackDistance: snapshot.stackDistance,
+            mingled: snapshot.mingled,
+        };
+    }
+
+    _getPositionOverlayReasonColor(reason) {
+        switch (reason) {
+            case "overextended":
+                return { red: 255, green: 74, blue: 74 };
+            case "lateralRisk":
+                return { red: 236, green: 92, blue: 255 };
+            case "tooFar":
+                return { red: 255, green: 184, blue: 74 };
+            default:
+                return { red: 106, green: 255, blue: 152 };
+        }
+    }
+
+    _drawPositionPlayerHalo(ctx, position, radius, color, lineWidth, strokeAlpha, fillAlpha, dash) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(position.x, position.y, radius, 0, 2 * Math.PI);
+        if (dash && dash.length > 0) {
+            ctx.setLineDash(dash.map(value => value / this.scale));
+        }
+        if (fillAlpha > 0) {
+            ctx.fillStyle = "rgba(" + color.red + ", " + color.green + ", " + color.blue + ", " + fillAlpha.toFixed(3) + ")";
+            ctx.fill();
+        }
+        ctx.lineWidth = lineWidth / this.scale;
+        ctx.strokeStyle = "rgba(" + color.red + ", " + color.green + ", " + color.blue + ", " + strokeAlpha.toFixed(3) + ")";
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    _drawPositionOverlayPlayerHighlights() {
+        const snapshot = this._getPositionOverlaySnapshot();
+        if (!snapshot || snapshot.engagedEnemyCount <= 0 || snapshot.eligiblePlayerCount <= 0) {
+            return;
+        }
+        const ctx = this.mainContext;
+        const playerIds = Object.keys(snapshot.overlayData.players);
+        for (let i = 0; i < playerIds.length; i++) {
+            const playerId = Number(playerIds[i]);
+            if (playerId === snapshot.overlayData.commanderId) {
+                continue;
+            }
+            const state = this._getPositionOverlayPlayerState(snapshot.overlayData.players[playerIds[i]], snapshot.snapshotIndex);
+            if (!state) {
+                continue;
+            }
+            const actor = this.getActorData(playerId);
+            if (!actor || !actor.canDraw()) {
+                continue;
+            }
+            const position = actor.getPosition();
+            if (position === null) {
+                continue;
+            }
+            const baseRadius = Math.max(actor.getSize() * 0.72, 10 / this.scale);
+            if (state.inPosition) {
+                this._drawPositionPlayerHalo(ctx, position, baseRadius, this._getPositionOverlayReasonColor("inPosition"), 1.4, 0.46, 0.0, []);
+                continue;
+            }
+            const primaryReason = state.reasons[0] || "tooFar";
+            const primaryColor = this._getPositionOverlayReasonColor(primaryReason);
+            this._drawPositionPlayerHalo(ctx, position, baseRadius + 2 / this.scale, primaryColor, 3.2, 0.96, 0.16, []);
+            for (let reasonIndex = 1; reasonIndex < state.reasons.length; reasonIndex++) {
+                const color = this._getPositionOverlayReasonColor(state.reasons[reasonIndex]);
+                this._drawPositionPlayerHalo(ctx, position, baseRadius + (5 + reasonIndex * 3) / this.scale, color, 1.7, 0.78, 0.0, [4, 3]);
+            }
+        }
+    }
+
     _drawPickCanvas() {
         var _this = this;
         var mainCtx = this.mainContext;
@@ -1770,6 +2124,8 @@ class Animator {
             }
 
             this._drawDamageTakenOverlay();
+            this._drawPositionOverlayRules();
+            this._drawEnemyPositionOverlay();
 
             if (!this.displaySettings.useActorHitboxWidth) {
                 this.friendlyMobData.draw(selectableDraw);
@@ -1788,6 +2144,7 @@ class Animator {
                 this.friendlyPlayerData.draw(selectableDraw);
                 this.playerData.draw(selectableDraw);
             }
+            this._drawPositionOverlayPlayerHighlights();
             this._drawSelectedDamageContributorLinks();
             if (this.selectedActor !== null) {
                 this.selectedActor.draw();

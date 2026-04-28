@@ -2037,6 +2037,7 @@ internal static class CombatReplayAnalysisBuilder
 
                 var enemiesCloserThanCommander = engagedEnemies.Count(enemyPosition => GetDistance2D(playerPosition, enemyPosition) < GetDistance2D(commanderPosition, enemyPosition));
                 var enemiesAheadOfCommander = mingled ? 0 : engagedEnemies.Count(enemyPosition => IsPlayerAheadOfCommander(commanderPosition, playerPosition, enemyPosition));
+                var withinCommanderSafeZone = distanceToCommander <= PositioningSettings.MingledRange;
 
                 timeline.Eligible[snapshotIndex] = true;
                 timeline.EnemiesCloserThanCommander[snapshotIndex] = enemiesCloserThanCommander;
@@ -2044,9 +2045,9 @@ internal static class CombatReplayAnalysisBuilder
 
                 playerStates.Add(new PositioningPlayerSnapshotState(
                     PlayerId: player.UniqueID,
-                    TooFar: distanceToCommander > desiredCommanderDistance,
-                    Overextended: !mingled && enemiesAheadOfCommander > 0,
-                    LateralRisk: !mingled && enemiesCloserThanCommander > PositioningSettings.EnemyCountThreshold));
+                    TooFar: !withinCommanderSafeZone && distanceToCommander > desiredCommanderDistance,
+                    Overextended: !withinCommanderSafeZone && !mingled && enemiesAheadOfCommander > 0,
+                    LateralRisk: !withinCommanderSafeZone && !mingled && enemiesCloserThanCommander > PositioningSettings.EnemyCountThreshold));
             }
 
             var overextendedPlayers = playerStates.Count(state => state.Overextended);

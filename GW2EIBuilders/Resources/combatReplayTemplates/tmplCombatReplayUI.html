@@ -134,6 +134,11 @@
                 }
             },
             'animationStatus.selectedActorID': function (actorId) {
+                if (this.animationStatus.selectedActorSource === "map") {
+                    this.animationStatus.selectedActorSource = null;
+                    return;
+                }
+                this.animationStatus.selectedActorSource = null;
                 if (this.analysisview && actorId != null && animator != null) {
                     animator.focusActorAtScale(actorId, this.analysisFocusUnits);
                 }
