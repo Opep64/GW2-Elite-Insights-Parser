@@ -525,6 +525,7 @@ internal class CombatReplayRecoveredSquadSummaryDto
     public int TotalHealingEvents { get; set; }
     public int TotalRezCasts { get; set; }
     public double TotalRezCastDurationSeconds { get; set; }
+    public List<CombatReplayEventContributionDto> SupportActions { get; set; } = [];
     public List<CombatReplayEventActorSummaryDto> SupportContributors { get; set; } = [];
     public List<CombatReplayEventActorSummaryDto> HealingContributors { get; set; } = [];
     public List<CombatReplayEventActorSummaryDto> RezContributors { get; set; } = [];
@@ -602,6 +603,7 @@ internal class CombatReplayRecoveredEventDto : CombatReplayDownEventDto
     public double RezCastDurationSeconds { get; set; }
     public int SupportContributorCount { get; set; }
     public List<CombatReplayEventContributionDto> SupportContributors { get; set; } = [];
+    public List<CombatReplayEventContributionDto> SupportActions { get; set; } = [];
     public List<CombatReplayEventTimelineEntryDto> SupportTimeline { get; set; } = [];
 }
 
@@ -1109,6 +1111,18 @@ internal static class CombatReplayAnalysisBuilder
         Torment,
         Confusion,
     ];
+    private static readonly HashSet<long> RecoverySupportActionCastSkillIds =
+    [
+        SignetOfMercySkill,
+        SkillIDs.FunctionGyro,
+        NaturesRenewal_Player,
+        NaturesRenewal_SpiritOfNatureRenewalNPC,
+    ];
+    private static readonly HashSet<long> RecoverySupportActionBuffIds =
+    [
+        IllusionOfLifeBuff,
+        SearchAndRescueBuff,
+    ];
     private static readonly IReadOnlyList<long> DownContextConditionBuffIds =
     [
         Vulnerability,
@@ -1134,9 +1148,23 @@ internal static class CombatReplayAnalysisBuilder
     private readonly record struct EvaluationWindow(long Start, long End);
     private readonly record struct PlayerEventContributionSummary(double TotalAmount, int WindowsHit, int WindowsTotal, int FastWindowsHit);
     private readonly record struct PlayerRecoveryContributionSummary(int WindowsHit, int WindowsTotal, double DownedHealing, double RezCasts, double RezTime);
+    private readonly record struct RecoverySupportActionEvent(long Time, AgentItem Provider, long SkillId, string Name, string Icon, double DurationSeconds);
     private readonly record struct EvaluationBuildResult(
         Dictionary<int, CombatReplayPlayerEvaluationDto> PlayerEvaluations,
         List<CombatReplaySpecCapabilityDto> SpecCapabilities);
+
+    private sealed class RecoverySupportActionTotals
+    {
+        public long SkillId { get; init; }
+        public string Name { get; init; } = "";
+        public string Icon { get; init; } = "";
+        public double DownedHealing { get; set; }
+        public int HealingEvents { get; set; }
+        public int RezCasts { get; set; }
+        public double RezTimeSeconds { get; set; }
+        public int RecoveryActions { get; set; }
+    }
+
     private readonly record struct PlayerLaneSnapshot(
         string Key,
         string Label,
@@ -6411,6 +6439,7 @@ internal static class CombatReplayAnalysisBuilder
             RezCastDurationSeconds = supportSummary.RezCastDurationSeconds,
             SupportContributorCount = supportSummary.SupportContributorCount,
             SupportContributors = [.. supportSummary.SupportContributors],
+            SupportActions = [.. supportSummary.SupportActions],
             SupportTimeline = [.. supportSummary.SupportTimeline],
         };
     }
@@ -6428,6 +6457,7 @@ internal static class CombatReplayAnalysisBuilder
             TotalRezCasts = events.Sum(evt => evt.RezCastCount),
             TotalRezCastDurationSeconds = Math.Round(events.Sum(evt => evt.RezCastDurationSeconds), 1),
         };
+        summary.SupportActions = BuildRecoverySupportActionSummaries(events.SelectMany(evt => evt.SupportActions));
         summary.SupportContributors = BuildTopActorSummaries(events.SelectMany(evt =>
             evt.SupportContributors
                 .Where(contributor => contributor.ActorId != null)
@@ -6551,6 +6581,7 @@ internal static class CombatReplayAnalysisBuilder
         double RezCastDurationSeconds,
         int SupportContributorCount,
         IReadOnlyList<CombatReplayEventContributionDto> SupportContributors,
+        IReadOnlyList<CombatReplayEventContributionDto> SupportActions,
         IReadOnlyList<CombatReplayEventTimelineEntryDto> SupportTimeline);
 
     private static RecoverySupportSummary BuildRecoverySupportSummary(
@@ -6567,6 +6598,7 @@ internal static class CombatReplayAnalysisBuilder
             : [];
         int totalDownedHealing = healingEvents.Sum(healingEvent => healingEvent.HealingDone);
         var healingByProvider = new Dictionary<AgentItem, double>();
+        var actionTotals = new Dictionary<long, RecoverySupportActionTotals>();
         foreach (EXTHealingEvent healingEvent in healingEvents)
         {
             AgentItem provider = !healingEvent.CreditedFrom.IsUnknown
@@ -6575,6 +6607,13 @@ internal static class CombatReplayAnalysisBuilder
             healingByProvider[provider] = healingByProvider.TryGetValue(provider, out double existingHealing)
                 ? existingHealing + healingEvent.HealingDone
                 : healingEvent.HealingDone;
+            AddRecoverySupportAction(
+                actionTotals,
+                healingEvent.SkillID,
+                healingEvent.Skill.Name,
+                healingEvent.Skill.Icon,
+                downedHealing: healingEvent.HealingDone,
+                healingEvents: 1);
         }
 
         List<AnimatedCastEvent> rezCastEvents = [.. squadPlayers
@@ -6590,27 +6629,55 @@ internal static class CombatReplayAnalysisBuilder
         var rezDurationByProvider = new Dictionary<AgentItem, double>();
         foreach (AnimatedCastEvent rezCast in rezCastEvents)
         {
+            double rezDurationSeconds = rezCast.ActualDuration / 1000.0;
             rezCountByProvider[rezCast.Caster] = rezCountByProvider.TryGetValue(rezCast.Caster, out double existingRezCount)
                 ? existingRezCount + 1
                 : 1;
             rezDurationByProvider[rezCast.Caster] = rezDurationByProvider.TryGetValue(rezCast.Caster, out double existingRezDuration)
-                ? existingRezDuration + rezCast.ActualDuration / 1000.0
-                : rezCast.ActualDuration / 1000.0;
+                ? existingRezDuration + rezDurationSeconds
+                : rezDurationSeconds;
+            AddRecoverySupportAction(
+                actionTotals,
+                rezCast.SkillID,
+                rezCast.Skill.Name,
+                rezCast.Skill.Icon,
+                rezCasts: 1,
+                rezTimeSeconds: rezDurationSeconds);
         }
 
+        List<RecoverySupportActionEvent> recoveryActionEvents = BuildRecoverySupportActionEvents(log, recoveredPlayer, squadPlayers, downTime, recoveredTime);
+        var recoveryActionCountByProvider = new Dictionary<AgentItem, double>();
+        foreach (RecoverySupportActionEvent actionEvent in recoveryActionEvents)
+        {
+            recoveryActionCountByProvider[actionEvent.Provider] = recoveryActionCountByProvider.TryGetValue(actionEvent.Provider, out double existingActionCount)
+                ? existingActionCount + 1
+                : 1;
+            AddRecoverySupportAction(
+                actionTotals,
+                actionEvent.SkillId,
+                actionEvent.Name,
+                actionEvent.Icon,
+                recoveryActions: 1);
+        }
         List<CombatReplayEventContributionDto> supportContributors = BuildRecoverySupportContributors(
             log,
             healingByProvider,
             rezCountByProvider,
-            rezDurationByProvider);
-        List<CombatReplayEventTimelineEntryDto> supportTimeline = BuildRecoverySupportTimeline(log, healingEvents, rezCastEvents);
+            rezDurationByProvider,
+            recoveryActionCountByProvider);
+        List<CombatReplayEventContributionDto> supportActions = BuildRecoverySupportActionContributions(actionTotals, int.MaxValue);
+        List<CombatReplayEventTimelineEntryDto> supportTimeline = BuildRecoverySupportTimeline(log, healingEvents, rezCastEvents, recoveryActionEvents);
         return new RecoverySupportSummary(
             TotalDownedHealing: totalDownedHealing,
             DownedHealingEventCount: healingEvents.Count,
             RezCastCount: rezCastEvents.Count,
             RezCastDurationSeconds: Math.Round(rezCastEvents.Sum(cast => cast.ActualDuration) / 1000.0, 1),
-            SupportContributorCount: healingByProvider.Keys.Union(rezCountByProvider.Keys).Count(),
+            SupportContributorCount: healingByProvider.Keys
+                .Union(rezCountByProvider.Keys)
+                .Union(recoveryActionCountByProvider.Keys)
+                .Count(provider => !provider.IsUnknown),
             SupportContributors: supportContributors,
+            SupportActions: supportActions,
             SupportTimeline: supportTimeline);
     }
 
@@ -6906,17 +6973,179 @@ internal static class CombatReplayAnalysisBuilder
         return overlap;
     }
 
+    private static List<RecoverySupportActionEvent> BuildRecoverySupportActionEvents(
+        ParsedEvtcLog log,
+        SingleActor recoveredPlayer,
+        IReadOnlyList<SingleActor> squadPlayers,
+        long downTime,
+        long recoveredTime)
+    {
+        var result = new List<RecoverySupportActionEvent>();
+
+        foreach (SingleActor player in squadPlayers.Where(player => player.UniqueID != recoveredPlayer.UniqueID))
+        {
+            foreach (CastEvent cast in player.GetCastEvents(log, downTime, recoveredTime)
+                .Where(cast => RecoverySupportActionCastSkillIds.Contains(cast.SkillID)))
+            {
+                result.Add(new RecoverySupportActionEvent(
+                    Time: cast.Time,
+                    Provider: cast.Caster,
+                    SkillId: cast.SkillID,
+                    Name: cast.Skill.Name,
+                    Icon: cast.Skill.Icon,
+                    DurationSeconds: Math.Round(cast.ActualDuration / 1000.0, 1)));
+            }
+        }
+
+        foreach (long buffId in RecoverySupportActionBuffIds)
+        {
+            foreach (AbstractBuffApplyEvent buffApply in log.CombatData.GetBuffApplyDataByIDByDst(buffId, recoveredPlayer.AgentItem)
+                .Where(buffApply => buffApply.Time >= downTime && buffApply.Time <= recoveredTime))
+            {
+                AgentItem provider = !buffApply.CreditedBy.IsUnknown
+                    ? buffApply.CreditedBy
+                    : buffApply.By.GetFinalMaster();
+                if (!IsRecoverySupportProvider(provider, recoveredPlayer, squadPlayers))
+                {
+                    continue;
+                }
+
+                result.Add(new RecoverySupportActionEvent(
+                    Time: buffApply.Time,
+                    Provider: provider,
+                    SkillId: buffApply.BuffID,
+                    Name: buffApply.BuffSkill.Name,
+                    Icon: buffApply.BuffSkill.Icon,
+                    DurationSeconds: 0.0));
+            }
+        }
+
+        result.Sort((left, right) => left.Time.CompareTo(right.Time));
+        return result;
+    }
+
+    private static bool IsRecoverySupportProvider(AgentItem provider, SingleActor recoveredPlayer, IReadOnlyList<SingleActor> squadPlayers)
+    {
+        return !provider.IsUnknown
+            && !provider.Is(recoveredPlayer.AgentItem)
+            && squadPlayers.Any(player => player.AgentItem.Is(provider));
+    }
+
+    private static void AddRecoverySupportAction(
+        Dictionary<long, RecoverySupportActionTotals> totals,
+        long skillId,
+        string name,
+        string icon,
+        double downedHealing = 0.0,
+        int healingEvents = 0,
+        int rezCasts = 0,
+        double rezTimeSeconds = 0.0,
+        int recoveryActions = 0)
+    {
+        long key = skillId != 0 ? skillId : StringComparer.OrdinalIgnoreCase.GetHashCode(name);
+        if (!totals.TryGetValue(key, out RecoverySupportActionTotals? total))
+        {
+            total = new RecoverySupportActionTotals
+            {
+                SkillId = skillId,
+                Name = string.IsNullOrWhiteSpace(name) ? "Unknown support action" : name,
+                Icon = icon,
+            };
+            totals[key] = total;
+        }
+
+        total.DownedHealing += Math.Max(0.0, downedHealing);
+        total.HealingEvents += Math.Max(0, healingEvents);
+        total.RezCasts += Math.Max(0, rezCasts);
+        total.RezTimeSeconds += Math.Max(0.0, rezTimeSeconds);
+        total.RecoveryActions += Math.Max(0, recoveryActions);
+    }
+
+    private static List<CombatReplayEventContributionDto> BuildRecoverySupportActionSummaries(
+        IEnumerable<CombatReplayEventContributionDto> actions,
+        int maxActions = 6)
+    {
+        var totals = new Dictionary<long, RecoverySupportActionTotals>();
+        foreach (CombatReplayEventContributionDto action in actions)
+        {
+            AddRecoverySupportAction(
+                totals,
+                action.BuffId ?? 0,
+                action.Name,
+                action.Icon,
+                downedHealing: GetSupportDetailAmount(action, "Downed healing"),
+                healingEvents: (int)Math.Round(GetSupportDetailAmount(action, "Healing events")),
+                rezCasts: (int)Math.Round(GetSupportDetailAmount(action, "Rez casts")),
+                rezTimeSeconds: GetSupportDetailAmount(action, "Rez time"),
+                recoveryActions: (int)Math.Round(GetSupportDetailAmount(action, "Recovery actions")));
+        }
+
+        return BuildRecoverySupportActionContributions(totals, maxActions);
+    }
+
+    private static List<CombatReplayEventContributionDto> BuildRecoverySupportActionContributions(
+        IReadOnlyDictionary<long, RecoverySupportActionTotals> totals,
+        int maxActions = 6)
+    {
+        return [.. totals.Values
+            .Where(total => total.DownedHealing > 0.0 || total.HealingEvents > 0 || total.RezCasts > 0 || total.RecoveryActions > 0)
+            .OrderByDescending(total => total.DownedHealing)
+            .ThenByDescending(total => total.RezCasts + total.RecoveryActions)
+            .ThenByDescending(total => total.RezTimeSeconds)
+            .ThenByDescending(total => total.HealingEvents)
+            .ThenBy(total => total.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(maxActions)
+            .Select(total => new CombatReplayEventContributionDto
+            {
+                BuffId = total.SkillId != 0 ? total.SkillId : null,
+                Name = total.Name,
+                Icon = total.Icon,
+                Amount = Math.Round(total.DownedHealing > 0.0 ? total.DownedHealing : total.RezCasts + total.RecoveryActions, 1),
+                Details =
+                [
+                    new CombatReplayEventContributionDto
+                    {
+                        Name = "Downed healing",
+                        Amount = Math.Round(total.DownedHealing, 1),
+                    },
+                    new CombatReplayEventContributionDto
+                    {
+                        Name = "Healing events",
+                        Amount = total.HealingEvents,
+                    },
+                    new CombatReplayEventContributionDto
+                    {
+                        Name = "Rez casts",
+                        Amount = total.RezCasts,
+                    },
+                    new CombatReplayEventContributionDto
+                    {
+                        Name = "Rez time",
+                        Amount = Math.Round(total.RezTimeSeconds, 1),
+                    },
+                    new CombatReplayEventContributionDto
+                    {
+                        Name = "Recovery actions",
+                        Amount = total.RecoveryActions,
+                    },
+                ],
+            })];
+    }
+
     private static List<CombatReplayEventContributionDto> BuildRecoverySupportContributors(
         ParsedEvtcLog log,
         IReadOnlyDictionary<AgentItem, double> healingByProvider,
         IReadOnlyDictionary<AgentItem, double> rezCountByProvider,
         IReadOnlyDictionary<AgentItem, double> rezDurationByProvider,
+        IReadOnlyDictionary<AgentItem, double> recoveryActionCountByProvider,
         int maxActors = 6)
     {
         List<AgentItem> orderedAgents = [.. healingByProvider.Keys
             .Union(rezCountByProvider.Keys)
+            .Union(recoveryActionCountByProvider.Keys)
             .OrderByDescending(agent => healingByProvider.TryGetValue(agent, out double healing) ? healing : 0.0)
             .ThenByDescending(agent => rezCountByProvider.TryGetValue(agent, out double rezCount) ? rezCount : 0.0)
+            .ThenByDescending(agent => recoveryActionCountByProvider.TryGetValue(agent, out double recoveryActions) ? recoveryActions : 0.0)
             .ThenByDescending(agent => rezDurationByProvider.TryGetValue(agent, out double rezDuration) ? rezDuration : 0.0)
             .ThenBy(agent => GetActorName(log, agent), StringComparer.OrdinalIgnoreCase)];
         if (orderedAgents.Count == 0)
@@ -6932,12 +7161,13 @@ internal static class CombatReplayAnalysisBuilder
             double healing = Math.Round(healingByProvider.TryGetValue(agent, out double healingAmount) ? healingAmount : 0.0, 1);
             double rezCount = Math.Round(rezCountByProvider.TryGetValue(agent, out double rezCountAmount) ? rezCountAmount : 0.0, 1);
             double rezDuration = Math.Round(rezDurationByProvider.TryGetValue(agent, out double rezDurationAmount) ? rezDurationAmount : 0.0, 1);
+            double recoveryActions = Math.Round(recoveryActionCountByProvider.TryGetValue(agent, out double recoveryActionAmount) ? recoveryActionAmount : 0.0, 1);
             result.Add(new CombatReplayEventContributionDto
             {
                 ActorId = actor?.UniqueID,
                 Name = actor?.Character ?? GetActorName(log, agent),
                 Icon = actor?.GetIcon() ?? "",
-                Amount = healing,
+                Amount = healing > 0.0 ? healing : rezCount + recoveryActions,
                 Details =
                 [
                     new CombatReplayEventContributionDto
@@ -6954,6 +7184,11 @@ internal static class CombatReplayAnalysisBuilder
                     {
                         Name = "Rez time",
                         Amount = rezDuration,
+                    },
+                    new CombatReplayEventContributionDto
+                    {
+                        Name = "Recovery actions",
+                        Amount = recoveryActions,
                     },
                 ],
             });
@@ -6983,6 +7218,11 @@ internal static class CombatReplayAnalysisBuilder
                         Name = "Rez time",
                         Amount = Math.Round(otherAgents.Sum(agent => rezDurationByProvider.TryGetValue(agent, out double rezDuration) ? rezDuration : 0.0), 1),
                     },
+                    new CombatReplayEventContributionDto
+                    {
+                        Name = "Recovery actions",
+                        Amount = Math.Round(otherAgents.Sum(agent => recoveryActionCountByProvider.TryGetValue(agent, out double recoveryActions) ? recoveryActions : 0.0), 1),
+                    },
                 ],
             });
         }
@@ -6993,9 +7233,10 @@ internal static class CombatReplayAnalysisBuilder
     private static List<CombatReplayEventTimelineEntryDto> BuildRecoverySupportTimeline(
         ParsedEvtcLog log,
         IReadOnlyList<EXTHealingEvent> healingEvents,
-        IReadOnlyList<AnimatedCastEvent> rezCastEvents)
+        IReadOnlyList<AnimatedCastEvent> rezCastEvents,
+        IReadOnlyList<RecoverySupportActionEvent> recoveryActionEvents)
     {
-        var timeline = new List<CombatReplayEventTimelineEntryDto>(healingEvents.Count + rezCastEvents.Count);
+        var timeline = new List<CombatReplayEventTimelineEntryDto>(healingEvents.Count + rezCastEvents.Count + recoveryActionEvents.Count);
         timeline.AddRange(healingEvents.Select(healingEvent =>
         {
             AgentItem provider = !healingEvent.CreditedFrom.IsUnknown
@@ -7017,6 +7258,16 @@ internal static class CombatReplayAnalysisBuilder
             Label = rezCast.Skill.Name,
             Value = $"{FormatDuration(rezCast.ActualDuration)} rez cast",
             Secondary = GetActorName(log, rezCast.Caster),
+        }));
+        timeline.AddRange(recoveryActionEvents.Select(actionEvent => new CombatReplayEventTimelineEntryDto
+        {
+            Time = actionEvent.Time,
+            TimeLabel = FormatTime(actionEvent.Time),
+            Label = actionEvent.Name,
+            Value = actionEvent.DurationSeconds > 0.0
+                ? $"{FormatOneDecimal(actionEvent.DurationSeconds)}s recovery action"
+                : "Recovery action",
+            Secondary = GetActorName(log, actionEvent.Provider),
         }));
         timeline.Sort((left, right) => left.Time.CompareTo(right.Time));
         return timeline;
