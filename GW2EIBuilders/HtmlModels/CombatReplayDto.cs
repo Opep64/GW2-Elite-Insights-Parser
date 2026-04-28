@@ -22,6 +22,6 @@ internal class CombatReplayDto
         Sizes = [width, height];
         InchToPixel = map.GetInchToPixel();
         PollingRate = ParserHelper.CombatReplayPollingRate;
-        Analysis = CombatReplayAnalysisBuilder.Build(log);
+        Analysis = CombatReplayAnalysisBuilder.Build(log, usedSkills);
     }
 }

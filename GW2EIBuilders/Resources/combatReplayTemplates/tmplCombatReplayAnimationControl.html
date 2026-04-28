@@ -19,7 +19,57 @@
                     class="replay"></canvas>
                 <canvas :width="canvasSize.x + 'px'" :height="canvasSize.y + 'px'" :id="htmlElementIDs.pickCanvasID"
                     class="replay"></canvas>
-                <div v-if="hoveredPlayerIndex !== null" class="combat-replay-hover-player-card" :style="hoverActorCardStyle">
+                <div v-if="showStickySelectedPlayerCard" class="combat-replay-hover-player-card" :style="stickySelectedCardStyle">
+                    <combat-replay-player-stats-component
+                        :time="animationStatus.time"
+                        :buffs="true"
+                        :rotation="true"
+                        :playerindex="stickySelectedPlayerIndex"
+                        :buffstoshow="hoverBuffsToShow"
+                        :compact="false">
+                    </combat-replay-player-stats-component>
+                    <div v-if="stickySelectedDamageOverlayInfo" :style="stickySelectedDamageOverlayStyle">
+                        <span :style="hoverDamageOverlayLabelStyle">Heat damage</span>
+                        <span :style="hoverDamageOverlayValueStyle">{{formatHoverDamageOverlayValue(stickySelectedDamageOverlayInfo)}}</span>
+                        <span :style="hoverDamageOverlayWindowStyle">{{formatHoverDamageOverlayWindow(stickySelectedDamageOverlayInfo)}}</span>
+                    </div>
+                    <div v-if="stickySelectedDamageContributors.length > 0" :style="stickyDamageContributorListStyle">
+                        <div :style="stickyDamageContributorHeaderStyle">Top damage sources</div>
+                        <div v-for="(entry, index) in stickySelectedDamageContributors" :key="'sticky-player-damage-source-' + index + '-' + entry.sourceId + '-' + entry.skillId" :style="stickyDamageContributorRowStyle(index)">
+                            <span :style="stickyDamageContributorRankStyle">{{index + 1}}</span>
+                            <span :style="stickyDamageContributorTextStyle">
+                                <span :style="stickyDamageContributorSourceStyle">{{entry.sourceName}}</span>
+                                <span :style="stickyDamageContributorSkillStyle">{{entry.skillName}}</span>
+                            </span>
+                            <span :style="stickyDamageContributorDamageStyle">{{formatDamageContributorDamage(entry)}}</span>
+                        </div>
+                    </div>
+                </div>
+                <div v-else-if="showStickySelectedTargetCard" class="combat-replay-hover-player-card" :style="stickySelectedCardStyle">
+                    <combat-replay-target-stats-component
+                        :time="animationStatus.time"
+                        :targetindex="stickySelectedTargetIndex"
+                        :buffstoshow="hoverTargetBuffsToShow"
+                        :analysis="false">
+                    </combat-replay-target-stats-component>
+                    <div v-if="stickySelectedDamageOverlayInfo" :style="stickySelectedDamageOverlayStyle">
+                        <span :style="hoverDamageOverlayLabelStyle">Heat damage</span>
+                        <span :style="hoverDamageOverlayValueStyle">{{formatHoverDamageOverlayValue(stickySelectedDamageOverlayInfo)}}</span>
+                        <span :style="hoverDamageOverlayWindowStyle">{{formatHoverDamageOverlayWindow(stickySelectedDamageOverlayInfo)}}</span>
+                    </div>
+                    <div v-if="stickySelectedDamageContributors.length > 0" :style="stickyDamageContributorListStyle">
+                        <div :style="stickyDamageContributorHeaderStyle">Top damage sources</div>
+                        <div v-for="(entry, index) in stickySelectedDamageContributors" :key="'sticky-target-damage-source-' + index + '-' + entry.sourceId + '-' + entry.skillId" :style="stickyDamageContributorRowStyle(index)">
+                            <span :style="stickyDamageContributorRankStyle">{{index + 1}}</span>
+                            <span :style="stickyDamageContributorTextStyle">
+                                <span :style="stickyDamageContributorSourceStyle">{{entry.sourceName}}</span>
+                                <span :style="stickyDamageContributorSkillStyle">{{entry.skillName}}</span>
+                            </span>
+                            <span :style="stickyDamageContributorDamageStyle">{{formatDamageContributorDamage(entry)}}</span>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="showHoverPlayerCard" class="combat-replay-hover-player-card" :style="hoverActorCardStyle">
                     <combat-replay-player-stats-component
                         :time="animationStatus.time"
                         :buffs="true"
@@ -28,14 +78,24 @@
                         :buffstoshow="hoverBuffsToShow"
                         :compact="false">
                     </combat-replay-player-stats-component>
+                    <div v-if="hoverDamageOverlayInfo" :style="hoverDamageOverlayStyle">
+                        <span :style="hoverDamageOverlayLabelStyle">Heat damage</span>
+                        <span :style="hoverDamageOverlayValueStyle">{{formatHoverDamageOverlayValue(hoverDamageOverlayInfo)}}</span>
+                        <span :style="hoverDamageOverlayWindowStyle">{{formatHoverDamageOverlayWindow(hoverDamageOverlayInfo)}}</span>
+                    </div>
                 </div>
-                <div v-else-if="hoveredTargetIndex !== null" class="combat-replay-hover-player-card" :style="hoverActorCardStyle">
+                <div v-else-if="showHoverTargetCard" class="combat-replay-hover-player-card" :style="hoverActorCardStyle">
                     <combat-replay-target-stats-component
                         :time="animationStatus.time"
                         :targetindex="hoveredTargetIndex"
                         :buffstoshow="hoverTargetBuffsToShow"
                         :analysis="false">
                     </combat-replay-target-stats-component>
+                    <div v-if="hoverDamageOverlayInfo" :style="hoverDamageOverlayStyle">
+                        <span :style="hoverDamageOverlayLabelStyle">Heat damage</span>
+                        <span :style="hoverDamageOverlayValueStyle">{{formatHoverDamageOverlayValue(hoverDamageOverlayInfo)}}</span>
+                        <span :style="hoverDamageOverlayWindowStyle">{{formatHoverDamageOverlayWindow(hoverDamageOverlayInfo)}}</span>
+                    </div>
                 </div>
             </div>
             <div class="animation-control">
@@ -51,6 +111,12 @@
                         :class="{'active': backwards, 'btn-dark': !light, 'btn-light': light}">Backwards</div>
                     <div @click="resetViewpoint();" class="btn btn-small"
                         :class="{'btn-dark': !light, 'btn-light': light}">Reset Viewpoint</div>
+                    <div v-if="hasDamageOverlay" @click="toggleDamageOverlay();" class="btn btn-small"
+                        :class="{'active': damageOverlayEnabled, 'btn-dark': !light, 'btn-light': light}"
+                        title="Show recent damage taken on replay actors">Damage Overlay</div>
+                    <div @click="toggleStickySelectedInfo();" class="btn btn-small"
+                        :class="{'active': stickySelectedInfoEnabled, 'btn-dark': !light, 'btn-light': light}"
+                        title="Pin the selected actor info card on the replay">Sticky Info</div>
                 </div>
                 <div class="d-flex justify-content-center slidercontainer mt-1">
                     <input style="min-width: 400px;" @input="updateTime($event.target.value)" type="range" :min="minTime"
@@ -87,6 +153,8 @@
                 selectedSpeed: 1,
                 backwards: false,
                 sliderDelimiter: sliderDelimiter,
+                damageOverlayEnabled: false,
+                stickySelectedInfoEnabled: false,
                 hoverBuffsToShow: ["Boons", "Conditions", "Encounter Specifics", "Shared", "Consumables", "Others"],
                 hoverTargetBuffsToShow: ["Boons", "Conditions", "Encounter Specifics", "Shared", "Others"],
             };
@@ -105,6 +173,7 @@
         },
         mounted() {
             animator.attachDOM(this.htmlElementIDs.mainCanvasID, this.htmlElementIDs.bgCanvasID, this.htmlElementIDs.pickCanvasID, this.htmlElementIDs.timeRangeID, this.htmlElementIDs.timeRangeDisplayID);
+            this.damageOverlayEnabled = !!(animator && animator.displaySettings && animator.displaySettings.displayDamageOverlay);
             const encounterPhase = this.encounterPhase;
             this.updateAnimatorTimes(encounterPhase);
         },
@@ -147,6 +216,9 @@
             hasBreakbarPhases: function () {
                 return this.phases.filter(phase => phase.breakbarPhase).length > 0;
             },
+            hasDamageOverlay: function () {
+                return !!(animator && animator.hasDamageTakenOverlay && animator.hasDamageTakenOverlay());
+            },
             speeds: function () {
                 return [0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
             },
@@ -185,37 +257,166 @@
                 const target = logData.targets.find(entry => entry && entry.uniqueID === this.animationStatus.hoveredActorID);
                 return target ? target.id : null;
             },
-            hoverActorCardStyle: function () {
-                if (this.hoveredPlayerIndex === null && this.hoveredTargetIndex === null) {
+            stickySelectedPlayerIndex: function () {
+                if (this.animationStatus.selectedActorID == null) {
                     return null;
                 }
-                const cardWidth = this.hoveredTargetIndex !== null ? 380 : 430;
-                const horizontalOffset = 18;
-                const verticalOffset = 18;
-                const minMargin = 8;
-                let left = this.animationStatus.hoveredActorX + horizontalOffset;
-                let top = this.animationStatus.hoveredActorY + verticalOffset;
-                if (left + cardWidth > this.canvasSize.x - minMargin) {
-                    left = Math.max(minMargin, this.animationStatus.hoveredActorX - cardWidth - horizontalOffset);
+                const player = logData.players.find(entry => entry && String(entry.uniqueID) === String(this.animationStatus.selectedActorID));
+                return player ? player.id : null;
+            },
+            stickySelectedTargetIndex: function () {
+                if (this.animationStatus.selectedActorID == null) {
+                    return null;
                 }
-                const estimatedHeight = this.hoveredTargetIndex !== null ? 220 : 156;
-                if (top + estimatedHeight > this.canvasSize.y - minMargin) {
-                    top = Math.max(minMargin, this.animationStatus.hoveredActorY - estimatedHeight - verticalOffset);
+                const target = logData.targets.find(entry => entry && String(entry.uniqueID) === String(this.animationStatus.selectedActorID));
+                return target ? target.id : null;
+            },
+            isHoveringStickySelectedActor: function () {
+                return this.stickySelectedInfoEnabled &&
+                    this.animationStatus.selectedActorID != null &&
+                    this.animationStatus.hoveredActorID != null &&
+                    String(this.animationStatus.selectedActorID) === String(this.animationStatus.hoveredActorID);
+            },
+            showHoverPlayerCard: function () {
+                return this.hoveredPlayerIndex !== null && !this.isHoveringStickySelectedActor;
+            },
+            showHoverTargetCard: function () {
+                return this.hoveredTargetIndex !== null && !this.isHoveringStickySelectedActor;
+            },
+            stickySelectedScreenPosition: function () {
+                const actorId = this.animationStatus.selectedActorID;
+                const time = this.animationStatus.time;
+                const viewRevision = this.animationStatus.viewRevision;
+                if (!this.stickySelectedInfoEnabled || actorId == null || time == null || viewRevision == null || !animator || !animator.getActorScreenPosition) {
+                    return null;
                 }
+                return animator.getActorScreenPosition(actorId);
+            },
+            stickySelectedCardStyle: function () {
+                return this.buildSideCardStyle(this.stickySelectedTargetIndex !== null);
+            },
+            showStickySelectedPlayerCard: function () {
+                return this.stickySelectedInfoEnabled && this.stickySelectedPlayerIndex !== null;
+            },
+            showStickySelectedTargetCard: function () {
+                return this.stickySelectedInfoEnabled && this.stickySelectedTargetIndex !== null;
+            },
+            stickySelectedDamageOverlayInfo: function () {
+                const actorId = this.animationStatus.selectedActorID;
+                const time = this.animationStatus.time;
+                if (!this.stickySelectedInfoEnabled || actorId == null || time == null || !animator || !animator.getDamageOverlayInfo) {
+                    return null;
+                }
+                return animator.getDamageOverlayInfo(actorId);
+            },
+            stickySelectedDamageOverlayStyle: function () {
+                return this.getDamageOverlayStyle(this.stickySelectedDamageOverlayInfo);
+            },
+            stickySelectedDamageContributors: function () {
+                const info = this.stickySelectedDamageOverlayInfo;
+                return info && Array.isArray(info.topContributors) ? info.topContributors : [];
+            },
+            hoverDamageOverlayInfo: function () {
+                const actorId = this.animationStatus.hoveredActorID;
+                const time = this.animationStatus.time;
+                if (actorId == null || time == null || !animator || !animator.getDamageOverlayInfo) {
+                    return null;
+                }
+                return animator.getDamageOverlayInfo(actorId);
+            },
+            hoverDamageOverlayStyle: function () {
+                return this.getDamageOverlayStyle(this.hoverDamageOverlayInfo);
+            },
+            hoverDamageOverlayLabelStyle: function () {
                 return {
-                    position: 'absolute',
-                    left: left + 'px',
-                    top: top + 'px',
-                    width: cardWidth + 'px',
-                    maxWidth: 'calc(100% - 16px)',
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    background: 'rgba(23, 26, 31, 0.97)',
-                    border: '1px solid rgba(214, 220, 228, 0.25)',
-                    boxShadow: '0 10px 24px rgba(0, 0, 0, 0.35)',
-                    pointerEvents: 'none',
-                    zIndex: 4,
+                    color: 'rgba(244, 246, 249, 0.78)',
+                    fontWeight: '600',
+                    whiteSpace: 'nowrap',
                 };
+            },
+            hoverDamageOverlayValueStyle: function () {
+                return {
+                    fontWeight: '700',
+                    whiteSpace: 'nowrap',
+                };
+            },
+            hoverDamageOverlayWindowStyle: function () {
+                return {
+                    color: 'rgba(244, 246, 249, 0.72)',
+                    whiteSpace: 'nowrap',
+                };
+            },
+            stickyDamageContributorListStyle: function () {
+                const info = this.stickySelectedDamageOverlayInfo;
+                const useCoolHeat = info && info.targetSide === "enemy";
+                return {
+                    marginTop: '6px',
+                    padding: '7px 8px 8px',
+                    borderRadius: '6px',
+                    background: useCoolHeat ? 'rgba(13, 46, 47, 0.82)' : 'rgba(61, 29, 22, 0.82)',
+                    border: useCoolHeat ? '1px solid rgba(94, 255, 202, 0.28)' : '1px solid rgba(255, 154, 92, 0.30)',
+                    color: '#F4F6F9',
+                    fontSize: '12px',
+                    lineHeight: '1.2',
+                };
+            },
+            stickyDamageContributorHeaderStyle: function () {
+                return {
+                    marginBottom: '5px',
+                    color: 'rgba(244, 246, 249, 0.78)',
+                    fontWeight: '700',
+                };
+            },
+            stickyDamageContributorRankStyle: function () {
+                return {
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(244, 246, 249, 0.13)',
+                    color: 'rgba(244, 246, 249, 0.86)',
+                    fontWeight: '700',
+                    fontSize: '11px',
+                };
+            },
+            stickyDamageContributorTextStyle: function () {
+                return {
+                    minWidth: '0',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1px',
+                };
+            },
+            stickyDamageContributorSourceStyle: function () {
+                return {
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontWeight: '700',
+                };
+            },
+            stickyDamageContributorSkillStyle: function () {
+                return {
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    color: 'rgba(244, 246, 249, 0.68)',
+                };
+            },
+            stickyDamageContributorDamageStyle: function () {
+                return {
+                    justifySelf: 'end',
+                    whiteSpace: 'nowrap',
+                    fontWeight: '700',
+                };
+            },
+            hoverActorCardStyle: function () {
+                if (!this.showHoverPlayerCard && !this.showHoverTargetCard) {
+                    return null;
+                }
+                return this.buildActorCardStyle(this.animationStatus.hoveredActorX, this.animationStatus.hoveredActorY, this.hoveredTargetIndex !== null, 4, null);
             }
         },
         methods: {
@@ -239,11 +440,95 @@
             getPhaseData: function (id) {
                 return logData.phases[id];
             },
+            buildActorCardStyle: function (screenX, screenY, isTarget, zIndex, border) {
+                const cardWidth = isTarget ? 380 : 430;
+                const horizontalOffset = 18;
+                const verticalOffset = 18;
+                const minMargin = 8;
+                let left = screenX + horizontalOffset;
+                let top = screenY + verticalOffset;
+                if (left + cardWidth > this.canvasSize.x - minMargin) {
+                    left = Math.max(minMargin, screenX - cardWidth - horizontalOffset);
+                }
+                const estimatedHeight = isTarget ? 220 : 156;
+                if (top + estimatedHeight > this.canvasSize.y - minMargin) {
+                    top = Math.max(minMargin, screenY - estimatedHeight - verticalOffset);
+                }
+                return {
+                    position: 'absolute',
+                    left: left + 'px',
+                    top: top + 'px',
+                    width: cardWidth + 'px',
+                    maxWidth: 'calc(100% - 16px)',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    background: 'rgba(23, 26, 31, 0.97)',
+                    border: border || '1px solid rgba(214, 220, 228, 0.25)',
+                    boxShadow: '0 10px 24px rgba(0, 0, 0, 0.35)',
+                    pointerEvents: 'none',
+                    zIndex: zIndex,
+                };
+            },
+            buildSideCardStyle: function (isTarget) {
+                const cardWidth = isTarget ? 380 : 430;
+                const canvasLeft = animator && animator.mainCanvas ? animator.mainCanvas.offsetLeft : 0;
+                const canvasWidth = animator && animator.mainCanvas ? animator.mainCanvas.offsetWidth : this.canvasSize.x;
+                return {
+                    position: 'absolute',
+                    left: (canvasLeft + canvasWidth + 18) + 'px',
+                    top: '8px',
+                    width: cardWidth + 'px',
+                    maxWidth: cardWidth + 'px',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    background: 'rgba(23, 26, 31, 0.97)',
+                    border: '1px solid rgba(115, 226, 154, 0.42)',
+                    boxShadow: '0 10px 24px rgba(0, 0, 0, 0.35)',
+                    pointerEvents: 'none',
+                    zIndex: 3,
+                };
+            },
+            getDamageOverlayStyle: function (info) {
+                const useCoolHeat = info && info.targetSide === "enemy";
+                return {
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    marginTop: '8px',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    background: useCoolHeat ? 'rgba(24, 82, 78, 0.72)' : 'rgba(94, 43, 26, 0.72)',
+                    border: useCoolHeat ? '1px solid rgba(94, 255, 202, 0.36)' : '1px solid rgba(255, 154, 92, 0.38)',
+                    color: '#F4F6F9',
+                    fontSize: '12px',
+                    lineHeight: '1.2',
+                };
+            },
+            stickyDamageContributorRowStyle: function (index) {
+                return {
+                    display: 'grid',
+                    gridTemplateColumns: '18px minmax(0, 1fr) auto',
+                    alignItems: 'center',
+                    gap: '7px',
+                    paddingTop: index === 0 ? '0' : '6px',
+                    borderTop: index === 0 ? '0' : '1px solid rgba(244, 246, 249, 0.10)',
+                };
+            },
             toggleBackwards: function () {
                 this.backwards = animator.toggleBackwards();
             },
             resetViewpoint: function () {
                 animator.resetViewpoint();
+            },
+            toggleStickySelectedInfo: function () {
+                this.stickySelectedInfoEnabled = !this.stickySelectedInfoEnabled;
+                if (animator && animator.setStickyDamageOverlayLinksEnabled) {
+                    animator.setStickyDamageOverlayLinksEnabled(this.stickySelectedInfoEnabled);
+                }
+            },
+            toggleDamageOverlay: function () {
+                this.damageOverlayEnabled = animator.toggleDamageOverlay();
             },
             toggleAnimate: function () {
                 animator.toggleAnimate();
@@ -274,6 +559,27 @@
             },
             updateInputTime: function (value) {
                 animator.updateInputTime(value);
+            },
+            formatHoverDamageOverlayValue: function (info) {
+                if (!info) {
+                    return "0";
+                }
+                const damage = Number(info.damage || 0);
+                const fullHeatDamage = Number(info.fullHeatDamage || 0);
+                if (fullHeatDamage > 0) {
+                    return damage.toLocaleString() + " / " + fullHeatDamage.toLocaleString();
+                }
+                return damage.toLocaleString();
+            },
+            formatHoverDamageOverlayWindow: function (info) {
+                if (!info || !info.lookback) {
+                    return "";
+                }
+                return "last " + (Number(info.lookback) / 1000.0).toFixed(1) + "s";
+            },
+            formatDamageContributorDamage: function (entry) {
+                const damage = entry ? Number(entry.damage || 0) : 0;
+                return damage.toLocaleString();
             }
         },
     });

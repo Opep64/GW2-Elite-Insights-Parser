@@ -95,6 +95,7 @@ const reactiveAnimationData = {
     hoveredActorX: 0,
     hoveredActorY: 0,
     animated: false,
+    viewRevision: 0,
     range: {
         min: 0,
         max: 1e12
@@ -261,6 +262,8 @@ class Animator {
             skillMechanicsMask: DefaultSkillDecorations,
             displayTrashMobs: true,
             useActorHitboxWidth: false,
+            displayDamageOverlay: false,
+            displayStickyDamageOverlayLinks: false,
             followSelected: false
         };
         this.coneControl = {
@@ -288,6 +291,7 @@ class Animator {
         this.screenSpaceActorData = new RenderablesRoot(start, end);
         this.agentDataPerParentID = new Map();
         this.selectedActor = null;
+        this.damageOverlayData = this._buildDamageOverlayData(options ? options.analysis : null);
         // maps
         this.backgroundImages = new RenderablesRoot(start, end);
         // animation
@@ -602,6 +606,10 @@ class Animator {
         this.timeSliderDisplay.value = ((this.reactiveDataStatus.time - this.reactiveDataStatus.range.min) / 1000.0).toFixed(3);
     }
 
+    _bumpViewRevision() {
+        this.reactiveDataStatus.viewRevision++;
+    }
+
     updateInputTime(value) {
         try {
             const cleanedString = value.replace(",", ".");
@@ -724,6 +732,7 @@ class Animator {
         ctx.translate(-pos.x + canvas.width * translateScale, -pos.y + canvas.height * translateScale);
         bgCtx.translate(-pos.x + canvas.width * translateScale, -pos.y + canvas.height * translateScale);
         this.needBGUpdate = true;
+        this._bumpViewRevision();
         if (this.animation === null) {
             animateCanvas(noUpdateTime);
         }
@@ -806,6 +815,134 @@ class Animator {
         animateCanvas(noUpdateTime);
     }
 
+    toggleDamageOverlay() {
+        if (!this.hasDamageTakenOverlay()) {
+            this.displaySettings.displayDamageOverlay = false;
+            return false;
+        }
+        this.displaySettings.displayDamageOverlay = !this.displaySettings.displayDamageOverlay;
+        animateCanvas(noUpdateTime);
+        return this.displaySettings.displayDamageOverlay;
+    }
+
+    setStickyDamageOverlayLinksEnabled(enabled) {
+        this.displaySettings.displayStickyDamageOverlayLinks = !!enabled;
+        if (this.animation === null) {
+            animateCanvas(noUpdateTime);
+        }
+    }
+
+    hasDamageTakenOverlay() {
+        return !!(this.damageOverlayData &&
+            this.damageOverlayData.entries &&
+            this.damageOverlayData.entries.length > 0 &&
+            this.damageOverlayData.scaleValue > 0);
+    }
+
+    getDamageOverlayInfo(actorId) {
+        if (!this.hasDamageTakenOverlay() || actorId == null) {
+            return null;
+        }
+        const snapshotIndex = this._findDamageOverlaySnapshotIndex(this.reactiveDataStatus.time);
+        if (snapshotIndex < 0) {
+            return null;
+        }
+        const overlayData = this.damageOverlayData;
+        for (let i = 0; i < overlayData.entries.length; i++) {
+            const entry = overlayData.entries[i];
+            if (String(entry.actorId) !== String(actorId)) {
+                continue;
+            }
+            const damage = Number(entry.damageTaken[snapshotIndex] || 0);
+            return {
+                actorId: entry.actorId,
+                targetSide: entry.targetSide,
+                damage: damage,
+                fullHeatDamage: overlayData.scaleValue,
+                lookback: overlayData.lookback,
+                heatPercent: Math.max(0, Math.min(100, damage * 100 / overlayData.scaleValue)),
+                topContributors: this._getDamageOverlayContributorInfo(entry.topContributors ? entry.topContributors[snapshotIndex] : null),
+            };
+        }
+        return null;
+    }
+
+    getActorScreenPosition(actorId) {
+        if (!this.mainContext || actorId == null) {
+            return null;
+        }
+        const actor = this.getActorData(actorId);
+        if (!actor || !actor.canDraw()) {
+            return null;
+        }
+        const position = actor.getPosition();
+        if (position === null) {
+            return null;
+        }
+        const transform = this.mainContext.getTransform();
+        return {
+            x: (position.x * transform.a + position.y * transform.c + transform.e) / resolutionMultiplier,
+            y: (position.x * transform.b + position.y * transform.d + transform.f) / resolutionMultiplier,
+        };
+    }
+
+    _getActorDisplayNameById(actorId) {
+        const actor = this.getActorData(actorId);
+        const actorLabel = this._getActorLabel(actor);
+        if (actorLabel) {
+            return actorLabel;
+        }
+        const collections = [logData.players, logData.targets, logData.enemies];
+        for (let i = 0; i < collections.length; i++) {
+            const collection = collections[i];
+            if (!collection) {
+                continue;
+            }
+            const match = collection.find(entry => entry && String(entry.uniqueID) === String(actorId));
+            if (match && match.name) {
+                return match.name;
+            }
+        }
+        return "Actor " + actorId;
+    }
+
+    _getSkillDisplayName(skillId) {
+        if (skillId != null && logData && logData.skillMap) {
+            const skill = logData.skillMap["s" + skillId];
+            if (skill && skill.name) {
+                return skill.name;
+            }
+        }
+        return skillId ? "Skill " + skillId : "Unknown skill";
+    }
+
+    _getDamageOverlayContributorInfo(contributors) {
+        if (!Array.isArray(contributors) || contributors.length === 0) {
+            return [];
+        }
+        const result = [];
+        for (let i = 0; i < contributors.length; i++) {
+            const contributor = contributors[i];
+            if (!Array.isArray(contributor) || contributor.length < 3) {
+                continue;
+            }
+            const sourceId = Number(contributor[0] || 0);
+            const skillId = Number(contributor[1] || 0);
+            const damage = Number(contributor[2] || 0);
+            if (sourceId <= 0 || damage <= 0) {
+                continue;
+            }
+            result.push({
+                sourceId: sourceId,
+                sourceName: this._getActorDisplayNameById(sourceId),
+                skillId: skillId,
+                skillName: this._getSkillDisplayName(skillId),
+                damage: damage,
+            });
+        }
+        return result;
+    }
+
     toggleTrashMobs() {
         this.displaySettings.displayTrashMobs = !this.displaySettings.displayTrashMobs;
         animateCanvas(noUpdateTime);
@@ -864,6 +1001,7 @@ class Animator {
         bgCtx.setTransform(1, 0, 0, 1, 0, 0);
         bgCtx.scale(resolutionMultiplier, resolutionMultiplier);
         this.needBGUpdate = true;
+        this._bumpViewRevision();
         if (this.animation === null) {
             animateCanvas(noUpdateTime);
         }
@@ -1076,6 +1214,7 @@ class Animator {
                 ctx.translate(pt.x - downPt.x, pt.y - downPt.y);
                 bgCtx.translate(pt.x - downPt.x, pt.y - downPt.y);
                 _this.needBGUpdate = true;
+                _this._bumpViewRevision();
                 if (_this.animation === null) {
                     animateCanvas(noUpdateTime);
                 }
@@ -1115,6 +1254,7 @@ class Animator {
                 bgCtx.scale(factor, factor);
                 bgCtx.translate(-pt.x, -pt.y);
                 _this.needBGUpdate = true;
+                _this._bumpViewRevision();
                 if (_this.animation === null) {
                     animateCanvas(noUpdateTime);
                 }
@@ -1315,6 +1455,243 @@ class Animator {
         }
     }
 
+    _buildDamageOverlayData(analysis) {
+        if (!analysis || !analysis.times || analysis.times.length === 0) {
+            return null;
+        }
+        if (analysis.damageOverlay && analysis.damageOverlay.entries && analysis.damageOverlay.entries.length > 0) {
+            return {
+                times: analysis.times,
+                entries: analysis.damageOverlay.entries.map(entry => ({
+                    actorId: entry.uniqueId,
+                    targetSide: entry.targetSide,
+                    damageTaken: entry.damageTaken,
+                    topContributors: entry.topContributors || null,
+                })),
+                lookback: Number(analysis.damageOverlay.lookback || 1000),
+                scaleValue: Math.max(Number(analysis.damageOverlay.fullHeatDamage || 25000), 1),
+            };
+        }
+
+        const entries = [];
+        const positiveValues = [];
+        const addTargetTimelines = function (teamAnalysis, targetSide) {
+            if (!teamAnalysis || !teamAnalysis.targets) {
+                return;
+            }
+            const actorIds = Object.keys(teamAnalysis.targets);
+            for (let i = 0; i < actorIds.length; i++) {
+                const actorId = parseInt(actorIds[i], 10);
+                const targetTimeline = teamAnalysis.targets[actorIds[i]];
+                if (!targetTimeline || !targetTimeline.damageTaken || targetTimeline.damageTaken.length === 0) {
+                    continue;
+                }
+                let hasDamage = false;
+                for (let j = 0; j < targetTimeline.damageTaken.length; j++) {
+                    const damage = Number(targetTimeline.damageTaken[j] || 0);
+                    if (damage > 0) {
+                        hasDamage = true;
+                        positiveValues.push(damage);
+                    }
+                }
+                if (hasDamage) {
+                    entries.push({
+                        actorId: actorId,
+                        targetSide: targetSide,
+                        damageTaken: targetTimeline.damageTaken,
+                    });
+                }
+            }
+        };
+
+        addTargetTimelines(analysis.squad, "enemy");
+        addTargetTimelines(analysis.enemy, "squad");
+        if (entries.length === 0 || positiveValues.length === 0) {
+            return null;
+        }
+
+        positiveValues.sort((left, right) => left - right);
+        const percentileIndex = Math.min(
+            positiveValues.length - 1,
+            Math.max(0, Math.floor((positiveValues.length - 1) * 0.95))
+        );
+        const scaleValue = Math.max(positiveValues[percentileIndex], 1);
+        return {
+            times: analysis.times,
+            entries: entries,
+            lookback: Number(analysis.lookback || 3000),
+            scaleValue: scaleValue,
+        };
+    }
+
+    _findDamageOverlaySnapshotIndex(time) {
+        const times = this.damageOverlayData ? this.damageOverlayData.times : null;
+        if (!times || times.length === 0) {
+            return -1;
+        }
+        let low = 0;
+        let high = times.length - 1;
+        while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            if (times[mid] < time) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        if (low === 0) {
+            return 0;
+        }
+        return Math.abs(times[low] - time) < Math.abs(times[low - 1] - time) ? low : low - 1;
+    }
+
+    _drawDamageOverlayPulse(ctx, position, actorSize, damage, scaleValue, targetSide) {
+        const normalized = Math.max(0.0, Math.min(1.0, damage / scaleValue));
+        if (normalized <= 0) {
+            return;
+        }
+        const eased = Math.pow(normalized, 0.42);
+        const baseRadius = Math.max(actorSize * 0.82, 13 / this.scale);
+        const radius = baseRadius * (1.08 + eased * 1.14);
+        const innerRadius = Math.max(radius * 0.2, 1 / this.scale);
+        const alpha = Math.min(0.66, 0.14 + eased * 0.5);
+        const useCoolHeat = targetSide === "enemy";
+        const edgeRed = useCoolHeat ? Math.round(52 - normalized * 34) : 255;
+        const edgeGreen = useCoolHeat ? 255 : Math.round(208 - normalized * 146);
+        const edgeBlue = useCoolHeat ? Math.round(225 - normalized * 120) : Math.round(72 - normalized * 36);
+        const coreRed = useCoolHeat ? Math.round(130 - normalized * 70) : 255;
+        const coreGreen = useCoolHeat ? 255 : Math.round(236 - normalized * 58);
+        const coreBlue = useCoolHeat ? Math.round(245 - normalized * 95) : Math.round(156 - normalized * 110);
+        const gradient = ctx.createRadialGradient(
+            position.x,
+            position.y,
+            innerRadius,
+            position.x,
+            position.y,
+            radius
+        );
+        gradient.addColorStop(0, "rgba(" + coreRed + ", " + coreGreen + ", " + coreBlue + ", " + Math.min(0.76, alpha + 0.1).toFixed(3) + ")");
+        gradient.addColorStop(0.48, "rgba(" + edgeRed + ", " + edgeGreen + ", " + edgeBlue + ", " + alpha.toFixed(3) + ")");
+        gradient.addColorStop(1, "rgba(" + edgeRed + ", " + edgeGreen + ", " + edgeBlue + ", 0)");
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(position.x, position.y, radius, 0, 2 * Math.PI);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.2 / this.scale, radius * 0.05);
+        ctx.strokeStyle = "rgba(" + edgeRed + ", " + edgeGreen + ", " + edgeBlue + ", " + Math.min(0.62, alpha + 0.05).toFixed(3) + ")";
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    _drawDamageTakenOverlay() {
+        if (!this.displaySettings.displayDamageOverlay || !this.hasDamageTakenOverlay()) {
+            return;
+        }
+        const snapshotIndex = this._findDamageOverlaySnapshotIndex(this.reactiveDataStatus.time);
+        if (snapshotIndex < 0) {
+            return;
+        }
+        const ctx = this.mainContext;
+        const overlayData = this.damageOverlayData;
+        for (let i = 0; i < overlayData.entries.length; i++) {
+            const entry = overlayData.entries[i];
+            const damage = Number(entry.damageTaken[snapshotIndex] || 0);
+            if (damage <= 0) {
+                continue;
+            }
+            const actor = this.getSelectableActorData(entry.actorId);
+            if (!actor || !actor.canDraw()) {
+                continue;
+            }
+            const position = actor.getPosition();
+            if (position === null) {
+                continue;
+            }
+            this._drawDamageOverlayPulse(ctx, position, actor.getSize(), damage, overlayData.scaleValue, entry.targetSide);
+        }
+    }
+
+    _drawDamageContributorLink(ctx, sourcePosition, targetPosition, contributor, targetSide, maxContributorDamage, index) {
+        const dx = targetPosition.x - sourcePosition.x;
+        const dy = targetPosition.y - sourcePosition.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance <= 0) {
+            return;
+        }
+        const share = maxContributorDamage > 0 ? Math.max(0.0, Math.min(1.0, contributor.damage / maxContributorDamage)) : 1.0;
+        const useCoolHeat = targetSide === "enemy";
+        const red = useCoolHeat ? 84 : 255;
+        const green = useCoolHeat ? 255 : 126;
+        const blue = useCoolHeat ? 216 : 68;
+        const alpha = 0.32 + share * 0.38;
+        const width = (1.4 + share * 2.0) / this.scale;
+        const bend = (index - 1) * 14 / this.scale;
+        const normalX = -dy / distance;
+        const normalY = dx / distance;
+        const controlX = (sourcePosition.x + targetPosition.x) * 0.5 + normalX * bend;
+        const controlY = (sourcePosition.y + targetPosition.y) * 0.5 + normalY * bend;
+
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(sourcePosition.x, sourcePosition.y);
+        ctx.quadraticCurveTo(controlX, controlY, targetPosition.x, targetPosition.y);
+        ctx.strokeStyle = "rgba(" + red + ", " + green + ", " + blue + ", " + (alpha * 0.28).toFixed(3) + ")";
+        ctx.lineWidth = width + 5 / this.scale;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(sourcePosition.x, sourcePosition.y);
+        ctx.quadraticCurveTo(controlX, controlY, targetPosition.x, targetPosition.y);
+        ctx.strokeStyle = "rgba(" + red + ", " + green + ", " + blue + ", " + alpha.toFixed(3) + ")";
+        ctx.lineWidth = width;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(sourcePosition.x, sourcePosition.y, Math.max(3.5 / this.scale, width * 1.4), 0, 2 * Math.PI);
+        ctx.fillStyle = "rgba(" + red + ", " + green + ", " + blue + ", " + Math.min(0.85, alpha + 0.1).toFixed(3) + ")";
+        ctx.fill();
+        ctx.restore();
+    }
+
+    _drawSelectedDamageContributorLinks() {
+        if (!this.displaySettings.displayStickyDamageOverlayLinks || !this.displaySettings.displayDamageOverlay || !this.hasDamageTakenOverlay()) {
+            return;
+        }
+        const actorId = this.reactiveDataStatus.selectedActorID;
+        if (actorId == null) {
+            return;
+        }
+        const info = this.getDamageOverlayInfo(actorId);
+        if (!info || !info.topContributors || info.topContributors.length === 0) {
+            return;
+        }
+        const targetActor = this.getActorData(info.actorId);
+        if (!targetActor || !targetActor.canDraw()) {
+            return;
+        }
+        const targetPosition = targetActor.getPosition();
+        if (targetPosition === null) {
+            return;
+        }
+        const maxContributorDamage = Math.max(...info.topContributors.map(contributor => contributor.damage));
+        for (let i = 0; i < info.topContributors.length; i++) {
+            const contributor = info.topContributors[i];
+            const sourceActor = this.getActorData(contributor.sourceId);
+            if (!sourceActor || !sourceActor.canDraw()) {
+                continue;
+            }
+            const sourcePosition = sourceActor.getPosition();
+            if (sourcePosition === null) {
+                continue;
+            }
+            this._drawDamageContributorLink(this.mainContext, sourcePosition, targetPosition, contributor, info.targetSide, maxContributorDamage, i);
+        }
+    }
+
     _drawPickCanvas() {
         var _this = this;
         var mainCtx = this.mainContext;
@@ -1392,6 +1769,7 @@ class Animator {
                 this.skillMechanicActorData.draw(standardDraw);
             }
 
+            this._drawDamageTakenOverlay();
 
             if (!this.displaySettings.useActorHitboxWidth) {
                 this.friendlyMobData.draw(selectableDraw);
@@ -1410,6 +1788,7 @@ class Animator {
                 this.friendlyPlayerData.draw(selectableDraw);
                 this.playerData.draw(selectableDraw);
             }
+            this._drawSelectedDamageContributorLinks();
             if (this.selectedActor !== null) {
                 this.selectedActor.draw();
                 this._drawActorOrientation(this.selectedActor.id);

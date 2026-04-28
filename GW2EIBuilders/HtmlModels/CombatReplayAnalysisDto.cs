@@ -24,8 +24,24 @@ internal class CombatReplayAnalysisDto
     public CombatReplayEventAnalysisDto Events { get; set; } = new();
     public CombatReplayDefenseAnalysisDto Defense { get; set; } = new();
     public CombatReplayFightDemandDto FightDemand { get; set; } = new();
+    public CombatReplayDamageOverlayDto DamageOverlay { get; set; } = new();
     public Dictionary<int, CombatReplayPlayerEvaluationDto> PlayerEvaluations { get; set; } = [];
     public List<CombatReplaySpecCapabilityDto> SpecCapabilities { get; set; } = [];
+}
+
+internal class CombatReplayDamageOverlayDto
+{
+    public int Lookback { get; set; }
+    public int FullHeatDamage { get; set; }
+    public List<CombatReplayDamageOverlayEntryDto> Entries { get; set; } = [];
+}
+
+internal class CombatReplayDamageOverlayEntryDto
+{
+    public int UniqueId { get; set; }
+    public string TargetSide { get; set; } = "";
+    public long[] DamageTaken { get; set; } = [];
+    public Dictionary<int, long[][]> TopContributors { get; set; } = [];
 }
 
 internal class CombatReplayTeamAnalysisDto
@@ -1020,6 +1036,9 @@ internal static class CombatReplayAnalysisBuilder
     private const string MysticRebukeSkillName = "Mystic Rebuke";
     private const string OffensiveProtocolObliterateSkillNamePrefix = "Offensive Protocol: Obliterate";
     private const int LookbackWindow = 3000;
+    private const int DamageOverlayLookbackWindow = 1000;
+    private const double DamageOverlayFullHeatPercentile = 0.95;
+    private const int DamageOverlayTopContributorCount = 3;
     private const int RecoveryRezAttributionWindow = 500;
     private const int BucketSize = 1000;
     private const double MeaningfulContributionThreshold = 0.10;
@@ -1107,7 +1126,7 @@ internal static class CombatReplayAnalysisBuilder
         Blind,
     ];
 
-    private readonly record struct DamageRecord(long Time, int TargetUniqueId, int AttackerUniqueId, int Damage, bool HasDowned, bool HasKilled);
+    private readonly record struct DamageRecord(long Time, int TargetUniqueId, int AttackerUniqueId, long SkillId, int Damage, bool HasDowned, bool HasKilled);
     private readonly record struct HealingRecord(long Time, int AttackerUniqueId, int Healing);
     private readonly record struct BarrierRecord(long Time, int AttackerUniqueId, int Barrier);
     private readonly record struct CleanseRecord(long Time, int AttackerUniqueId);
@@ -1173,7 +1192,7 @@ internal static class CombatReplayAnalysisBuilder
         IReadOnlyDictionary<AgentItem, int> AttackerIdsByAgent,
         string Label);
 
-    public static CombatReplayAnalysisDto? Build(ParsedEvtcLog log)
+    public static CombatReplayAnalysisDto? Build(ParsedEvtcLog log, Dictionary<long, SkillItem>? usedSkills = null)
     {
         if (!log.CanCombatReplay ||
             log.LogData.Logic.ParseMode != LogLogic.ParseModeEnum.WvW ||
@@ -1215,6 +1234,7 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayEventAnalysisDto eventAnalysis = BuildEventAnalysis(log, squadPlayers, hostileTargets);
         CombatReplayDefenseAnalysisDto defenseAnalysis = BuildDefenseAnalysis(log, squadPlayers, enemyAnalysis, times);
         CombatReplayFightDemandDto fightDemand = BuildFightDemand(squadAnalysis, enemyAnalysis, eventAnalysis, defenseAnalysis, threatAnalysis, times);
+        CombatReplayDamageOverlayDto damageOverlay = BuildDamageOverlay(log, squadContext, enemyContext, times, snapshotCount, usedSkills);
         EvaluationBuildResult evaluationData = BuildEvaluationData(
             log,
             squadPlayers,
@@ -1238,6 +1258,7 @@ internal static class CombatReplayAnalysisBuilder
             Events = eventAnalysis,
             Defense = defenseAnalysis,
             FightDemand = fightDemand,
+            DamageOverlay = damageOverlay,
             PlayerEvaluations = evaluationData.PlayerEvaluations,
             SpecCapabilities = evaluationData.SpecCapabilities,
         };
@@ -1594,6 +1615,131 @@ internal static class CombatReplayAnalysisBuilder
 
         result.TopBursts = BuildTopBursts(result, times);
         return result;
+    }
+
+    private static CombatReplayDamageOverlayDto BuildDamageOverlay(
+        ParsedEvtcLog log,
+        TeamActorContext squadContext,
+        TeamActorContext enemyContext,
+        long[] times,
+        int snapshotCount,
+        Dictionary<long, SkillItem>? usedSkills)
+    {
+        var result = new CombatReplayDamageOverlayDto
+        {
+            Lookback = DamageOverlayLookbackWindow,
+        };
+
+        AddDamageOverlayEntries(log, squadContext, "enemy", times, snapshotCount, result.Entries, usedSkills);
+        AddDamageOverlayEntries(log, enemyContext, "squad", times, snapshotCount, result.Entries, usedSkills);
+        result.FullHeatDamage = ComputeDamageOverlayFullHeatDamage(result.Entries);
+        return result;
+    }
+
+    private static int ComputeDamageOverlayFullHeatDamage(IEnumerable<CombatReplayDamageOverlayEntryDto> entries)
+    {
+        List<long> damageSamples = [.. entries
+            .SelectMany(entry => entry.DamageTaken)
+            .Where(damage => damage > 0)
+            .Order()];
+        if (damageSamples.Count == 0)
+        {
+            return 1;
+        }
+        int percentileIndex = Math.Min(
+            damageSamples.Count - 1,
+            Math.Max(0, (int)Math.Floor((damageSamples.Count - 1) * DamageOverlayFullHeatPercentile)));
+        long fullHeatDamage = Math.Max(1, damageSamples[percentileIndex]);
+        return fullHeatDamage > int.MaxValue ? int.MaxValue : (int)fullHeatDamage;
+    }
+
+    private static void AddDamageOverlayEntries(
+        ParsedEvtcLog log,
+        TeamActorContext context,
+        string targetSide,
+        long[] times,
+        int snapshotCount,
+        List<CombatReplayDamageOverlayEntryDto> entries,
+        Dictionary<long, SkillItem>? usedSkills)
+    {
+        List<DamageRecord> damageRecords = BuildDamageRecords(log, context, usedSkills);
+        var timelines = new Dictionary<int, long[]>();
+        var topContributorsByTarget = new Dictionary<int, Dictionary<int, long[][]>>();
+        var damageIndexStart = 0;
+        var damageIndexEnd = 0;
+
+        for (var snapshotIndex = 0; snapshotIndex < snapshotCount; snapshotIndex++)
+        {
+            long time = times[snapshotIndex];
+            long windowStart = Math.Max(0, time - DamageOverlayLookbackWindow);
+            var contributorDamageByTarget = new Dictionary<int, Dictionary<(int SourceId, long SkillId), long>>();
+
+            while (damageIndexStart < damageRecords.Count && damageRecords[damageIndexStart].Time < windowStart)
+            {
+                damageIndexStart++;
+            }
+            while (damageIndexEnd < damageRecords.Count && damageRecords[damageIndexEnd].Time <= time)
+            {
+                damageIndexEnd++;
+            }
+
+            for (var index = damageIndexStart; index < damageIndexEnd; index++)
+            {
+                DamageRecord damage = damageRecords[index];
+                if (damage.Damage <= 0)
+                {
+                    continue;
+                }
+                if (!timelines.TryGetValue(damage.TargetUniqueId, out long[]? timeline))
+                {
+                    timeline = new long[snapshotCount];
+                    timelines[damage.TargetUniqueId] = timeline;
+                }
+                timeline[snapshotIndex] += damage.Damage;
+
+                if (!contributorDamageByTarget.TryGetValue(damage.TargetUniqueId, out Dictionary<(int SourceId, long SkillId), long>? contributorDamage))
+                {
+                    contributorDamage = [];
+                    contributorDamageByTarget[damage.TargetUniqueId] = contributorDamage;
+                }
+                var contributorKey = (damage.AttackerUniqueId, damage.SkillId);
+                contributorDamage[contributorKey] = contributorDamage.TryGetValue(contributorKey, out long currentDamage)
+                    ? currentDamage + damage.Damage
+                    : damage.Damage;
+            }
+
+            foreach ((int targetUniqueId, Dictionary<(int SourceId, long SkillId), long> contributorDamage) in contributorDamageByTarget)
+            {
+                long[][] topContributors = contributorDamage
+                    .OrderByDescending(pair => pair.Value)
+                    .ThenBy(pair => pair.Key.SourceId)
+                    .ThenBy(pair => pair.Key.SkillId)
+                    .Take(DamageOverlayTopContributorCount)
+                    .Select(pair => new long[] { pair.Key.SourceId, pair.Key.SkillId, pair.Value })
+                    .ToArray();
+                if (topContributors.Length == 0)
+                {
+                    continue;
+                }
+                if (!topContributorsByTarget.TryGetValue(targetUniqueId, out Dictionary<int, long[][]>? snapshots))
+                {
+                    snapshots = [];
+                    topContributorsByTarget[targetUniqueId] = snapshots;
+                }
+                snapshots[snapshotIndex] = topContributors;
+            }
+        }
+
+        foreach ((int uniqueId, long[] timeline) in timelines.OrderBy(pair => pair.Key))
+        {
+            entries.Add(new CombatReplayDamageOverlayEntryDto
+            {
+                UniqueId = uniqueId,
+                TargetSide = targetSide,
+                DamageTaken = timeline,
+                TopContributors = topContributorsByTarget.GetValueOrDefault(uniqueId) ?? [],
+            });
+        }
     }
 
     private static CombatReplayThreatBoonAnalysisDto BuildThreatBoonAnalysis(
@@ -8210,7 +8356,7 @@ internal static class CombatReplayAnalysisBuilder
         return [.. times];
     }
 
-    private static List<DamageRecord> BuildDamageRecords(ParsedEvtcLog log, TeamActorContext context)
+    private static List<DamageRecord> BuildDamageRecords(ParsedEvtcLog log, TeamActorContext context, Dictionary<long, SkillItem>? usedSkills = null)
     {
         var result = new List<DamageRecord>();
         foreach (var target in context.Targets)
@@ -8226,7 +8372,8 @@ internal static class CombatReplayAnalysisBuilder
                 {
                     continue;
                 }
-                result.Add(new DamageRecord(damageEvent.Time, target.UniqueID, attackerUniqueId, damageEvent.HealthDamage, damageEvent.HasDowned, damageEvent.HasKilled));
+                usedSkills?.TryAdd(damageEvent.SkillID, damageEvent.Skill);
+                result.Add(new DamageRecord(damageEvent.Time, target.UniqueID, attackerUniqueId, damageEvent.SkillID, damageEvent.HealthDamage, damageEvent.HasDowned, damageEvent.HasKilled));
             }
         }
         result.Sort((left, right) => left.Time.CompareTo(right.Time));
