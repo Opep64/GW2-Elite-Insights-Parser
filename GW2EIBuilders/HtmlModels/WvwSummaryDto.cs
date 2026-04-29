@@ -20,6 +20,8 @@ internal class WvwSummaryDto
     private const double ExecutionSizeGapScoreCap = 15.0;
     private const double ExecutionMinimumHealingCoverage = 0.4;
     private const double ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute = 15.0;
+    private const int ExecutionBurstYieldMinimumTotalWindows = 6;
+    private const int ExecutionBurstYieldMinimumOneSideWindows = 3;
     private const int ThreeWayMinimumSecondEnemyCount = 15;
     private const int ThreeWayMinimumCombinedEnemyCountWithoutColor = 65;
     private const long ThreeWayMinimumSustainMs = 8000;
@@ -243,8 +245,10 @@ internal class WvwSummaryDto
         WvwSummaryPhasePositioningDto pressurePositioningMetrics = BuildPhasePositioningMetrics(combatReplayAnalysis, phase, enemyBurstWindows);
         int squadBurstSuccessCount = CountWindowsContainingEvents(squadBurstWindows, enemyDownTimes);
         int enemyBurstSuccessCount = CountWindowsContainingEvents(enemyBurstWindows, squadDownTimes);
-        int enemyBurstHeldCount = squadBurstWindows.Count - CountWindowsContainingEvents(squadBurstWindows, enemyDownTimes);
-        int squadBurstHeldCount = enemyBurstWindows.Count - CountWindowsContainingEvents(enemyBurstWindows, squadDownTimes);
+        int squadBurstDownCount = CountEventsInsideWindows(squadBurstWindows, enemyDownTimes);
+        int enemyBurstDownCount = CountEventsInsideWindows(enemyBurstWindows, squadDownTimes);
+        int enemyBurstHeldCount = squadBurstWindows.Count - squadBurstSuccessCount;
+        int squadBurstHeldCount = enemyBurstWindows.Count - enemyBurstSuccessCount;
 
         const double cohesionInPositionWeight = 25.0;
         const double cohesionPressurePositioningWeight = 25.0;
@@ -309,34 +313,40 @@ internal class WvwSummaryDto
                 higherIsBetter: true,
                 $"{FormatDecimal(squadStripsPerActivePlayerPerMinute)} vs enemy {FormatDecimal(enemyStripsPerActivePlayerPerMinute)} strips per active player per minute"),
         };
-        if (squadBurstWindows.Count > 0 && enemyBurstWindows.Count > 0)
+        double squadBurstDownsPerTenActivePlayers = squadBurstDownCount * 10.0 / squadPlayers;
+        double enemyBurstDownsPerTenActivePlayers = enemyBurstDownCount * 10.0 / enemyPlayers;
+        int totalBurstWindowCount = squadBurstWindows.Count + enemyBurstWindows.Count;
+        bool hasMeaningfulBurstYieldSample =
+            totalBurstWindowCount >= ExecutionBurstYieldMinimumTotalWindows &&
+            Math.Max(squadBurstWindows.Count, enemyBurstWindows.Count) >= ExecutionBurstYieldMinimumOneSideWindows;
+        if (hasMeaningfulBurstYieldSample)
         {
-            double squadBurstSuccessRate = Math.Round(squadBurstSuccessCount * 100.0 / squadBurstWindows.Count, 1);
-            double enemyBurstSuccessRate = Math.Round(enemyBurstSuccessCount * 100.0 / enemyBurstWindows.Count, 1);
             pressureMetrics.Insert(1,
                 BuildRelativeExecutionMetric(
-                    "Burst-window success rate",
-                    squadBurstSuccessRate,
-                    enemyBurstSuccessRate,
+                    "Burst pressure yield",
+                    squadBurstDownsPerTenActivePlayers,
+                    enemyBurstDownsPerTenActivePlayers,
                     higherIsBetter: true,
-                    $"{FormatDecimal(squadBurstSuccessRate)}% vs enemy {FormatDecimal(enemyBurstSuccessRate)}% of strong synced burst windows created at least one down",
-                    $"{squadBurstSuccessCount}/{squadBurstWindows.Count} squad burst windows converted a down; enemy converted {enemyBurstSuccessCount}/{enemyBurstWindows.Count}."));
+                    $"{FormatDecimal(squadBurstDownsPerTenActivePlayers)} vs enemy {FormatDecimal(enemyBurstDownsPerTenActivePlayers)} burst-window downs per 10 active players",
+                    $"{squadBurstDownCount} enemy downs inside {BuildPluralizedTag(squadBurstWindows.Count, "detected squad burst window", "detected squad burst windows")}; enemy created {enemyBurstDownCount} squad downs inside {BuildPluralizedTag(enemyBurstWindows.Count, "detected burst window", "detected burst windows")}."));
         }
         else
         {
-            string burstNote = squadBurstWindows.Count == 0 && enemyBurstWindows.Count == 0
-                ? "Neutralized at 50: neither side produced a strong synced burst window in this phase."
-                : "Neutralized at 50: burst-window success needs at least one strong synced burst window from each side.";
-            pressureMetrics.Insert(1, BuildNeutralizedExecutionMetric("Burst-window success rate", burstNote));
+            string burstSampleLabel = BuildPluralizedTag(totalBurstWindowCount, "detected burst window", "detected burst windows");
+            string burstSampleVerb = totalBurstWindowCount == 1 ? "was" : "were";
+            string burstNote = totalBurstWindowCount == 0
+                ? "Neutralized at 50: no detected burst windows were produced in this phase."
+                : $"Neutralized at 50: only {burstSampleLabel} {burstSampleVerb} found, too little to judge burst pressure yield without over-reading a tiny sample.";
+            pressureMetrics.Insert(1, BuildNeutralizedExecutionMetric("Burst pressure yield", burstNote));
         }
         string pressureSummary = $"{FormatDecimal(squadDownsPerActivePlayer)} downs per active player and {FormatDecimal(squadStripsPerActivePlayerPerMinute)} strips per active player per minute.";
         if (pressureMetrics[1].Available)
         {
-            pressureSummary = $"{pressureSummary} Strong synced burst windows converted downs at {FormatDecimal(Math.Round(squadBurstSuccessCount * 100.0 / squadBurstWindows.Count, 1))}% for the squad and {FormatDecimal(Math.Round(enemyBurstSuccessCount * 100.0 / enemyBurstWindows.Count, 1))}% for the enemy.";
+            pressureSummary = $"{pressureSummary} Detected burst windows produced {FormatDecimal(squadBurstDownsPerTenActivePlayers)} enemy downs per 10 squad players vs {FormatDecimal(enemyBurstDownsPerTenActivePlayers)} squad downs per 10 enemy players.";
         }
         else
         {
-            pressureSummary = $"{pressureSummary} Burst-window success was neutralized because a comparable burst sample was unavailable.";
+            pressureSummary = $"{pressureSummary} Burst pressure yield was neutralized because the detected burst sample was too small.";
         }
 
         var downstateMetrics = new List<WvwSummaryExecutionMetricDto>(4)
@@ -576,7 +586,7 @@ internal class WvwSummaryDto
                 "Pressure & Burst",
                 pressureMetrics,
                 pressureSummary,
-                "Compares phase-level downs per active player, strong synced burst window success, and strips per active player per minute against the enemy."),
+                "Compares phase-level downs per active player, burst-window down yield, and strips per active player per minute against the enemy. Burst pressure yield is neutralized when there are too few detected burst windows to avoid over-reading a one-window sample."),
             BuildExecutionPillar(
                 "downstate-control",
                 "Downstate Control",
@@ -1669,6 +1679,30 @@ internal class WvwSummaryDto
             if (eventIndex < eventTimes.Count && eventTimes[eventIndex] <= window.End)
             {
                 count++;
+            }
+        }
+        return count;
+    }
+
+    private static int CountEventsInsideWindows(IReadOnlyList<WvwSummaryExecutionWindow> windows, IReadOnlyList<long> eventTimes)
+    {
+        if (windows.Count == 0 || eventTimes.Count == 0)
+        {
+            return 0;
+        }
+
+        int eventIndex = 0;
+        int count = 0;
+        foreach (WvwSummaryExecutionWindow window in windows.OrderBy(window => window.Start))
+        {
+            while (eventIndex < eventTimes.Count && eventTimes[eventIndex] < window.Start)
+            {
+                eventIndex++;
+            }
+            while (eventIndex < eventTimes.Count && eventTimes[eventIndex] <= window.End)
+            {
+                count++;
+                eventIndex++;
             }
         }
         return count;
