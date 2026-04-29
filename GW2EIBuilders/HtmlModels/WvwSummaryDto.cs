@@ -19,6 +19,7 @@ internal class WvwSummaryDto
     private const double ExecutionSizeGapScorePerPlayer = 1.5;
     private const double ExecutionSizeGapScoreCap = 15.0;
     private const double ExecutionMinimumHealingCoverage = 0.4;
+    private const double ExecutionReliableHealingCoverage = 0.8;
     private const double ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute = 15.0;
     private const int ExecutionBurstYieldMinimumTotalWindows = 6;
     private const int ExecutionBurstYieldMinimumOneSideWindows = 3;
@@ -74,16 +75,19 @@ internal class WvwSummaryDto
         Swiftness,
         Superspeed,
     ];
-    private static readonly IReadOnlyList<long> ExecutionSupportBoonIds =
+    private static readonly IReadOnlyList<WvwSummaryExecutionBoonExpectation> ExecutionDefensiveBoonExpectations =
     [
-        Stability,
-        Protection,
-        Resolution,
-        Resistance,
-        Aegis,
-        Might,
-        Fury,
-        Quickness,
+        new(Stability, 0.30, 85.0),
+        new(Protection, 0.25, 85.0),
+        new(Resolution, 0.20, 85.0),
+        new(Resistance, 0.15, 55.0),
+        new(Aegis, 0.10, 30.0),
+    ];
+    private static readonly IReadOnlyList<WvwSummaryExecutionBoonExpectation> ExecutionOffensiveBoonExpectations =
+    [
+        new(Might, 0.35, 0.0, 18.0),
+        new(Fury, 0.30, 85.0),
+        new(Quickness, 0.35, 55.0),
     ];
 
     public string FightTime { get; set; } = "";
@@ -222,7 +226,7 @@ internal class WvwSummaryDto
 
         if (combatReplayAnalysis == null || combatReplayAnalysis.Times.Length == 0)
         {
-            const int totalMetricCount = 17;
+            const int totalMetricCount = 18;
             result.ScoreAvailable = false;
             result.Confidence = new WvwSummaryExecutionConfidenceDto
             {
@@ -296,20 +300,26 @@ internal class WvwSummaryDto
         double squadStripsPerActivePlayerPerMinute = squad.StripsPerMinute / squadPlayers;
         double enemyStripsPerActivePlayerPerMinute = enemy.StripsPerMinute / enemyPlayers;
 
-        var pressureMetrics = new List<WvwSummaryExecutionMetricDto>(3)
+        const double pressureDownsWeight = 35.0;
+        const double pressureBurstYieldWeight = 25.0;
+        const double pressureOffensiveBoonWeight = 20.0;
+        const double pressureStripWeight = 20.0;
+        var pressureMetrics = new List<WvwSummaryExecutionMetricDto>(4)
         {
             BuildRelativeExecutionMetric(
                 "Downs per active player",
                 squadDownsPerActivePlayer,
                 enemyDownsPerActivePlayer,
                 higherIsBetter: true,
-                $"{FormatDecimal(squadDownsPerActivePlayer)} vs enemy {FormatDecimal(enemyDownsPerActivePlayer)} downs per active player"),
+                $"{FormatDecimal(squadDownsPerActivePlayer)} vs enemy {FormatDecimal(enemyDownsPerActivePlayer)} downs per active player",
+                weightPercent: pressureDownsWeight),
             BuildRelativeExecutionMetric(
                 "Strips per active player per minute",
                 squadStripsPerActivePlayerPerMinute,
                 enemyStripsPerActivePlayerPerMinute,
                 higherIsBetter: true,
-                $"{FormatDecimal(squadStripsPerActivePlayerPerMinute)} vs enemy {FormatDecimal(enemyStripsPerActivePlayerPerMinute)} strips per active player per minute"),
+                $"{FormatDecimal(squadStripsPerActivePlayerPerMinute)} vs enemy {FormatDecimal(enemyStripsPerActivePlayerPerMinute)} strips per active player per minute",
+                weightPercent: pressureStripWeight),
         };
         double squadBurstDownsPerTenActivePlayers = squadBurstDownCount * 10.0 / squadPlayers;
         double enemyBurstDownsPerTenActivePlayers = enemyBurstDownCount * 10.0 / enemyPlayers;
@@ -326,7 +336,8 @@ internal class WvwSummaryDto
                     enemyBurstDownsPerTenActivePlayers,
                     higherIsBetter: true,
                     $"{FormatDecimal(squadBurstDownsPerTenActivePlayers)} vs enemy {FormatDecimal(enemyBurstDownsPerTenActivePlayers)} burst-window downs per 10 active players",
-                    $"{squadBurstDownCount} enemy downs inside {BuildPluralizedTag(squadBurstWindows.Count, "detected squad burst window", "detected squad burst windows")}; enemy created {enemyBurstDownCount} squad downs inside {BuildPluralizedTag(enemyBurstWindows.Count, "detected burst window", "detected burst windows")}."));
+                    $"{squadBurstDownCount} enemy downs inside {BuildPluralizedTag(squadBurstWindows.Count, "detected squad burst window", "detected squad burst windows")}; enemy created {enemyBurstDownCount} squad downs inside {BuildPluralizedTag(enemyBurstWindows.Count, "detected burst window", "detected burst windows")}.",
+                    pressureBurstYieldWeight));
         }
         else
         {
@@ -335,7 +346,30 @@ internal class WvwSummaryDto
             string burstNote = totalBurstWindowCount == 0
                 ? "Neutralized at 50: no detected burst windows were produced in this phase."
                 : $"Neutralized at 50: only {burstSampleLabel} {burstSampleVerb} found, too little to judge burst pressure yield without over-reading a tiny sample.";
-            pressureMetrics.Insert(1, BuildNeutralizedExecutionMetric("Burst pressure yield", burstNote));
+            pressureMetrics.Insert(1, BuildNeutralizedExecutionMetric("Burst pressure yield", burstNote, pressureBurstYieldWeight));
+        }
+        if (TryComputePhaseTargetAdjustedThreatBoonCoverage(
+            combatReplayAnalysis,
+            phase,
+            ExecutionOffensiveBoonExpectations,
+            squadBurstWindows,
+            out double offensiveBoonCoverage,
+            out string offensiveBoonCoverageNote))
+        {
+            pressureMetrics.Insert(2,
+                BuildBoonCoverageExecutionMetric(
+                    "Offensive boon coverage",
+                    offensiveBoonCoverage,
+                    $"{FormatDecimal(offensiveBoonCoverage)}% target-adjusted offensive boon coverage",
+                    $"{offensiveBoonCoverageNote} Might uses a practical average-stack target, Quickness uses a lower WvW uptime target, and Alacrity is intentionally excluded.",
+                    pressureOffensiveBoonWeight));
+        }
+        else
+        {
+            string offensiveBoonNote = squadBurstWindows.Count == 0
+                ? "Neutralized at 50: no detected squad pressure windows were produced in this phase."
+                : "Neutralized at 50: no threatened squad boon samples overlapped detected squad pressure windows.";
+            pressureMetrics.Insert(2, BuildNeutralizedExecutionMetric("Offensive boon coverage", offensiveBoonNote, pressureOffensiveBoonWeight));
         }
         string pressureSummary = $"{FormatDecimal(squadDownsPerActivePlayer)} downs per active player and {FormatDecimal(squadStripsPerActivePlayerPerMinute)} strips per active player per minute.";
         if (pressureMetrics[1].Available)
@@ -345,6 +379,14 @@ internal class WvwSummaryDto
         else
         {
             pressureSummary = $"{pressureSummary} Burst pressure yield was neutralized because the detected burst sample was too small.";
+        }
+        if (pressureMetrics[2].Available)
+        {
+            pressureSummary = $"{pressureSummary} Offensive boon coverage scored {FormatDecimal(offensiveBoonCoverage)}% target-adjusted during squad pressure windows.";
+        }
+        else
+        {
+            pressureSummary = $"{pressureSummary} Offensive boon coverage was neutralized because there were no usable squad pressure-window boon samples.";
         }
 
         const double downstateConversionRateWeight = 35.0;
@@ -480,45 +522,61 @@ internal class WvwSummaryDto
         var supportMetrics = new List<WvwSummaryExecutionMetricDto>(5);
         if (log.CombatData.HasEXTHealing && healAddonCoverage >= ExecutionMinimumHealingCoverage && squadHealthDamageTaken > 0)
         {
+            double healingScore = CompareScore(squadHealingTotal, squadHealthDamageTaken);
+            bool reliableHealingSample = healAddonCoverage >= ExecutionReliableHealingCoverage;
+            string healingValue = $"{FormatWholeNumber(squadHealingTotal)} observed healing vs {FormatWholeNumber(squadHealthDamageTaken)} squad health damage";
             string healingNote = healAddonPlayerCount == squadActors.Count
                 ? $"{healAddonCoverageLabel}."
                 : $"{healAddonCoverageLabel}. Observed healing is likely understated because some squad healing is missing from the add-on sample.";
-            supportMetrics.Add(
-                BuildRelativeExecutionMetric(
-                    "Healing coverage",
-                    squadHealingTotal,
-                    squadHealthDamageTaken,
-                    higherIsBetter: true,
-                    $"{FormatWholeNumber(squadHealingTotal)} observed healing vs {FormatWholeNumber(squadHealthDamageTaken)} squad health damage",
-                    healingNote));
+            if (reliableHealingSample || healingScore >= 50.0)
+            {
+                string confidenceNote = reliableHealingSample
+                    ? $"{healingNote} Reliable enough to score both high and low outcomes."
+                    : $"{healingNote} Partial Healing Stats coverage: this can give credit for strong observed healing, but low observed healing is neutralized instead of treated as proof of poor healing.";
+                supportMetrics.Add(BuildFixedScoreExecutionMetric(
+                    "Observed healing coverage",
+                    healingValue,
+                    confidenceNote,
+                    healingScore));
+            }
+            else
+            {
+                supportMetrics.Add(BuildNeutralizedExecutionMetric(
+                    "Observed healing coverage",
+                    $"Neutralized at 50: {healingValue}. {healingNote} Partial Healing Stats coverage below {FormatDecimal(ExecutionReliableHealingCoverage * 100.0)}% is not allowed to penalize healing when observed healing is low."));
+            }
         }
         else
         {
             string healingNote = !log.CombatData.HasEXTHealing
                 ? $"Neutralized at 50: Healing Stats add-on data is unavailable for this log. {healAddonCoverageLabel}."
                 : healAddonCoverage < ExecutionMinimumHealingCoverage
-                    ? $"Neutralized at 50: healing coverage needs at least {FormatDecimal(ExecutionMinimumHealingCoverage * 100.0)}% squad Healing Stats coverage; {healAddonCoverageLabel}."
+                    ? $"Neutralized at 50: observed healing coverage needs at least {FormatDecimal(ExecutionMinimumHealingCoverage * 100.0)}% squad Healing Stats coverage before it can even give positive credit; {healAddonCoverageLabel}."
                     : "Neutralized at 50: squad health damage was zero in this phase.";
-            supportMetrics.Add(BuildNeutralizedExecutionMetric("Healing coverage", healingNote));
+            supportMetrics.Add(BuildNeutralizedExecutionMetric("Observed healing coverage", healingNote));
         }
         WvwSummaryExecutionMetricDto cleansePressureMetric = BuildCleansePressureExecutionMetric(log, phase, squadActors, squadPlayers, out string cleansePressureSummary);
         supportMetrics.Add(cleansePressureMetric);
-        if (TryComputePhaseWeightedThreatBoonCoverage(combatReplayAnalysis, phase, ExecutionSupportBoonIds, out double weightedSupportBoonCoverage, out string weightedSupportBoonCoverageNote))
+        if (TryComputePhaseTargetAdjustedThreatBoonCoverage(
+            combatReplayAnalysis,
+            phase,
+            ExecutionDefensiveBoonExpectations,
+            windows: null,
+            out double defensiveBoonCoverage,
+            out string defensiveBoonCoverageNote))
         {
             supportMetrics.Add(
-                BuildRelativeExecutionMetric(
-                    "Weighted support boon coverage",
-                    weightedSupportBoonCoverage,
-                    100.0 - weightedSupportBoonCoverage,
-                    higherIsBetter: true,
-                    $"{FormatDecimal(weightedSupportBoonCoverage)}% weighted threatened-boon coverage",
-                    weightedSupportBoonCoverageNote));
+                BuildBoonCoverageExecutionMetric(
+                    "Defensive boon coverage",
+                    defensiveBoonCoverage,
+                    $"{FormatDecimal(defensiveBoonCoverage)}% target-adjusted defensive boon coverage",
+                    $"{defensiveBoonCoverageNote} Resistance uses a lower WvW target than the easier defensive boons; Alacrity is intentionally excluded."));
         }
         else
         {
             supportMetrics.Add(BuildNeutralizedExecutionMetric(
-                "Weighted support boon coverage",
-                "Neutralized at 50: the squad never had threatened replay samples for weighted support-boon coverage in this phase."));
+                "Defensive boon coverage",
+                "Neutralized at 50: the squad never had threatened replay samples for defensive boon coverage in this phase."));
         }
         WvwSummaryExecutionMetricDto preventionMetric = BuildPreventionExecutionMetric(
             squadBarrierAbsorbed,
@@ -552,11 +610,11 @@ internal class WvwSummaryDto
         }
         else
         {
-            supportSummary = $"{supportSummary} Healing coverage was neutralized; {healAddonCoverageLabel}.";
+            supportSummary = $"{supportSummary} Observed healing coverage was neutralized; {healAddonCoverageLabel}.";
         }
         if (supportMetrics[2].Available)
         {
-            supportSummary = $"{supportSummary} Weighted threatened support-boon coverage averaged {FormatDecimal(weightedSupportBoonCoverage)}%.";
+            supportSummary = $"{supportSummary} Defensive boon coverage scored {FormatDecimal(defensiveBoonCoverage)}% target-adjusted during threatened moments.";
         }
         if (supportMetrics[3].Available)
         {
@@ -580,7 +638,7 @@ internal class WvwSummaryDto
                 "Pressure & Burst",
                 pressureMetrics,
                 pressureSummary,
-                "Compares phase-level downs per active player, burst-window down yield, and strips per active player per minute against the enemy. Burst pressure yield is neutralized when there are too few detected burst windows to avoid over-reading a one-window sample."),
+                "Compares phase-level downs per active player, burst-window down yield, target-adjusted offensive boon coverage during squad pressure windows, and strips per active player per minute against the enemy. Offensive boon coverage tracks Might, Fury, and Quickness; Might is scored against a practical stack target, Quickness uses a lower WvW uptime target, and Alacrity is intentionally excluded. Burst pressure yield is neutralized when there are too few detected burst windows to avoid over-reading a one-window sample."),
             BuildExecutionPillar(
                 "downstate-control",
                 "Downstate Control",
@@ -592,7 +650,7 @@ internal class WvwSummaryDto
                 "Support & Mitigation",
                 supportMetrics,
                 supportSummary,
-                $"Blends healing coverage, pressure-gated cleanse response, threat-weighted support-boon coverage, prevention value, and saved-player mitigation. Prevention value uses barrier absorbed, estimated negated damage, and discounted pet/minion absorption as pre-hit mitigation signals rather than only counting saves. Cleanse response is self-scored only when tracked condition pressure reaches at least {FormatDecimal(ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute)} condition-seconds per active player per minute. Each tracked condition, including Vulnerability, counts as present or absent rather than by stack count, and faster cleanses get more credit because they remove more remaining duration. Healing coverage needs at least {FormatDecimal(ExecutionMinimumHealingCoverage * 100.0)}% squad Healing Stats coverage; missing support inputs are neutralized at 50 instead of guessed."),
+                $"Blends observed healing coverage, pressure-gated cleanse response, target-adjusted defensive boon coverage, prevention value, and saved-player mitigation. Observed healing coverage needs at least {FormatDecimal(ExecutionMinimumHealingCoverage * 100.0)}% squad Healing Stats coverage to give positive credit and at least {FormatDecimal(ExecutionReliableHealingCoverage * 100.0)}% to penalize low observed healing; below that reliable threshold, incomplete add-on data can lift the score but cannot drag it under neutral. Defensive boon coverage tracks Stability, Protection, Resolution, Resistance, and Aegis during threatened moments; Resistance uses a lower WvW target because keeping it near the easier boons requires meaningful tradeoffs. Prevention value uses barrier absorbed, estimated negated damage, and discounted pet/minion absorption as pre-hit mitigation signals rather than only counting saves. Cleanse response is self-scored only when tracked condition pressure reaches at least {FormatDecimal(ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute)} condition-seconds per active player per minute. Each tracked condition, including Vulnerability, counts as present or absent rather than by stack count, and faster cleanses get more credit because they remove more remaining duration. Missing support inputs are neutralized at 50 instead of guessed."),
         ];
 
         result.ScoreAvailable = true;
@@ -1163,6 +1221,24 @@ internal class WvwSummaryDto
         };
     }
 
+    private static WvwSummaryExecutionMetricDto BuildFixedScoreExecutionMetric(
+        string label,
+        string value,
+        string note,
+        double score,
+        double weightPercent = 0.0)
+    {
+        return new WvwSummaryExecutionMetricDto
+        {
+            Label = label,
+            Value = value,
+            Note = note,
+            Available = true,
+            WeightPercent = weightPercent,
+            Score = (int)Math.Round(Math.Clamp(score, 0.0, 100.0)),
+        };
+    }
+
     private static WvwSummaryExecutionMetricDto BuildPositioningExecutionMetric(
         string label,
         double rate,
@@ -1223,6 +1299,24 @@ internal class WvwSummaryDto
             Available = false,
             WeightPercent = weightPercent,
             Score = 50,
+        };
+    }
+
+    private static WvwSummaryExecutionMetricDto BuildBoonCoverageExecutionMetric(
+        string label,
+        double coverage,
+        string value,
+        string note,
+        double weightPercent = 0.0)
+    {
+        return new WvwSummaryExecutionMetricDto
+        {
+            Label = label,
+            Value = value,
+            Note = note,
+            Available = true,
+            WeightPercent = weightPercent,
+            Score = (int)Math.Round(Math.Clamp(coverage, 0.0, 100.0)),
         };
     }
 
@@ -2791,10 +2885,11 @@ internal class WvwSummaryDto
         return Math.Round(totalSeconds, 1);
     }
 
-    private static bool TryComputePhaseWeightedThreatBoonCoverage(
+    private static bool TryComputePhaseTargetAdjustedThreatBoonCoverage(
         CombatReplayAnalysisDto combatReplayAnalysis,
         PhaseData phase,
-        IReadOnlyList<long> boonIds,
+        IReadOnlyList<WvwSummaryExecutionBoonExpectation> boonExpectations,
+        IReadOnlyList<WvwSummaryExecutionWindow>? windows,
         out double coverage,
         out string note)
     {
@@ -2804,24 +2899,41 @@ internal class WvwSummaryDto
         {
             return false;
         }
+        if (windows is { Count: 0 })
+        {
+            return false;
+        }
 
-        var trackedBoonIds = new HashSet<long>(boonIds);
-        List<CombatReplayThreatBoonTimelineDto> trackedBoons = [.. combatReplayAnalysis.ThreatBoons.Boons.Where(boon => trackedBoonIds.Contains(boon.Id))];
+        Dictionary<long, CombatReplayThreatBoonTimelineDto> trackedBoons = combatReplayAnalysis.ThreatBoons.Boons
+            .GroupBy(boon => boon.Id)
+            .ToDictionary(group => group.Key, group => group.First());
         if (trackedBoons.Count == 0)
         {
             return false;
         }
 
-        var weightedBoonCoverages = new List<double>(trackedBoons.Count);
-        foreach (CombatReplayThreatBoonTimelineDto boon in trackedBoons)
+        bool restrictToWindows = windows != null;
+        var boonDetails = new List<string>(boonExpectations.Count);
+        double weightedCoverage = 0.0;
+        double totalWeight = 0.0;
+        foreach (WvwSummaryExecutionBoonExpectation expectation in boonExpectations)
         {
-            double weightedCoverageSum = 0.0;
+            if (!trackedBoons.TryGetValue(expectation.Id, out CombatReplayThreatBoonTimelineDto? boon))
+            {
+                continue;
+            }
+
+            double rawValueSum = 0.0;
             int threatenedSamples = 0;
             int sampleCount = Math.Min(combatReplayAnalysis.Times.Length, Math.Min(combatReplayAnalysis.ThreatBoons.ThreatenedPlayerCount.Length, boon.CurrentCoverage.Length));
             for (int index = 0; index < sampleCount; index++)
             {
                 long time = combatReplayAnalysis.Times[index];
                 if (time < phase.Start || time > phase.End)
+                {
+                    continue;
+                }
+                if (restrictToWindows && !IsInsideExecutionWindow(time, windows))
                 {
                     continue;
                 }
@@ -2832,23 +2944,44 @@ internal class WvwSummaryDto
                     continue;
                 }
 
-                weightedCoverageSum += boon.CurrentCoverage[index] * threatenedPlayerCount;
+                double rawValue = expectation.TargetStackCount > 0.0 && index < boon.CurrentAverageStacks.Length
+                    ? boon.CurrentAverageStacks[index]
+                    : boon.CurrentCoverage[index];
+                rawValueSum += rawValue * threatenedPlayerCount;
                 threatenedSamples += threatenedPlayerCount;
             }
 
             if (threatenedSamples > 0)
             {
-                weightedBoonCoverages.Add(weightedCoverageSum / threatenedSamples);
+                double averageRawValue = rawValueSum / threatenedSamples;
+                double target = expectation.TargetStackCount > 0.0
+                    ? expectation.TargetStackCount
+                    : expectation.TargetCoveragePercent;
+                if (target <= 0.0)
+                {
+                    continue;
+                }
+
+                double boonCoverage = Math.Clamp(averageRawValue * 100.0 / target, 0.0, 100.0);
+                weightedCoverage += boonCoverage * expectation.Weight;
+                totalWeight += expectation.Weight;
+                string detail = expectation.TargetStackCount > 0.0
+                    ? $"{boon.Name} {FormatDecimal(averageRawValue)}/{FormatDecimal(target)} average stacks"
+                    : $"{boon.Name} {FormatDecimal(averageRawValue)}%/{FormatDecimal(target)}% target";
+                boonDetails.Add(detail);
             }
         }
 
-        if (weightedBoonCoverages.Count == 0)
+        if (totalWeight <= 0.0)
         {
             return false;
         }
 
-        coverage = Math.Round(weightedBoonCoverages.Average(), 1);
-        note = $"Weighted by threatened squad players across {string.Join(", ", trackedBoons.Select(boon => boon.Name))}.";
+        coverage = Math.Round(weightedCoverage / totalWeight, 1);
+        string windowScope = restrictToWindows
+            ? $"during {BuildPluralizedTag(windows!.Count, "detected squad pressure window", "detected squad pressure windows")}"
+            : "during threatened moments";
+        note = $"Target-adjusted and weighted by threatened squad players {windowScope}: {string.Join(", ", boonDetails)}.";
         return true;
     }
 
@@ -4933,6 +5066,12 @@ internal class WvwSummaryExecutionMetricDto
     public double WeightPercent { get; set; }
     public int Score { get; set; }
 }
+
+internal readonly record struct WvwSummaryExecutionBoonExpectation(
+    long Id,
+    double Weight,
+    double TargetCoveragePercent,
+    double TargetStackCount = 0.0);
 
 internal class WvwSummaryPhasePositioningDto
 {
