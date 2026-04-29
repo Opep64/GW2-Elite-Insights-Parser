@@ -222,7 +222,7 @@ internal class WvwSummaryDto
 
         if (combatReplayAnalysis == null || combatReplayAnalysis.Times.Length == 0)
         {
-            const int totalMetricCount = 19;
+            const int totalMetricCount = 17;
             result.ScoreAvailable = false;
             result.Confidence = new WvwSummaryExecutionConfidenceDto
             {
@@ -245,12 +245,8 @@ internal class WvwSummaryDto
         List<WvwSummaryExecutionWindow> enemyBurstWindows = BuildPhaseBurstWindows(combatReplayAnalysis.Enemy, combatReplayAnalysis.Times, phase.Start, phase.End, combatReplayAnalysis.Lookback);
         WvwSummaryPhasePositioningDto positioningMetrics = BuildPhasePositioningMetrics(combatReplayAnalysis, phase);
         WvwSummaryPhasePositioningDto pressurePositioningMetrics = BuildPhasePositioningMetrics(combatReplayAnalysis, phase, enemyBurstWindows);
-        int squadBurstSuccessCount = CountWindowsContainingEvents(squadBurstWindows, enemyDownTimes);
-        int enemyBurstSuccessCount = CountWindowsContainingEvents(enemyBurstWindows, squadDownTimes);
         int squadBurstDownCount = CountEventsInsideWindows(squadBurstWindows, enemyDownTimes);
         int enemyBurstDownCount = CountEventsInsideWindows(enemyBurstWindows, squadDownTimes);
-        int enemyBurstHeldCount = squadBurstWindows.Count - squadBurstSuccessCount;
-        int squadBurstHeldCount = enemyBurstWindows.Count - enemyBurstSuccessCount;
 
         const double cohesionInPositionWeight = 25.0;
         const double cohesionPressurePositioningWeight = 25.0;
@@ -470,72 +466,6 @@ internal class WvwSummaryDto
             downstateSummary = $"{downstateSummary} Low-opportunity or one-sided timing comparisons were neutralized.";
         }
 
-        double squadDeathsPerActivePlayer = squad.Deaths / squadPlayers;
-        double enemyDeathsPerActivePlayer = enemy.Deaths / enemyPlayers;
-        var resilienceMetrics = new List<WvwSummaryExecutionMetricDto>(3)
-        {
-            BuildRelativeExecutionMetric(
-                "Deaths per active player",
-                squadDeathsPerActivePlayer,
-                enemyDeathsPerActivePlayer,
-                higherIsBetter: false,
-                $"{FormatDecimal(squadDeathsPerActivePlayer)} vs enemy {FormatDecimal(enemyDeathsPerActivePlayer)} deaths per active player"),
-        };
-        if (enemyBurstWindows.Count > 0 && squadBurstWindows.Count > 0)
-        {
-            double squadHeldBurstRate = Math.Round(squadBurstHeldCount * 100.0 / enemyBurstWindows.Count, 1);
-            double enemyHeldBurstRate = Math.Round(enemyBurstHeldCount * 100.0 / squadBurstWindows.Count, 1);
-            resilienceMetrics.Add(
-                BuildRelativeExecutionMetric(
-                    "Held-burst rate",
-                    squadHeldBurstRate,
-                    enemyHeldBurstRate,
-                    higherIsBetter: true,
-                    $"{FormatDecimal(squadHeldBurstRate)}% vs enemy {FormatDecimal(enemyHeldBurstRate)}% of tested burst windows were held without a down",
-                    $"{squadBurstHeldCount}/{enemyBurstWindows.Count} enemy burst windows were held by the squad; enemy held {enemyBurstHeldCount}/{squadBurstWindows.Count} squad burst windows."));
-        }
-        else
-        {
-            resilienceMetrics.Add(BuildNeutralizedExecutionMetric(
-                "Held-burst rate",
-                "Neutralized at 50: held-burst rate needs at least one strong synced burst window into each side."));
-        }
-        if (log.CombatData.HasCrowdControlData)
-        {
-            double squadReceivedCrowdControlPerActivePlayer = squad.ReceivedCrowdControl / squadPlayers;
-            double enemyReceivedCrowdControlPerActivePlayer = enemy.ReceivedCrowdControl / enemyPlayers;
-            resilienceMetrics.Add(
-                BuildRelativeExecutionMetric(
-                    "Received CC per active player",
-                    squadReceivedCrowdControlPerActivePlayer,
-                    enemyReceivedCrowdControlPerActivePlayer,
-                    higherIsBetter: false,
-                    $"{FormatDecimal(squadReceivedCrowdControlPerActivePlayer)} vs enemy {FormatDecimal(enemyReceivedCrowdControlPerActivePlayer)} received CC per active player"));
-        }
-        else
-        {
-            resilienceMetrics.Add(BuildNeutralizedExecutionMetric(
-                "Received CC per active player",
-                "Neutralized at 50: crowd-control event data is unavailable for this log."));
-        }
-        string resilienceSummary = $"{FormatDecimal(squadDeathsPerActivePlayer)} deaths per active player in this phase.";
-        if (resilienceMetrics[1].Available)
-        {
-            resilienceSummary = $"{resilienceSummary} The squad held {FormatDecimal(Math.Round(squadBurstHeldCount * 100.0 / enemyBurstWindows.Count, 1))}% of enemy burst windows without a down.";
-        }
-        else
-        {
-            resilienceSummary = $"{resilienceSummary} Held-burst rate was neutralized because the phase lacked comparable burst windows.";
-        }
-        if (resilienceMetrics[2].Available)
-        {
-            resilienceSummary = $"{resilienceSummary} Received crowd control landed at {FormatDecimal(squad.ReceivedCrowdControl / squadPlayers)} per active player.";
-        }
-        else
-        {
-            resilienceSummary = $"{resilienceSummary} Received crowd control was neutralized because CC event data is unavailable.";
-        }
-
         int healAddonPlayerCount = GetHealingAddonPlayerCount(log, squadActors);
         double healAddonCoverage = squadActors.Count > 0 ? healAddonPlayerCount * 1.0 / squadActors.Count : 0.0;
         string healAddonCoverageLabel = $"{healAddonPlayerCount}/{squadActors.Count} squad players ({FormatDecimal(healAddonCoverage * 100.0)}%) had Healing Stats";
@@ -657,12 +587,6 @@ internal class WvwSummaryDto
                 downstateMetrics,
                 downstateSummary,
                 "Compares conversion, recovery, and the time spent in downstate after downs exist. Conversion and recovery rates carry more weight than timing. Low-opportunity and lopsided downstate samples are neutralized instead of treating a tiny denominator as a clean downstate contest."),
-            BuildExecutionPillar(
-                "resilience-stabilization",
-                "Resilience & Stabilization",
-                resilienceMetrics,
-                resilienceSummary,
-                "Compares deaths per active player, held burst windows, and received crowd control per active player against the enemy."),
             BuildExecutionPillar(
                 "support-mitigation",
                 "Support & Mitigation",
@@ -1072,6 +996,9 @@ internal class WvwSummaryDto
             EnemyDeaths = enemy.Deaths,
             EnemyDownConversionRate = enemyDownState.KillConversionRate,
             SquadRecoveryRate = squadDownState.RezRate,
+            CrowdControlDataAvailable = log.CombatData.HasCrowdControlData,
+            IncomingCrowdControl = squad.ReceivedCrowdControl,
+            OutgoingCrowdControl = enemy.ReceivedCrowdControl,
             WipeLabel = InferWipeLabel(log, phase, squadActors, hostilePlayerTargets),
         };
     }
@@ -1140,7 +1067,7 @@ internal class WvwSummaryDto
                 : $"Squad had {absolutePlayerGap} more active players, so the numbers-adjusted read trims credit from outcome-heavy pillars.";
         string detail = !isApplied
             ? $"No size-gap compensation was applied. Adjustment starts only after the first {ExecutionSizeGapGracePlayers} active players of gap."
-            : $"Ignores the first {ExecutionSizeGapGracePlayers} active players of gap, then applies {FormatDecimal(ExecutionSizeGapScorePerPlayer)} score points per remaining player, capped at {FormatDecimal(ExecutionSizeGapScoreCap)} for a full-weight pillar. Cohesion & Positioning stays raw. Pressure & Burst and Support & Mitigation use half shift. Downstate Control and Resilience & Stabilization use full shift.";
+            : $"Ignores the first {ExecutionSizeGapGracePlayers} active players of gap, then applies {FormatDecimal(ExecutionSizeGapScorePerPlayer)} score points per remaining player, capped at {FormatDecimal(ExecutionSizeGapScoreCap)} for a full-weight pillar. Cohesion & Positioning stays raw. Pressure & Burst and Support & Mitigation use half shift. Downstate Control uses full shift.";
 
         return new WvwSummaryExecutionNumbersAdjustmentDto
         {
@@ -1211,7 +1138,6 @@ internal class WvwSummaryDto
             "cohesion-positioning" => 0.0,
             "pressure-burst" => 0.5,
             "downstate-control" => 1.0,
-            "resilience-stabilization" => 1.0,
             "support-mitigation" => 0.5,
             _ => 0.0,
         };
@@ -4953,6 +4879,9 @@ internal class WvwSummaryExecutionOutcomeDto
     public int EnemyDeaths { get; set; }
     public double EnemyDownConversionRate { get; set; }
     public double SquadRecoveryRate { get; set; }
+    public bool CrowdControlDataAvailable { get; set; }
+    public int IncomingCrowdControl { get; set; }
+    public int OutgoingCrowdControl { get; set; }
     public string WipeLabel { get; set; } = "";
 }
 

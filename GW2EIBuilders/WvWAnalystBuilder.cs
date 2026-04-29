@@ -1032,6 +1032,9 @@ public sealed class WvWAnalystBuilder
                 EnemyDeaths = execution.Outcome.EnemyDeaths,
                 EnemyDownConversionRate = execution.Outcome.EnemyDownConversionRate,
                 SquadRecoveryRate = execution.Outcome.SquadRecoveryRate,
+                CrowdControlDataAvailable = execution.Outcome.CrowdControlDataAvailable,
+                IncomingCrowdControl = execution.Outcome.IncomingCrowdControl,
+                OutgoingCrowdControl = execution.Outcome.OutgoingCrowdControl,
                 WipeLabel = execution.Outcome.WipeLabel,
             },
             Pillars = execution.Pillars.Select(BuildExecutionPillar).ToArray()
@@ -2189,6 +2192,9 @@ internal sealed class WvWAnalystExecutionOutcomeDto
     public int EnemyDeaths { get; set; }
     public double EnemyDownConversionRate { get; set; }
     public double SquadRecoveryRate { get; set; }
+    public bool CrowdControlDataAvailable { get; set; }
+    public int IncomingCrowdControl { get; set; }
+    public int OutgoingCrowdControl { get; set; }
     public string WipeLabel { get; set; } = string.Empty;
 }
 
