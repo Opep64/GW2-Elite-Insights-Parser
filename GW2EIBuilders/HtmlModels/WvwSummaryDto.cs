@@ -22,6 +22,8 @@ internal class WvwSummaryDto
     private const double ExecutionMinimumTrackedCleansePressurePerActivePlayerPerMinute = 15.0;
     private const int ExecutionBurstYieldMinimumTotalWindows = 6;
     private const int ExecutionBurstYieldMinimumOneSideWindows = 3;
+    private const int ExecutionDownstateMinimumOpportunityDowns = 4;
+    private const int ExecutionDownstateMinimumTimedEvents = 2;
     private const int ThreeWayMinimumSecondEnemyCount = 15;
     private const int ThreeWayMinimumCombinedEnemyCountWithoutColor = 65;
     private const long ThreeWayMinimumSustainMs = 8000;
@@ -349,61 +351,123 @@ internal class WvwSummaryDto
             pressureSummary = $"{pressureSummary} Burst pressure yield was neutralized because the detected burst sample was too small.";
         }
 
-        var downstateMetrics = new List<WvwSummaryExecutionMetricDto>(4)
+        const double downstateConversionRateWeight = 35.0;
+        const double downstateKillTimeWeight = 15.0;
+        const double downstateRecoveryRateWeight = 35.0;
+        const double downstateRecoveryTimeWeight = 15.0;
+        bool hasOffensiveDownOpportunity = enemyDownState.Downs >= ExecutionDownstateMinimumOpportunityDowns;
+        bool hasDefensiveRecoveryOpportunity = squadDownState.Downs >= ExecutionDownstateMinimumOpportunityDowns;
+        var downstateMetrics = new List<WvwSummaryExecutionMetricDto>(4);
+        if (hasOffensiveDownOpportunity)
         {
-            BuildRelativeExecutionMetric(
-                "Enemy down conversion rate",
-                enemyDownState.KillConversionRate,
-                squadDownState.KillConversionRate,
-                higherIsBetter: true,
-                $"{FormatDecimal(enemyDownState.KillConversionRate)}% vs enemy {FormatDecimal(squadDownState.KillConversionRate)}%"),
-            BuildRelativeExecutionMetric(
-                "Own recovery rate",
-                squadDownState.RezRate,
-                enemyDownState.RezRate,
-                higherIsBetter: true,
-                $"{FormatDecimal(squadDownState.RezRate)}% vs enemy {FormatDecimal(enemyDownState.RezRate)}%"),
-        };
-        if (enemyDownState.AverageKillTime.HasValue && squadDownState.AverageKillTime.HasValue)
-        {
-            downstateMetrics.Insert(1,
-                BuildRelativeExecutionMetric(
-                    "Enemy average down-to-kill time",
-                    enemyDownState.AverageKillTime.Value,
-                    squadDownState.AverageKillTime.Value,
-                    higherIsBetter: false,
-                    $"{FormatOptionalSeconds(enemyDownState.AverageKillTime)} vs enemy {FormatOptionalSeconds(squadDownState.AverageKillTime)}"));
-        }
-        else
-        {
-            downstateMetrics.Insert(1, BuildNeutralizedExecutionMetric(
-                "Enemy average down-to-kill time",
-                "Neutralized at 50: one side had no kill conversions to time in this phase."));
-        }
-        if (squadDownState.AverageRezTime.HasValue && enemyDownState.AverageRezTime.HasValue)
-        {
+            string enemyConversionComparison = squadDownState.Downs > 0
+                ? $"{squadDownState.KillConversions}/{squadDownState.Downs}"
+                : "no";
             downstateMetrics.Add(
                 BuildRelativeExecutionMetric(
-                    "Own average down-to-recover time",
-                    squadDownState.AverageRezTime.Value,
-                    enemyDownState.AverageRezTime.Value,
-                    higherIsBetter: false,
-                    $"{FormatOptionalSeconds(squadDownState.AverageRezTime)} vs enemy {FormatOptionalSeconds(enemyDownState.AverageRezTime)}"));
+                    "Enemy down conversion rate",
+                    enemyDownState.KillConversionRate,
+                    squadDownState.KillConversionRate,
+                    higherIsBetter: true,
+                    $"{FormatDecimal(enemyDownState.KillConversionRate)}% vs enemy {FormatDecimal(squadDownState.KillConversionRate)}%",
+                    $"{enemyDownState.KillConversions}/{enemyDownState.Downs} enemy downs converted; enemy converted {enemyConversionComparison} squad downs.",
+                    downstateConversionRateWeight));
         }
         else
         {
             downstateMetrics.Add(BuildNeutralizedExecutionMetric(
-                "Own average down-to-recover time",
-                "Neutralized at 50: one side had no recoveries to time in this phase."));
+                "Enemy down conversion rate",
+                $"Neutralized at 50: the squad created only {BuildPluralizedTag(enemyDownState.Downs, "enemy down", "enemy downs")}, too little to judge offensive downstate control cleanly.",
+                downstateConversionRateWeight));
         }
-        string downstateSummary = $"{FormatDecimal(enemyDownState.KillConversionRate)}% of enemy downs were converted and the squad recovered {FormatDecimal(squadDownState.RezRate)}% of its own downs.";
+        bool hasKillTimeSample =
+            hasOffensiveDownOpportunity &&
+            hasDefensiveRecoveryOpportunity &&
+            enemyDownState.KillConversions >= ExecutionDownstateMinimumTimedEvents &&
+            squadDownState.KillConversions >= ExecutionDownstateMinimumTimedEvents &&
+            enemyDownState.AverageKillTime.HasValue &&
+            squadDownState.AverageKillTime.HasValue;
+        if (hasKillTimeSample)
+        {
+            downstateMetrics.Add(
+                BuildRelativeExecutionMetric(
+                    "Enemy average down-to-kill time",
+                    enemyDownState.AverageKillTime.GetValueOrDefault(),
+                    squadDownState.AverageKillTime.GetValueOrDefault(),
+                    higherIsBetter: false,
+                    $"{FormatOptionalSeconds(enemyDownState.AverageKillTime)} vs enemy {FormatOptionalSeconds(squadDownState.AverageKillTime)}",
+                    $"{enemyDownState.KillConversions} squad kill conversions timed; enemy had {squadDownState.KillConversions}.",
+                    downstateKillTimeWeight));
+        }
+        else
+        {
+            string killTimeNote = !hasOffensiveDownOpportunity || !hasDefensiveRecoveryOpportunity
+                ? "Neutralized at 50: down-to-kill timing needs enough downs from both sides to avoid over-reading a lopsided fight."
+                : $"Neutralized at 50: down-to-kill timing needs at least {ExecutionDownstateMinimumTimedEvents} kill conversions from each side.";
+            downstateMetrics.Add(BuildNeutralizedExecutionMetric(
+                "Enemy average down-to-kill time",
+                killTimeNote,
+                downstateKillTimeWeight));
+        }
+        bool hasRecoveryComparison = hasDefensiveRecoveryOpportunity && enemyDownState.Downs > 0;
+        if (hasRecoveryComparison)
+        {
+            downstateMetrics.Add(
+                BuildRelativeExecutionMetric(
+                    "Own recovery rate",
+                    squadDownState.RezRate,
+                    enemyDownState.RezRate,
+                    higherIsBetter: true,
+                    $"{FormatDecimal(squadDownState.RezRate)}% vs enemy {FormatDecimal(enemyDownState.RezRate)}%",
+                    $"{squadDownState.Rezzes}/{squadDownState.Downs} squad downs recovered; enemy recovered {enemyDownState.Rezzes}/{enemyDownState.Downs}.",
+                    downstateRecoveryRateWeight));
+        }
+        else
+        {
+            downstateMetrics.Add(BuildNeutralizedExecutionMetric(
+                "Own recovery rate",
+                hasDefensiveRecoveryOpportunity
+                    ? "Neutralized at 50: the enemy had no downs, so there was no recovery comparison side."
+                    : $"Neutralized at 50: the squad took only {BuildPluralizedTag(squadDownState.Downs, "squad down", "squad downs")}, too little to judge defensive recovery cleanly.",
+                downstateRecoveryRateWeight));
+        }
+        bool hasRecoveryTimeSample =
+            hasOffensiveDownOpportunity &&
+            hasDefensiveRecoveryOpportunity &&
+            squadDownState.Rezzes >= ExecutionDownstateMinimumTimedEvents &&
+            enemyDownState.Rezzes >= ExecutionDownstateMinimumTimedEvents &&
+            squadDownState.AverageRezTime.HasValue &&
+            enemyDownState.AverageRezTime.HasValue;
+        if (hasRecoveryTimeSample)
+        {
+            downstateMetrics.Add(
+                BuildRelativeExecutionMetric(
+                    "Own average down-to-recover time",
+                    squadDownState.AverageRezTime.GetValueOrDefault(),
+                    enemyDownState.AverageRezTime.GetValueOrDefault(),
+                    higherIsBetter: false,
+                    $"{FormatOptionalSeconds(squadDownState.AverageRezTime)} vs enemy {FormatOptionalSeconds(enemyDownState.AverageRezTime)}",
+                    $"{squadDownState.Rezzes} squad recoveries timed; enemy had {enemyDownState.Rezzes}.",
+                    downstateRecoveryTimeWeight));
+        }
+        else
+        {
+            string recoveryTimeNote = !hasOffensiveDownOpportunity || !hasDefensiveRecoveryOpportunity
+                ? "Neutralized at 50: recovery timing needs enough downs from both sides to avoid over-reading a lopsided fight."
+                : $"Neutralized at 50: recovery timing needs at least {ExecutionDownstateMinimumTimedEvents} recoveries from each side.";
+            downstateMetrics.Add(BuildNeutralizedExecutionMetric(
+                "Own average down-to-recover time",
+                recoveryTimeNote,
+                downstateRecoveryTimeWeight));
+        }
+        string downstateSummary = $"{BuildDownstateContextSummary(squadDownState, enemyDownState)} {FormatDecimal(enemyDownState.KillConversionRate)}% of enemy downs were converted and the squad recovered {FormatDecimal(squadDownState.RezRate)}% of its own downs.";
         if (downstateMetrics[1].Available && downstateMetrics[3].Available)
         {
             downstateSummary = $"{downstateSummary} Enemy downs were finished in {FormatOptionalSeconds(enemyDownState.AverageKillTime)} and squad recoveries resolved in {FormatOptionalSeconds(squadDownState.AverageRezTime)}.";
         }
         else
         {
-            downstateSummary = $"{downstateSummary} Timing metrics were neutralized where this phase did not produce both sides of the comparison.";
+            downstateSummary = $"{downstateSummary} Low-opportunity or one-sided timing comparisons were neutralized.";
         }
 
         double squadDeathsPerActivePlayer = squad.Deaths / squadPlayers;
@@ -592,7 +656,7 @@ internal class WvwSummaryDto
                 "Downstate Control",
                 downstateMetrics,
                 downstateSummary,
-                "Compares conversion, recovery, and the time spent in downstate before each side secured the outcome."),
+                "Compares conversion, recovery, and the time spent in downstate after downs exist. Conversion and recovery rates carry more weight than timing. Low-opportunity and lopsided downstate samples are neutralized instead of treating a tiny denominator as a clean downstate contest."),
             BuildExecutionPillar(
                 "resilience-stabilization",
                 "Resilience & Stabilization",
@@ -1109,7 +1173,7 @@ internal class WvwSummaryDto
         int availableMetricCount = metricList.Count(metric => metric.Available);
         string detailSuffix = availableMetricCount == metricList.Count
             ? ""
-            : $" {metricList.Count - availableMetricCount} metric{(metricList.Count - availableMetricCount == 1 ? "" : "s")} neutralized at 50 due to missing comparison data.";
+            : $" {metricList.Count - availableMetricCount} metric{(metricList.Count - availableMetricCount == 1 ? "" : "s")} neutralized at 50 due to missing or low-signal comparison data.";
         return new WvwSummaryExecutionPillarDto
         {
             Key = key,
@@ -1246,6 +1310,32 @@ internal class WvwSummaryDto
         }
 
         return $"{FormatDecimal(pressurePositioningMetrics.InPositionRate)}% in position during {BuildPluralizedTag(pressureWindowCount, "enemy pressure window", "enemy pressure windows")} over {pressurePositioningMetrics.EvaluatedSamples.ToString("N0", CultureInfo.InvariantCulture)} pressure samples.";
+    }
+
+    private static string BuildDownstateContextSummary(WvwSummaryDownStateSideDto squadDownState, WvwSummaryDownStateSideDto enemyDownState)
+    {
+        bool hasOffensiveDownOpportunity = enemyDownState.Downs >= ExecutionDownstateMinimumOpportunityDowns;
+        bool hasDefensiveRecoveryOpportunity = squadDownState.Downs >= ExecutionDownstateMinimumOpportunityDowns;
+        string enemyDownLabel = BuildPluralizedTag(enemyDownState.Downs, "enemy down", "enemy downs");
+        string squadDownLabel = BuildPluralizedTag(squadDownState.Downs, "squad down", "squad downs");
+        if (!hasOffensiveDownOpportunity && !hasDefensiveRecoveryOpportunity)
+        {
+            return $"Low downstate sample: the squad created {enemyDownLabel} and took {squadDownLabel}.";
+        }
+        if (!hasOffensiveDownOpportunity)
+        {
+            return $"Heavy defensive load: the squad took {squadDownLabel} but created only {enemyDownLabel}.";
+        }
+        if (!hasDefensiveRecoveryOpportunity)
+        {
+            return $"Light defensive load: the squad created {enemyDownLabel} but took only {squadDownLabel}.";
+        }
+
+        int lowerDownCount = Math.Max(Math.Min(squadDownState.Downs, enemyDownState.Downs), 1);
+        double downLoadRatio = Math.Max(squadDownState.Downs, enemyDownState.Downs) / (double)lowerDownCount;
+        return downLoadRatio >= 2.5
+            ? $"Lopsided downstate load: the squad created {enemyDownLabel} and took {squadDownLabel}."
+            : $"Contestable downstate: the squad created {enemyDownLabel} and took {squadDownLabel}.";
     }
 
     private static WvwSummaryExecutionMetricDto BuildCleansePressureExecutionMetric(
