@@ -1777,6 +1777,7 @@ public sealed class WvWAnalystBuilder
             Note = metric.Note,
             Available = metric.Available,
             Neutralized = !metric.Available,
+            WeightPercent = metric.WeightPercent,
             Score = metric.Score,
             Values = new WvWAnalystExecutionMetricValueDto(),
         };
@@ -2218,6 +2219,7 @@ internal sealed class WvWAnalystExecutionMetricDto
     public string Note { get; set; } = string.Empty;
     public bool Available { get; set; }
     public bool Neutralized { get; set; }
+    public double WeightPercent { get; set; }
     public int Score { get; set; }
     public WvWAnalystExecutionMetricValueDto Values { get; set; } = new();
 }

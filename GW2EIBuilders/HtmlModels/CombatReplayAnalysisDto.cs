@@ -924,6 +924,10 @@ internal class CombatReplayPlayerEvaluationAggregate
     public double DownedHealingOnRecoveries { get; set; }
     public double RezCountOnRecoveries { get; set; }
     public double RezTimeOnRecoveries { get; set; }
+    public int ClassRezWindowsHelped { get; set; }
+    public int ClassRezWindowsTotal { get; set; }
+    public double ClassDownedHealingOnRecoveries { get; set; }
+    public double ClassRecoveryActionsOnRecoveries { get; set; }
     public int BoonWindowsTotal { get; set; }
     public bool HasPositioningData { get; set; }
     public int PositioningSamples { get; set; }
@@ -989,6 +993,9 @@ internal class CombatReplayPlayerEvaluationMaximums
     public int SquadRecoveryWindowsHelped { get; set; }
     public double DownedHealingOnRecoveries { get; set; }
     public double RezTimeOnRecoveries { get; set; }
+    public int ClassRezWindowsHelped { get; set; }
+    public double ClassDownedHealingOnRecoveries { get; set; }
+    public double ClassRecoveryActionsOnRecoveries { get; set; }
     public int KeyWindowsHit { get; set; }
 }
 
@@ -1013,6 +1020,9 @@ internal class CombatReplayPlayerEvaluationTotals
     public int DefensiveSupportWindows { get; set; }
     public int SquadRecoveryWindowsHelped { get; set; }
     public double RezTimeOnRecoveries { get; set; }
+    public int ClassRezWindowsHelped { get; set; }
+    public double ClassDownedHealingOnRecoveries { get; set; }
+    public double ClassRecoveryActionsOnRecoveries { get; set; }
 }
 
 internal class CombatReplaySpecCapabilityAggregate
@@ -1147,7 +1157,7 @@ internal static class CombatReplayAnalysisBuilder
     private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId);
     private readonly record struct EvaluationWindow(long Start, long End);
     private readonly record struct PlayerEventContributionSummary(double TotalAmount, int WindowsHit, int WindowsTotal, int FastWindowsHit);
-    private readonly record struct PlayerRecoveryContributionSummary(int WindowsHit, int WindowsTotal, double DownedHealing, double RezCasts, double RezTime);
+    private readonly record struct PlayerRecoveryContributionSummary(int WindowsHit, int WindowsTotal, double DownedHealing, double RezCasts, double RezTime, int ClassWindowsHit, double ClassDownedHealing, double ClassRecoveryActions);
     private readonly record struct RecoverySupportActionEvent(long Time, AgentItem Provider, long SkillId, string Name, string Icon, double DurationSeconds);
     private readonly record struct EvaluationBuildResult(
         Dictionary<int, CombatReplayPlayerEvaluationDto> PlayerEvaluations,
@@ -2423,6 +2433,10 @@ internal static class CombatReplayAnalysisBuilder
             DownedHealingOnRecoveries = Math.Round(squadRecoveryContribution.DownedHealing, 1),
             RezCountOnRecoveries = Math.Round(squadRecoveryContribution.RezCasts, 1),
             RezTimeOnRecoveries = Math.Round(squadRecoveryContribution.RezTime, 1),
+            ClassRezWindowsHelped = squadRecoveryContribution.ClassWindowsHit,
+            ClassRezWindowsTotal = squadRecoveryContribution.WindowsTotal,
+            ClassDownedHealingOnRecoveries = Math.Round(squadRecoveryContribution.ClassDownedHealing, 1),
+            ClassRecoveryActionsOnRecoveries = Math.Round(squadRecoveryContribution.ClassRecoveryActions, 1),
             BoonWindowsTotal = boonWindows.Count,
             HasPositioningData = positioningTimeline != null && positioningTimeline.Eligible.Any(sample => sample),
             PositioningSamples = CountEligibleSamples(positioningTimeline),
@@ -2617,6 +2631,10 @@ internal static class CombatReplayAnalysisBuilder
             DownedHealingOnRecoveries = Math.Round(players.Sum(player => player.DownedHealingOnRecoveries), 1),
             RezCountOnRecoveries = Math.Round(players.Sum(player => player.RezCountOnRecoveries), 1),
             RezTimeOnRecoveries = Math.Round(players.Sum(player => player.RezTimeOnRecoveries), 1),
+            ClassRezWindowsHelped = players.Max(player => player.ClassRezWindowsHelped),
+            ClassRezWindowsTotal = players.Max(player => player.ClassRezWindowsTotal),
+            ClassDownedHealingOnRecoveries = Math.Round(players.Sum(player => player.ClassDownedHealingOnRecoveries), 1),
+            ClassRecoveryActionsOnRecoveries = Math.Round(players.Sum(player => player.ClassRecoveryActionsOnRecoveries), 1),
             BoonWindowsTotal = players.Max(player => player.BoonWindowsTotal),
             HasPositioningData = players.Any(player => player.HasPositioningData),
             PositioningSamples = players.Sum(player => player.PositioningSamples),
@@ -2859,14 +2877,14 @@ internal static class CombatReplayAnalysisBuilder
         IReadOnlyDictionary<string, double> perPlayerMaximums,
         double activeSharePercent)
     {
-        PlayerLaneSnapshot baseLane = BuildRezLaneSnapshot(spec.Aggregate, maximums, totals);
+        PlayerLaneSnapshot baseLane = BuildClassRezLaneSnapshot(spec.Aggregate, maximums, totals);
         return BuildSpecLaneSnapshot(
             spec,
             baseLane,
             activeSharePercent,
             aggregate => GetSpecRezRawAmount(aggregate, totals),
             perPlayerMaximums.GetValueOrDefault("rez"),
-            $"{BuildPluralizedLabel(spec.Aggregate.SquadRecoveryWindowsHelped, "successful recovery", "successful recoveries")} were supported with {FormatOneDecimal(spec.Aggregate.RezTimeOnRecoveries)}s of rez time from {spec.Label}.");
+            $"{BuildPluralizedLabel(spec.Aggregate.ClassRezWindowsHelped, "successful recovery", "successful recoveries")} had class-attributable recovery support from {spec.Label}; generic hand-rez casts are excluded.");
     }
 
     private static SpecLaneSnapshot BuildSpecLaneSnapshot(
@@ -3072,7 +3090,12 @@ internal static class CombatReplayAnalysisBuilder
 
     private static double GetSpecRezRawAmount(CombatReplayPlayerEvaluationAggregate aggregate, CombatReplayPlayerEvaluationTotals totals)
     {
-        return totals.SquadRecoveryWindowsHelped > 0 ? aggregate.SquadRecoveryWindowsHelped : aggregate.RezTimeOnRecoveries;
+        if (totals.ClassRezWindowsHelped > 0)
+        {
+            return aggregate.ClassRezWindowsHelped;
+        }
+
+        return aggregate.ClassDownedHealingOnRecoveries + aggregate.ClassRecoveryActionsOnRecoveries;
     }
 
     private static List<string> BuildSpecEvidenceSnapshot(
@@ -3202,6 +3225,10 @@ internal static class CombatReplayAnalysisBuilder
         double rescueNeed = 100.0 * Math.Clamp((squadDowns / 6.0) * 0.55 + (squadRecoveries / 4.0) * 0.45, 0.0, 1.0);
         double threatenedBoonNeed = 100.0 * Math.Clamp(defensiveLoad / 100.0 * 0.70 + burstIntensity / 100.0 * 0.30, 0.0, 1.0);
         double conditionPressureNeed = 100.0 * Math.Clamp((eventAnalysis.Downs.SquadSummary.ConditionImpactedDowns / Math.Max((double)squadDowns, 1.0)) * 0.65 + (squadRecoveries / Math.Max((double)squadDowns, 1.0)) * 0.35, 0.0, 1.0);
+        double enemyPressureRaceNeed = 100.0 * Math.Clamp((squadDowns / 8.0) * 0.50 + (enemyBurstWindows / 6.0) * 0.35 + (GetPercent(squadDowns, enemyDowns + squadDowns) / 100.0) * 0.15, 0.0, 1.0);
+        double pressureDemand = Math.Max(burstIntensity * 0.45 + conversionContest * 0.35 + boonCrackNeed * 0.20, enemyPressureRaceNeed);
+        double conversionOpportunityFactor = Math.Clamp(enemyDowns / 6.0, 0.0, 1.0);
+        double conversionDemand = (conversionContest * 0.55 + burstIntensity * 0.25 + boonCrackNeed * 0.20) * conversionOpportunityFactor;
         double enemyKillRate = GetPercent(enemyKills, enemyDowns);
         double enemyRecoveryRate = GetPercent(enemyRecoveries, enemyDowns);
         double enemyRecoveryDeniedRate = enemyDowns > 0 ? Math.Max(0.0, 100.0 - enemyRecoveryRate) : 0.0;
@@ -3220,25 +3247,31 @@ internal static class CombatReplayAnalysisBuilder
             ? enemyKillRate * 0.75 + enemyRecoveryDeniedRate * 0.25
             : enemyDowns > 0 ? enemyRecoveryDeniedRate * 0.50 : 0.0;
         double boonSupportResponse = ComputeThreatBoonResponseScore(threatAnalysis);
-        double pressureResponse = squadBurstShare * 0.35 + enemyDownShare * 0.35 + conversionResponse * 0.30;
+        double pressureResponse = squadBurstShare * 0.35 + enemyDownShare * 0.55 + conversionResponse * 0.10;
         double stripResponse = (stripSyncedBursts > 0 ? 100.0 : 0.0) * 0.45 + conversionResponse * 0.35 + squadBurstShare * 0.20;
         double controlResponse = controlNeed;
         double recoveryResponse = squadRecoveryRate * 0.80 + enemyBurstHeldRate * 0.20;
         double preventionResponse = enemyBurstHeldRate * 0.55 + burstBarrierResponse * 0.25 + lowHealthSaveResponse * 0.20;
         double rezResponse = squadRecoveryRate * 0.70 + squadRezActivityRate * 0.30;
+        string conversionEvidenceLine = enemyDowns >= 3
+            ? $"{enemyKills} enemy kills and {enemyRecoveries} enemy recoveries kept finishes contested."
+            : $"{enemyDowns} enemy downs gave limited conversion opportunity; pressure creation was the larger offensive problem.";
+        string conversionResponseLine = enemyDowns >= 3
+            ? $"{enemyKillRate:0.#}% enemy down-to-kill rate with {enemyRecoveries} enemy recoveries allowed."
+            : $"{enemyKillRate:0.#}% enemy down-to-kill rate on a low-opportunity sample.";
 
         var lanes = new List<CombatReplayFightDemandLaneDto>
         {
             BuildFightDemandLane("pressure", "Pressure",
-                burstIntensity * 0.45 + conversionContest * 0.35 + boonCrackNeed * 0.20,
+                pressureDemand,
                 pressureResponse,
-                $"{enemyDowns} enemy downs and {squadBurstWindows} strong squad burst windows made live-target pressure matter.",
-                $"{enemyDownShare:0.#}% enemy-down share and {conversionResponse:0.#}% conversion response."),
+                $"{enemyDowns} enemy downs, {squadDowns} squad downs, and {squadBurstWindows + enemyBurstWindows} strong burst windows made live-target pressure matter.",
+                $"{enemyDownShare:0.#}% enemy-down share and {squadBurstShare:0.#}% squad share of strong burst windows."),
             BuildFightDemandLane("conversion", "Conversion",
-                conversionContest * 0.55 + burstIntensity * 0.25 + boonCrackNeed * 0.20,
+                conversionDemand,
                 conversionResponse,
-                $"{enemyKills} enemy kills and {enemyRecoveries} enemy recoveries kept finishes contested.",
-                $"{enemyKillRate:0.#}% enemy down-to-kill rate with {enemyRecoveries} enemy recoveries allowed."),
+                conversionEvidenceLine,
+                conversionResponseLine),
             BuildFightDemandLane("strip", "Strip",
                 boonCrackNeed * 0.60 + conversionContest * 0.25 + burstIntensity * 0.15,
                 stripResponse,
@@ -3436,6 +3469,9 @@ internal static class CombatReplayAnalysisBuilder
             SquadRecoveryWindowsHelped = aggregates.Max(aggregate => aggregate.SquadRecoveryWindowsHelped),
             DownedHealingOnRecoveries = aggregates.Max(aggregate => aggregate.DownedHealingOnRecoveries),
             RezTimeOnRecoveries = aggregates.Max(aggregate => aggregate.RezTimeOnRecoveries),
+            ClassRezWindowsHelped = aggregates.Max(aggregate => aggregate.ClassRezWindowsHelped),
+            ClassDownedHealingOnRecoveries = aggregates.Max(aggregate => aggregate.ClassDownedHealingOnRecoveries),
+            ClassRecoveryActionsOnRecoveries = aggregates.Max(aggregate => aggregate.ClassRecoveryActionsOnRecoveries),
             KeyWindowsHit = aggregates.Max(aggregate => aggregate.KeyWindowsHit),
         };
     }
@@ -3466,6 +3502,9 @@ internal static class CombatReplayAnalysisBuilder
             DefensiveSupportWindows = aggregates.Sum(aggregate => aggregate.DefensiveSupportWindows),
             SquadRecoveryWindowsHelped = aggregates.Sum(aggregate => aggregate.SquadRecoveryWindowsHelped),
             RezTimeOnRecoveries = Math.Round(aggregates.Sum(aggregate => aggregate.RezTimeOnRecoveries), 1),
+            ClassRezWindowsHelped = aggregates.Sum(aggregate => aggregate.ClassRezWindowsHelped),
+            ClassDownedHealingOnRecoveries = Math.Round(aggregates.Sum(aggregate => aggregate.ClassDownedHealingOnRecoveries), 1),
+            ClassRecoveryActionsOnRecoveries = Math.Round(aggregates.Sum(aggregate => aggregate.ClassRecoveryActionsOnRecoveries), 1),
         };
     }
 
@@ -3518,10 +3557,11 @@ internal static class CombatReplayAnalysisBuilder
 
     private static Dictionary<int, PlayerRecoveryContributionSummary> BuildPlayerRecoveryContributionSummaries(IReadOnlyList<CombatReplayRecoveredEventDto> events)
     {
-        var totals = new Dictionary<int, (int WindowsHit, double DownedHealing, double RezCasts, double RezTime)>();
+        var totals = new Dictionary<int, (int WindowsHit, double DownedHealing, double RezCasts, double RezTime, int ClassWindowsHit, double ClassDownedHealing, double ClassRecoveryActions)>();
         foreach (CombatReplayRecoveredEventDto evt in events)
         {
             var seenContributors = new HashSet<int>();
+            var seenClassContributors = new HashSet<int>();
             foreach (CombatReplayEventContributionDto contributor in evt.SupportContributors)
             {
                 if (!contributor.ActorId.HasValue)
@@ -3532,7 +3572,10 @@ internal static class CombatReplayAnalysisBuilder
                 double downedHealing = GetSupportDetailAmount(contributor, "Downed healing");
                 double rezCasts = GetSupportDetailAmount(contributor, "Rez casts");
                 double rezTime = GetSupportDetailAmount(contributor, "Rez time");
-                if (downedHealing <= 0.0 && rezCasts <= 0.0 && rezTime <= 0.0)
+                double recoveryActions = GetSupportDetailAmount(contributor, "Recovery actions");
+                bool hasPlayerRezSignal = downedHealing > 0.0 || rezCasts > 0.0 || rezTime > 0.0;
+                bool hasClassRezSignal = downedHealing > 0.0 || recoveryActions > 0.0;
+                if (!hasPlayerRezSignal && !hasClassRezSignal)
                 {
                     continue;
                 }
@@ -3542,9 +3585,15 @@ internal static class CombatReplayAnalysisBuilder
                 current.DownedHealing += downedHealing;
                 current.RezCasts += rezCasts;
                 current.RezTime += rezTime;
-                if (seenContributors.Add(actorId))
+                current.ClassDownedHealing += downedHealing;
+                current.ClassRecoveryActions += recoveryActions;
+                if (hasPlayerRezSignal && seenContributors.Add(actorId))
                 {
                     current.WindowsHit++;
+                }
+                if (hasClassRezSignal && seenClassContributors.Add(actorId))
+                {
+                    current.ClassWindowsHit++;
                 }
                 totals[actorId] = current;
             }
@@ -3557,7 +3606,10 @@ internal static class CombatReplayAnalysisBuilder
                 events.Count,
                 Math.Round(pair.Value.DownedHealing, 1),
                 Math.Round(pair.Value.RezCasts, 1),
-                Math.Round(pair.Value.RezTime, 1)));
+                Math.Round(pair.Value.RezTime, 1),
+                pair.Value.ClassWindowsHit,
+                Math.Round(pair.Value.ClassDownedHealing, 1),
+                Math.Round(pair.Value.ClassRecoveryActions, 1)));
     }
 
     private static int BuildPlayerRecoveryCount(ParsedEvtcLog log, SingleActor player)
@@ -4152,6 +4204,51 @@ internal static class CombatReplayAnalysisBuilder
                 BuildLaneMetric("squadRecoveryWindowsHelped", "Recoveries helped", aggregate.SquadRecoveryWindowsHelped, "count"),
                 BuildLaneMetric("rezTimeOnRecoveries", "Rez time", aggregate.RezTimeOnRecoveries, "seconds"),
                 BuildLaneMetric("downedHealingOnRecoveries", "Downed healing", aggregate.DownedHealingOnRecoveries, "healing")
+            ]);
+    }
+
+    private static PlayerLaneSnapshot BuildClassRezLaneSnapshot(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        CombatReplayPlayerEvaluationMaximums maximums,
+        CombatReplayPlayerEvaluationTotals totals)
+    {
+        double strengthPercent = ComputeWeightedScore(
+            (NormalizeValue(aggregate.ClassRezWindowsHelped, maximums.ClassRezWindowsHelped), maximums.ClassRezWindowsHelped > 0 ? 0.46 : 0.0),
+            (NormalizeValue(aggregate.ClassDownedHealingOnRecoveries, maximums.ClassDownedHealingOnRecoveries), maximums.ClassDownedHealingOnRecoveries > 0.0 ? 0.36 : 0.0),
+            (NormalizeValue(aggregate.ClassRecoveryActionsOnRecoveries, maximums.ClassRecoveryActionsOnRecoveries), maximums.ClassRecoveryActionsOnRecoveries > 0.0 ? 0.18 : 0.0));
+        double classRawAmount = aggregate.ClassDownedHealingOnRecoveries + aggregate.ClassRecoveryActionsOnRecoveries;
+        double classRawTotal = totals.ClassDownedHealingOnRecoveries + totals.ClassRecoveryActionsOnRecoveries;
+        double sharePercent = totals.ClassRezWindowsHelped > 0
+            ? aggregate.ClassRezWindowsHelped * 100.0 / totals.ClassRezWindowsHelped
+            : ComputePercent(classRawAmount, classRawTotal);
+        List<CombatReplayPlayerEvaluationDetailSectionDto> detailSections =
+        [
+            BuildDetailSection("Class Rez Metrics",
+            [
+                BuildDetailEntry("Class recoveries helped", BuildPluralizedLabel(aggregate.ClassRezWindowsHelped, "recovery", "recoveries"), $"{aggregate.ClassRezWindowsTotal} total"),
+                BuildDetailEntry("Downed healing", FormatWholeNumber((long)Math.Round(aggregate.ClassDownedHealingOnRecoveries)), ""),
+                BuildDetailEntry("Class recovery actions", FormatOneDecimal(aggregate.ClassRecoveryActionsOnRecoveries), "Generic hand-rez casts are excluded")
+            ])
+        ];
+        string recoveryText = BuildPluralizedLabel(aggregate.ClassRezWindowsHelped, "successful recovery", "successful recoveries");
+        return new PlayerLaneSnapshot(
+            "rez",
+            "Rez",
+            strengthPercent,
+            sharePercent,
+            aggregate.ClassRezWindowsHelped,
+            aggregate.ClassRezWindowsTotal,
+            "class recovery windows",
+            GetRateBand(strengthPercent),
+            $"{recoveryText} had class-attributable support with {FormatWholeNumber((long)Math.Round(aggregate.ClassDownedHealingOnRecoveries))} downed healing and {FormatOneDecimal(aggregate.ClassRecoveryActionsOnRecoveries)} recovery actions. Generic hand-rez casts are excluded.",
+            true,
+            "Class Rez Detail",
+            "Class Rez captures class-attributable downstate rescue in successful squad recoveries. Generic hand-rez casts are excluded from class capability.",
+            detailSections,
+            [
+                BuildLaneMetric("classRezWindowsHelped", "Class recoveries helped", aggregate.ClassRezWindowsHelped, "count"),
+                BuildLaneMetric("classDownedHealingOnRecoveries", "Downed healing", aggregate.ClassDownedHealingOnRecoveries, "healing"),
+                BuildLaneMetric("classRecoveryActionsOnRecoveries", "Class recovery actions", aggregate.ClassRecoveryActionsOnRecoveries, "count")
             ]);
     }
 

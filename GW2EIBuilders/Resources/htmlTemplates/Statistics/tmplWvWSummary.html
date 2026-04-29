@@ -247,7 +247,7 @@
                             </summary>
                             <div class="wvw-summary-execution-breakdown-body">
                                 <div class="wvw-summary-execution-breakdown-meta">
-                                    Pillar score averages {{pillar.metricCount}} metric scores. Each metric currently counts {{getExecutionMetricWeightLabel(pillar)}}.
+                                    Pillar score combines {{pillar.metricCount}} metric scores. Metric weights are shown below.
                                 </div>
                                 <div class="wvw-summary-execution-detail">{{pillar.detail}}</div>
                                 <div v-if="summary.fightExecutionScore.numbersAdjustment.isApplied && pillar.adjustmentApplied" class="wvw-summary-execution-adjusted">
@@ -261,7 +261,7 @@
                                             <div>
                                                 <div class="wvw-summary-execution-metric-label">{{metric.label}}</div>
                                                 <div class="wvw-summary-execution-metric-meta">
-                                                    {{getExecutionMetricWeightLabel(pillar)}}
+                                                    {{getExecutionMetricWeightLabel(pillar, metric)}}
                                                     <span v-if="!metric.available"> · Neutralized to 50</span>
                                                 </div>
                                             </div>
@@ -398,6 +398,7 @@
                                 <li><strong>What it is</strong>: help on successful ally recoveries after downstate</li>
                                 <li><strong>Squad Share</strong>: share of squad successful recoveries helped; fallback is rez time share</li>
                                 <li><strong>Strength constants</strong>: SquadRecoveryWindowsHelped 0.42, DownedHealingOnRecoveries 0.28, RezTimeOnRecoveries 0.18, RezCountOnRecoveries 0.12</li>
+                                <li><strong>Class/spec cards</strong>: generic hand-rez casts are excluded from class capability; downed healing and explicit class recovery actions remain counted</li>
                             </ul>
                         </div>
                         <div class="combat-replay-overview-help-section">
@@ -1630,7 +1631,10 @@
                     })
                     .slice(0, 3);
             },
-            getExecutionMetricWeightLabel: function(pillar) {
+            getExecutionMetricWeightLabel: function(pillar, metric) {
+                if (metric && Number(metric.weightPercent) > 0) {
+                    return this.round1(metric.weightPercent) + "% of pillar";
+                }
                 if (!pillar || !pillar.metricCount) {
                     return "0.0% of pillar";
                 }

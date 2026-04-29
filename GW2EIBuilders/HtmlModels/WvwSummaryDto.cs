@@ -218,7 +218,7 @@ internal class WvwSummaryDto
 
         if (combatReplayAnalysis == null || combatReplayAnalysis.Times.Length == 0)
         {
-            const int totalMetricCount = 18;
+            const int totalMetricCount = 19;
             result.ScoreAvailable = false;
             result.Confidence = new WvwSummaryExecutionConfidenceDto
             {
@@ -235,36 +235,58 @@ internal class WvwSummaryDto
 
         double squadPlayers = Math.Max(squad.PlayerCount, 1);
         double enemyPlayers = Math.Max(enemy.PlayerCount, 1);
-        WvwSummaryPhasePositioningDto positioningMetrics = BuildPhasePositioningMetrics(combatReplayAnalysis, phase);
         List<long> squadDownTimes = GetPhaseDownTimes(log, squadActors, phase);
         List<long> enemyDownTimes = GetPhaseDownTimes(log, hostilePlayerTargets, phase);
         List<WvwSummaryExecutionWindow> squadBurstWindows = BuildPhaseBurstWindows(combatReplayAnalysis.Squad, combatReplayAnalysis.Times, phase.Start, phase.End, combatReplayAnalysis.Lookback);
         List<WvwSummaryExecutionWindow> enemyBurstWindows = BuildPhaseBurstWindows(combatReplayAnalysis.Enemy, combatReplayAnalysis.Times, phase.Start, phase.End, combatReplayAnalysis.Lookback);
+        WvwSummaryPhasePositioningDto positioningMetrics = BuildPhasePositioningMetrics(combatReplayAnalysis, phase);
+        WvwSummaryPhasePositioningDto pressurePositioningMetrics = BuildPhasePositioningMetrics(combatReplayAnalysis, phase, enemyBurstWindows);
         int squadBurstSuccessCount = CountWindowsContainingEvents(squadBurstWindows, enemyDownTimes);
         int enemyBurstSuccessCount = CountWindowsContainingEvents(enemyBurstWindows, squadDownTimes);
         int enemyBurstHeldCount = squadBurstWindows.Count - CountWindowsContainingEvents(squadBurstWindows, enemyDownTimes);
         int squadBurstHeldCount = enemyBurstWindows.Count - CountWindowsContainingEvents(enemyBurstWindows, squadDownTimes);
 
-        var cohesionMetrics = new List<WvwSummaryExecutionMetricDto>(4);
+        const double cohesionInPositionWeight = 25.0;
+        const double cohesionPressurePositioningWeight = 25.0;
+        const double cohesionTooFarWeight = 20.0;
+        const double cohesionLateralRiskWeight = 20.0;
+        const double cohesionOverextendedWeight = 10.0;
+        var cohesionMetrics = new List<WvwSummaryExecutionMetricDto>(5);
         if (positioningMetrics.HasData)
         {
-            cohesionMetrics.Add(BuildInPositionExecutionMetric(positioningMetrics.InPositionRate, positioningMetrics.EvaluatedSamples));
-            cohesionMetrics.Add(BuildPositioningExecutionMetric("Too-far rate", positioningMetrics.TooFarRate, positioningMetrics.EvaluatedSamples, higherIsBetter: false));
-            cohesionMetrics.Add(BuildPositioningExecutionMetric("Overextended rate", positioningMetrics.OverextendedRate, positioningMetrics.EvaluatedSamples, higherIsBetter: false));
-            cohesionMetrics.Add(BuildPositioningExecutionMetric("Lateral-risk rate", positioningMetrics.LateralRiskRate, positioningMetrics.EvaluatedSamples, higherIsBetter: false));
+            cohesionMetrics.Add(BuildInPositionExecutionMetric(positioningMetrics.InPositionRate, positioningMetrics.EvaluatedSamples, cohesionInPositionWeight));
+            if (pressurePositioningMetrics.HasData)
+            {
+                cohesionMetrics.Add(BuildPressurePositioningExecutionMetric(
+                    pressurePositioningMetrics.InPositionRate,
+                    pressurePositioningMetrics.EvaluatedSamples,
+                    enemyBurstWindows.Count,
+                    cohesionPressurePositioningWeight));
+            }
+            else
+            {
+                string pressurePositioningNote = enemyBurstWindows.Count == 0
+                    ? "Neutralized at 50: no enemy pressure windows were detected in this phase."
+                    : "Neutralized at 50: no eligible commander-relative replay samples overlapped enemy pressure windows.";
+                cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Pressure positioning", pressurePositioningNote, cohesionPressurePositioningWeight));
+            }
+            cohesionMetrics.Add(BuildPositioningExecutionMetric("Too-far rate", positioningMetrics.TooFarRate, positioningMetrics.EvaluatedSamples, higherIsBetter: false, weightPercent: cohesionTooFarWeight));
+            cohesionMetrics.Add(BuildPositioningExecutionMetric("Lateral-risk rate", positioningMetrics.LateralRiskRate, positioningMetrics.EvaluatedSamples, higherIsBetter: false, weightPercent: cohesionLateralRiskWeight));
+            cohesionMetrics.Add(BuildPositioningExecutionMetric("Overextended rate", positioningMetrics.OverextendedRate, positioningMetrics.EvaluatedSamples, higherIsBetter: false, weightPercent: cohesionOverextendedWeight));
         }
         else
         {
             string positioningNote = combatReplayAnalysis.Positioning.HasCommander
                 ? "Neutralized at 50: no eligible commander-relative replay samples fell inside this phase."
                 : "Neutralized at 50: commander-relative positioning requires a detected squad commander.";
-            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("In-position rate", positioningNote));
-            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Too-far rate", positioningNote));
-            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Overextended rate", positioningNote));
-            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Lateral-risk rate", positioningNote));
+            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("In-position rate", positioningNote, cohesionInPositionWeight));
+            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Pressure positioning", positioningNote, cohesionPressurePositioningWeight));
+            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Too-far rate", positioningNote, cohesionTooFarWeight));
+            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Lateral-risk rate", positioningNote, cohesionLateralRiskWeight));
+            cohesionMetrics.Add(BuildNeutralizedExecutionMetric("Overextended rate", positioningNote, cohesionOverextendedWeight));
         }
         string cohesionSummary = positioningMetrics.HasData
-            ? $"{FormatDecimal(positioningMetrics.InPositionRate)}% in position, {FormatDecimal(positioningMetrics.TooFarRate)}% too far, {FormatDecimal(positioningMetrics.OverextendedRate)}% overextended, and {FormatDecimal(positioningMetrics.LateralRiskRate)}% lateral risk over {positioningMetrics.EvaluatedSamples.ToString("N0", CultureInfo.InvariantCulture)} eligible replay samples."
+            ? $"{FormatDecimal(positioningMetrics.InPositionRate)}% in position, {FormatDecimal(positioningMetrics.TooFarRate)}% too far, {FormatDecimal(positioningMetrics.OverextendedRate)}% overextended, and {FormatDecimal(positioningMetrics.LateralRiskRate)}% lateral risk over {positioningMetrics.EvaluatedSamples.ToString("N0", CultureInfo.InvariantCulture)} eligible replay samples. {BuildPressurePositioningSummary(pressurePositioningMetrics, enemyBurstWindows.Count)}"
             : "Commander-relative positioning could not be scored for this phase, so the pillar was neutralized.";
 
         double squadDownsPerActivePlayer = enemyDownState.Downs / squadPlayers;
@@ -548,7 +570,7 @@ internal class WvwSummaryDto
                 "Cohesion & Positioning",
                 cohesionMetrics,
                 cohesionSummary,
-                "Uses eligible non-commander squad replay samples only. Enemy commander-relative positioning is not observable in current detailed WvW outputs, so this pillar scores time spent in-position against each risk rate's own out-of-position share."),
+                "Uses eligible non-commander squad replay samples only. Enemy commander-relative positioning is not observable in current detailed WvW outputs. Pressure positioning scores in-position rate only during enemy pressure windows; the other positioning metrics score full-phase tag discipline and risk exposure."),
             BuildExecutionPillar(
                 "pressure-burst",
                 "Pressure & Burst",
@@ -1068,11 +1090,16 @@ internal class WvwSummaryDto
         string summary,
         string detail)
     {
-        int score = metrics.Count > 0 ? (int)Math.Round(metrics.Average(metric => metric.Score)) : 50;
-        int availableMetricCount = metrics.Count(metric => metric.Available);
-        string detailSuffix = availableMetricCount == metrics.Count
+        List<WvwSummaryExecutionMetricDto> metricList = metrics.ToList();
+        ApplyDefaultExecutionMetricWeights(metricList);
+        double totalWeight = metricList.Sum(metric => metric.WeightPercent);
+        int score = totalWeight > 0.0
+            ? (int)Math.Round(metricList.Sum(metric => metric.Score * metric.WeightPercent) / totalWeight)
+            : 50;
+        int availableMetricCount = metricList.Count(metric => metric.Available);
+        string detailSuffix = availableMetricCount == metricList.Count
             ? ""
-            : $" {metrics.Count - availableMetricCount} metric{(metrics.Count - availableMetricCount == 1 ? "" : "s")} neutralized at 50 due to missing comparison data.";
+            : $" {metricList.Count - availableMetricCount} metric{(metricList.Count - availableMetricCount == 1 ? "" : "s")} neutralized at 50 due to missing comparison data.";
         return new WvwSummaryExecutionPillarDto
         {
             Key = key,
@@ -1084,9 +1111,23 @@ internal class WvwSummaryDto
             Summary = summary,
             Detail = detail + detailSuffix,
             AvailableMetricCount = availableMetricCount,
-            MetricCount = metrics.Count,
-            Metrics = metrics.ToList(),
+            MetricCount = metricList.Count,
+            Metrics = metricList,
         };
+    }
+
+    private static void ApplyDefaultExecutionMetricWeights(IReadOnlyList<WvwSummaryExecutionMetricDto> metrics)
+    {
+        if (metrics.Count == 0 || metrics.Any(metric => metric.WeightPercent > 0.0))
+        {
+            return;
+        }
+
+        double equalWeight = Math.Round(100.0 / metrics.Count, 1);
+        foreach (WvwSummaryExecutionMetricDto metric in metrics)
+        {
+            metric.WeightPercent = equalWeight;
+        }
     }
 
     private static double GetExecutionPillarAdjustmentWeight(string key)
@@ -1108,7 +1149,8 @@ internal class WvwSummaryDto
         double enemyValue,
         bool higherIsBetter,
         string value,
-        string note = "")
+        string note = "",
+        double weightPercent = 0.0)
     {
         return new WvwSummaryExecutionMetricDto
         {
@@ -1116,11 +1158,17 @@ internal class WvwSummaryDto
             Value = value,
             Note = note,
             Available = true,
+            WeightPercent = weightPercent,
             Score = (int)Math.Round(CompareScore(squadValue, enemyValue, higherIsBetter)),
         };
     }
 
-    private static WvwSummaryExecutionMetricDto BuildPositioningExecutionMetric(string label, double rate, long evaluatedSamples, bool higherIsBetter)
+    private static WvwSummaryExecutionMetricDto BuildPositioningExecutionMetric(
+        string label,
+        double rate,
+        long evaluatedSamples,
+        bool higherIsBetter,
+        double weightPercent = 0.0)
     {
         double favorableShare = higherIsBetter ? rate : 100.0 - rate;
         double unfavorableShare = higherIsBetter ? 100.0 - rate : rate;
@@ -1129,11 +1177,12 @@ internal class WvwSummaryDto
             Label = label,
             Value = $"{FormatDecimal(rate)}% over {evaluatedSamples.ToString("N0", CultureInfo.InvariantCulture)} eligible replay samples",
             Available = true,
+            WeightPercent = weightPercent,
             Score = (int)Math.Round(CompareScore(favorableShare, unfavorableShare)),
         };
     }
 
-    private static WvwSummaryExecutionMetricDto BuildInPositionExecutionMetric(double rate, long evaluatedSamples)
+    private static WvwSummaryExecutionMetricDto BuildInPositionExecutionMetric(double rate, long evaluatedSamples, double weightPercent = 0.0)
     {
         double score = Math.Clamp((rate - 10.0) * (100.0 / 60.0), 0.0, 100.0);
         return new WvwSummaryExecutionMetricDto
@@ -1141,11 +1190,30 @@ internal class WvwSummaryDto
             Label = "In-position rate",
             Value = $"{FormatDecimal(rate)}% over {evaluatedSamples.ToString("N0", CultureInfo.InvariantCulture)} eligible replay samples",
             Available = true,
+            WeightPercent = weightPercent,
             Score = (int)Math.Round(score),
         };
     }
 
-    private static WvwSummaryExecutionMetricDto BuildNeutralizedExecutionMetric(string label, string note)
+    private static WvwSummaryExecutionMetricDto BuildPressurePositioningExecutionMetric(
+        double rate,
+        long evaluatedSamples,
+        int pressureWindowCount,
+        double weightPercent)
+    {
+        double score = Math.Clamp((rate - 10.0) * (100.0 / 60.0), 0.0, 100.0);
+        return new WvwSummaryExecutionMetricDto
+        {
+            Label = "Pressure positioning",
+            Value = $"{FormatDecimal(rate)}% in position over {evaluatedSamples.ToString("N0", CultureInfo.InvariantCulture)} eligible pressure samples",
+            Note = $"Measured only inside {BuildPluralizedTag(pressureWindowCount, "enemy pressure window", "enemy pressure windows")}.",
+            Available = true,
+            WeightPercent = weightPercent,
+            Score = (int)Math.Round(score),
+        };
+    }
+
+    private static WvwSummaryExecutionMetricDto BuildNeutralizedExecutionMetric(string label, string note, double weightPercent = 0.0)
     {
         return new WvwSummaryExecutionMetricDto
         {
@@ -1153,8 +1221,21 @@ internal class WvwSummaryDto
             Value = "n/a",
             Note = note,
             Available = false,
+            WeightPercent = weightPercent,
             Score = 50,
         };
+    }
+
+    private static string BuildPressurePositioningSummary(WvwSummaryPhasePositioningDto pressurePositioningMetrics, int pressureWindowCount)
+    {
+        if (!pressurePositioningMetrics.HasData)
+        {
+            return pressureWindowCount == 0
+                ? "Pressure positioning was neutralized because no enemy pressure windows were detected."
+                : "Pressure positioning was neutralized because no eligible positioning samples overlapped enemy pressure windows.";
+        }
+
+        return $"{FormatDecimal(pressurePositioningMetrics.InPositionRate)}% in position during {BuildPluralizedTag(pressureWindowCount, "enemy pressure window", "enemy pressure windows")} over {pressurePositioningMetrics.EvaluatedSamples.ToString("N0", CultureInfo.InvariantCulture)} pressure samples.";
     }
 
     private static WvwSummaryExecutionMetricDto BuildCleansePressureExecutionMetric(
@@ -1428,13 +1509,16 @@ internal class WvwSummaryDto
         return Math.Round(totalSeconds, 1);
     }
 
-    private static WvwSummaryPhasePositioningDto BuildPhasePositioningMetrics(CombatReplayAnalysisDto combatReplayAnalysis, PhaseData phase)
+    private static WvwSummaryPhasePositioningDto BuildPhasePositioningMetrics(
+        CombatReplayAnalysisDto combatReplayAnalysis,
+        PhaseData phase,
+        IReadOnlyList<WvwSummaryExecutionWindow>? windows = null)
     {
         var result = new WvwSummaryPhasePositioningDto
         {
             CommanderAvailable = combatReplayAnalysis.Positioning.HasCommander,
         };
-        if (!combatReplayAnalysis.Positioning.HasCommander || combatReplayAnalysis.Times.Length == 0)
+        if (!combatReplayAnalysis.Positioning.HasCommander || combatReplayAnalysis.Times.Length == 0 || (windows is not null && windows.Count == 0))
         {
             return result;
         }
@@ -1451,7 +1535,10 @@ internal class WvwSummaryDto
             for (int index = 0; index < limit; index++)
             {
                 long time = combatReplayAnalysis.Times[index];
-                if (time < phase.Start || time > phase.End || !playerTimeline.Eligible[index])
+                if (time < phase.Start ||
+                    time > phase.End ||
+                    !IsInsideExecutionWindow(time, windows) ||
+                    !playerTimeline.Eligible[index])
                 {
                     continue;
                 }
@@ -1487,6 +1574,11 @@ internal class WvwSummaryDto
         result.OverextendedRate = Math.Round(totalOverextendedSamples * 100.0 / totalEvaluatedSamples, 1);
         result.LateralRiskRate = Math.Round(totalLateralRiskSamples * 100.0 / totalEvaluatedSamples, 1);
         return result;
+    }
+
+    private static bool IsInsideExecutionWindow(long time, IReadOnlyList<WvwSummaryExecutionWindow>? windows)
+    {
+        return windows is null || windows.Any(window => time >= window.Start && time <= window.End);
     }
 
     private static List<long> GetPhaseDownTimes(ParsedEvtcLog log, IReadOnlyList<SingleActor> actors, PhaseData phase)
@@ -4785,6 +4877,7 @@ internal class WvwSummaryExecutionMetricDto
     public string Value { get; set; } = "";
     public string Note { get; set; } = "";
     public bool Available { get; set; }
+    public double WeightPercent { get; set; }
     public int Score { get; set; }
 }
 
