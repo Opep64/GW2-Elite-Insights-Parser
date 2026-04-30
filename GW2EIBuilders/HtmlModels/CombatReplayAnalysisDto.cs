@@ -24,9 +24,46 @@ internal class CombatReplayAnalysisDto
     public CombatReplayEventAnalysisDto Events { get; set; } = new();
     public CombatReplayDefenseAnalysisDto Defense { get; set; } = new();
     public CombatReplayFightDemandDto FightDemand { get; set; } = new();
+    public CombatReplayFightDiagnosisDto Diagnosis { get; set; } = new();
     public CombatReplayDamageOverlayDto DamageOverlay { get; set; } = new();
     public Dictionary<int, CombatReplayPlayerEvaluationDto> PlayerEvaluations { get; set; } = [];
     public List<CombatReplaySpecCapabilityDto> SpecCapabilities { get; set; } = [];
+}
+
+internal class CombatReplayFightDiagnosisDto
+{
+    public bool Available { get; set; }
+    public string Type { get; set; } = "";
+    public string ConfidenceLabel { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Summary { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public List<CombatReplayFightDiagnosisWindowDto> Windows { get; set; } = [];
+    public List<CombatReplayFightDiagnosisEvidenceDto> Evidence { get; set; } = [];
+    public List<string> Caveats { get; set; } = [];
+}
+
+internal class CombatReplayFightDiagnosisWindowDto
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public long EndTime { get; set; }
+    public string EndTimeLabel { get; set; } = "";
+    public string Tone { get; set; } = "";
+    public string Summary { get; set; } = "";
+    public string Detail { get; set; } = "";
+}
+
+internal class CombatReplayFightDiagnosisEvidenceDto
+{
+    public string Label { get; set; } = "";
+    public string Value { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public string Tone { get; set; } = "";
+    public long? Time { get; set; }
+    public string TimeLabel { get; set; } = "";
 }
 
 internal class CombatReplayDamageOverlayDto
@@ -1156,6 +1193,8 @@ internal static class CombatReplayAnalysisBuilder
     private readonly record struct CleanseRecord(long Time, int AttackerUniqueId);
     private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId);
     private readonly record struct EvaluationWindow(long Start, long End);
+    private readonly record struct FightDiagnosisSwing(string VictimSide, long Start, long End, int VictimDowns, int OpposingDowns, int VictimKills, int OpposingKills, double Score);
+    private readonly record struct FightDiagnosisPositioningSnapshot(int Index, long Time, int Eligible, int InPosition, int TooFar, int LateralRisk, int Overextended, int EngagedEnemies, double InPositionRate, double TooFarRate, double LateralRiskRate, double OverextendedRate, double Score);
     private readonly record struct PlayerEventContributionSummary(double TotalAmount, int WindowsHit, int WindowsTotal, int FastWindowsHit);
     private readonly record struct PlayerRecoveryContributionSummary(int WindowsHit, int WindowsTotal, double DownedHealing, double RezCasts, double RezTime, int ClassWindowsHit, double ClassDownedHealing, double ClassRecoveryActions);
     private readonly record struct RecoverySupportActionEvent(long Time, AgentItem Provider, long SkillId, string Name, string Icon, double DurationSeconds);
@@ -1272,6 +1311,8 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayEventAnalysisDto eventAnalysis = BuildEventAnalysis(log, squadPlayers, hostileTargets);
         CombatReplayDefenseAnalysisDto defenseAnalysis = BuildDefenseAnalysis(log, squadPlayers, enemyAnalysis, times);
         CombatReplayFightDemandDto fightDemand = BuildFightDemand(squadAnalysis, enemyAnalysis, eventAnalysis, defenseAnalysis, threatAnalysis, times);
+        string winnerSideId = InferFightDiagnosisWinnerSide(eventAnalysis);
+        CombatReplayFightDiagnosisDto diagnosis = BuildFightDiagnosis(squadAnalysis, enemyAnalysis, positioningAnalysis, eventAnalysis, times, log.LogData.LogEnd, winnerSideId);
         CombatReplayDamageOverlayDto damageOverlay = BuildDamageOverlay(log, squadContext, enemyContext, times, snapshotCount, usedSkills);
         EvaluationBuildResult evaluationData = BuildEvaluationData(
             log,
@@ -1296,6 +1337,7 @@ internal static class CombatReplayAnalysisBuilder
             Events = eventAnalysis,
             Defense = defenseAnalysis,
             FightDemand = fightDemand,
+            Diagnosis = diagnosis,
             DamageOverlay = damageOverlay,
             PlayerEvaluations = evaluationData.PlayerEvaluations,
             SpecCapabilities = evaluationData.SpecCapabilities,
@@ -2247,6 +2289,723 @@ internal static class CombatReplayAnalysisBuilder
             return analysis.Kills[candidateIndex] > analysis.Kills[currentBestIndex];
         }
         return times[candidateIndex] < times[currentBestIndex];
+    }
+
+    private static CombatReplayFightDiagnosisDto BuildFightDiagnosis(
+        CombatReplayTeamAnalysisDto squadAnalysis,
+        CombatReplayTeamAnalysisDto enemyAnalysis,
+        CombatReplayPositioningAnalysisDto positioningAnalysis,
+        CombatReplayEventAnalysisDto eventAnalysis,
+        IReadOnlyList<long> times,
+        long fightEnd,
+        string winnerSideId)
+    {
+        if (times.Count == 0)
+        {
+            return new CombatReplayFightDiagnosisDto
+            {
+                Available = false,
+                Type = "inconclusive",
+                ConfidenceLabel = "Low",
+                Title = "No replay diagnosis available",
+                Summary = "The replay timeline did not contain enough samples to diagnose this fight.",
+            };
+        }
+
+        List<CombatReplayDownEventDto> squadDowns = [.. eventAnalysis.Downs.Events.Where(evt => !evt.IsEnemy).OrderBy(evt => evt.Time)];
+        List<CombatReplayDownEventDto> enemyDowns = [.. eventAnalysis.Downs.Events.Where(evt => evt.IsEnemy).OrderBy(evt => evt.Time)];
+        List<CombatReplayKillEventDto> squadDeaths = [.. eventAnalysis.Kills.Events.Where(evt => !evt.IsEnemy).OrderBy(evt => evt.Time)];
+        List<CombatReplayKillEventDto> enemyDeaths = [.. eventAnalysis.Kills.Events.Where(evt => evt.IsEnemy).OrderBy(evt => evt.Time)];
+
+        FightDiagnosisSwing? squadSwing = FindLargestDownSwing("squad", squadDowns, enemyDowns, squadDeaths, enemyDeaths, fightEnd);
+        FightDiagnosisSwing? enemySwing = FindLargestDownSwing("enemy", enemyDowns, squadDowns, enemyDeaths, squadDeaths, fightEnd);
+        FightDiagnosisSwing? decisiveSwing = ChooseOutcomeAlignedSwing(squadSwing, enemySwing, winnerSideId);
+
+        if (!decisiveSwing.HasValue || !IsDecisiveSwing(decisiveSwing))
+        {
+            return BuildSmallEdgeDiagnosis(squadAnalysis, enemyAnalysis, positioningAnalysis, eventAnalysis, times);
+        }
+
+        FightDiagnosisSwing selectedSwing = decisiveSwing.Value;
+        return BuildDecisiveSwingDiagnosis(
+            selectedSwing,
+            squadAnalysis,
+            enemyAnalysis,
+            positioningAnalysis,
+            eventAnalysis,
+            times,
+            fightEnd);
+    }
+
+    private static string InferFightDiagnosisWinnerSide(CombatReplayEventAnalysisDto eventAnalysis)
+    {
+        int enemyDeaths = eventAnalysis.Kills.Events.Count(evt => evt.IsEnemy);
+        int squadDeaths = eventAnalysis.Kills.Events.Count(evt => !evt.IsEnemy);
+        if (enemyDeaths != squadDeaths)
+        {
+            return enemyDeaths > squadDeaths ? "squad" : "enemy";
+        }
+
+        int enemyDowns = eventAnalysis.Downs.Events.Count(evt => evt.IsEnemy);
+        int squadDowns = eventAnalysis.Downs.Events.Count(evt => !evt.IsEnemy);
+        if (enemyDowns != squadDowns)
+        {
+            return enemyDowns > squadDowns ? "squad" : "enemy";
+        }
+
+        return "";
+    }
+
+    private static FightDiagnosisSwing? ChooseOutcomeAlignedSwing(FightDiagnosisSwing? squadSwing, FightDiagnosisSwing? enemySwing, string winnerSideId)
+    {
+        string desiredVictimSide = winnerSideId switch
+        {
+            "squad" => "enemy",
+            "enemy" => "squad",
+            _ => "",
+        };
+        if (!string.IsNullOrWhiteSpace(desiredVictimSide))
+        {
+            FightDiagnosisSwing? alignedSwing = string.Equals(desiredVictimSide, "squad", StringComparison.OrdinalIgnoreCase)
+                ? squadSwing
+                : enemySwing;
+            return IsDecisiveSwing(alignedSwing) ? alignedSwing : null;
+        }
+
+        return ChooseDecisiveSwing(squadSwing, enemySwing);
+    }
+
+    private static FightDiagnosisSwing? ChooseDecisiveSwing(FightDiagnosisSwing? squadSwing, FightDiagnosisSwing? enemySwing)
+    {
+        if (!squadSwing.HasValue)
+        {
+            return enemySwing;
+        }
+        if (!enemySwing.HasValue)
+        {
+            return squadSwing;
+        }
+        FightDiagnosisSwing left = squadSwing.Value;
+        FightDiagnosisSwing right = enemySwing.Value;
+        if (Math.Abs(left.Score - right.Score) > 0.5)
+        {
+            return left.Score > right.Score ? left : right;
+        }
+        if (left.VictimKills != right.VictimKills)
+        {
+            return left.VictimKills > right.VictimKills ? left : right;
+        }
+        if (left.VictimDowns != right.VictimDowns)
+        {
+            return left.VictimDowns > right.VictimDowns ? left : right;
+        }
+        return left.Start <= right.Start ? left : right;
+    }
+
+    private static bool IsDecisiveSwing(FightDiagnosisSwing? swing)
+    {
+        if (!swing.HasValue)
+        {
+            return false;
+        }
+        FightDiagnosisSwing value = swing.Value;
+        return value.Score >= 4.0 && (value.VictimDowns >= 5 || value.VictimKills >= 3);
+    }
+
+    private static CombatReplayFightDiagnosisDto BuildDecisiveSwingDiagnosis(
+        FightDiagnosisSwing swing,
+        CombatReplayTeamAnalysisDto squadAnalysis,
+        CombatReplayTeamAnalysisDto enemyAnalysis,
+        CombatReplayPositioningAnalysisDto positioningAnalysis,
+        CombatReplayEventAnalysisDto eventAnalysis,
+        IReadOnlyList<long> times,
+        long fightEnd)
+    {
+        bool againstSquad = string.Equals(swing.VictimSide, "squad", StringComparison.OrdinalIgnoreCase);
+        long setupStart = Math.Max(0, swing.Start - 6000);
+        CombatReplayTeamAnalysisDto pressureSource = againstSquad ? enemyAnalysis : squadAnalysis;
+        string pressureSourceLabel = againstSquad ? "Enemy pressure" : "Squad pressure";
+        FightDiagnosisPositioningSnapshot? worstPositioning = againstSquad
+            ? FindWorstPositioningSnapshot(positioningAnalysis, times, setupStart, Math.Min(fightEnd, swing.Start + 1))
+            : null;
+        FightDiagnosisPositioningSnapshot? bestRecentPositioning = againstSquad
+            ? FindBestPositioningSnapshot(positioningAnalysis, times, Math.Max(0, swing.Start - 12000), Math.Max(0, swing.Start - 2500))
+            : null;
+        bool severePositioning = worstPositioning.HasValue
+            && (worstPositioning.Value.InPositionRate <= 25.0
+                || worstPositioning.Value.TooFarRate >= 60.0
+                || worstPositioning.Value.LateralRiskRate >= 70.0);
+
+        var windows = new List<CombatReplayFightDiagnosisWindowDto>();
+        var evidence = new List<CombatReplayFightDiagnosisEvidenceDto>();
+
+        if (againstSquad && severePositioning && worstPositioning.HasValue)
+        {
+            FightDiagnosisPositioningSnapshot snapshot = worstPositioning.Value;
+            windows.Add(new CombatReplayFightDiagnosisWindowDto
+            {
+                Key = "setup-positioning",
+                Label = "Setup mistake",
+                Time = snapshot.Time,
+                TimeLabel = FormatTime(snapshot.Time),
+                EndTime = swing.Start,
+                EndTimeLabel = FormatTime(swing.Start),
+                Tone = "danger",
+                Summary = $"Tag cohesion broke before the enemy punish: {FormatOneDecimal(snapshot.InPositionRate)}% in position.",
+                Detail = $"{snapshot.InPosition}/{snapshot.Eligible} players were in position, {snapshot.TooFar} were too far, and {snapshot.LateralRisk} were laterally exposed.",
+            });
+            evidence.Add(new CombatReplayFightDiagnosisEvidenceDto
+            {
+                Label = "Cohesion collapse",
+                Value = bestRecentPositioning.HasValue
+                    ? $"{FormatOneDecimal(bestRecentPositioning.Value.InPositionRate)}% to {FormatOneDecimal(snapshot.InPositionRate)}% in position"
+                    : $"{FormatOneDecimal(snapshot.InPositionRate)}% in position",
+                Detail = bestRecentPositioning.HasValue
+                    ? $"Recent positioning was workable at {FormatTime(bestRecentPositioning.Value.Time)}, then fell apart at {FormatTime(snapshot.Time)}."
+                    : $"Worst setup sample was at {FormatTime(snapshot.Time)}.",
+                Tone = "danger",
+                Time = snapshot.Time,
+                TimeLabel = FormatTime(snapshot.Time),
+            });
+            evidence.Add(new CombatReplayFightDiagnosisEvidenceDto
+            {
+                Label = "Exposure",
+                Value = $"{snapshot.LateralRisk}/{snapshot.Eligible} lateral risk, {snapshot.TooFar}/{snapshot.Eligible} too far",
+                Detail = "Lateral risk means enemies were positioned better relative to those players than the commander was.",
+                Tone = "danger",
+                Time = snapshot.Time,
+                TimeLabel = FormatTime(snapshot.Time),
+            });
+        }
+
+        windows.Add(new CombatReplayFightDiagnosisWindowDto
+        {
+            Key = "punish-window",
+            Label = againstSquad ? "Enemy punish" : "Squad punish",
+            Time = swing.Start,
+            TimeLabel = FormatTime(swing.Start),
+            EndTime = swing.End,
+            EndTimeLabel = FormatTime(swing.End),
+            Tone = againstSquad ? "danger" : "success",
+            Summary = $"{BuildPluralizedLabel(swing.VictimDowns, "down", "downs")} and {BuildPluralizedLabel(swing.VictimKills, "kill", "kills")} landed in the decisive window.",
+            Detail = againstSquad
+                ? $"The squad took {swing.VictimDowns} downs while creating {swing.OpposingDowns} enemy downs in the same window."
+                : $"The squad created {swing.VictimDowns} enemy downs while taking {swing.OpposingDowns} downs in the same window.",
+        });
+        evidence.Add(new CombatReplayFightDiagnosisEvidenceDto
+        {
+            Label = againstSquad ? "Down cascade" : "Offensive swing",
+            Value = $"{swing.VictimDowns}-{swing.OpposingDowns} downs in window",
+            Detail = $"{FormatTime(swing.Start)} to {FormatTime(swing.End)} decided the downstate race.",
+            Tone = againstSquad ? "danger" : "success",
+            Time = swing.Start,
+            TimeLabel = FormatTime(swing.Start),
+        });
+
+        CombatReplayFightDiagnosisWindowDto? pressureWindow = BuildPeakPressureWindow(
+            pressureSource,
+            times,
+            Math.Max(0, swing.Start - LookbackWindow),
+            Math.Min(fightEnd, swing.End + LookbackWindow),
+            "pressure-peak",
+            pressureSourceLabel,
+            againstSquad ? "danger" : "success");
+        if (pressureWindow != null)
+        {
+            windows.Add(pressureWindow);
+            evidence.Add(new CombatReplayFightDiagnosisEvidenceDto
+            {
+                Label = pressureSourceLabel,
+                Value = pressureWindow.Summary,
+                Detail = pressureWindow.Detail,
+                Tone = pressureWindow.Tone,
+                Time = pressureWindow.Time,
+                TimeLabel = pressureWindow.TimeLabel,
+            });
+        }
+
+        CombatReplayDownEventDto? recoveredEnemy = againstSquad
+            ? eventAnalysis.Downs.Events
+                .Where(evt => evt.IsEnemy
+                    && string.Equals(evt.Outcome, "Recovered", StringComparison.OrdinalIgnoreCase)
+                    && evt.Time >= Math.Max(0, swing.Start - 15000)
+                    && evt.Time < swing.Start)
+                .OrderByDescending(evt => evt.Time)
+                .FirstOrDefault()
+            : null;
+        if (recoveredEnemy != null)
+        {
+            long recoveredEnemyTime = recoveredEnemy.OutcomeTime.GetValueOrDefault(recoveredEnemy.Time);
+            windows.Add(new CombatReplayFightDiagnosisWindowDto
+            {
+                Key = "missed-conversion",
+                Label = "Missed conversion",
+                Time = recoveredEnemy.Time,
+                TimeLabel = recoveredEnemy.TimeLabel,
+                EndTime = recoveredEnemyTime,
+                EndTimeLabel = FormatTime(recoveredEnemyTime),
+                Tone = "warning",
+                Summary = $"{recoveredEnemy.ActorName} went down but recovered before the counterpressure.",
+                Detail = $"The enemy recovery at {FormatTime(recoveredEnemyTime)} left the next exchange even enough for the counterpush to matter.",
+            });
+            evidence.Add(new CombatReplayFightDiagnosisEvidenceDto
+            {
+                Label = "Earlier chance did not convert",
+                Value = $"{recoveredEnemy.ActorName} recovered",
+                Detail = $"Enemy down at {recoveredEnemy.TimeLabel}, recovered at {FormatTime(recoveredEnemyTime)}.",
+                Tone = "warning",
+                Time = recoveredEnemy.Time,
+                TimeLabel = recoveredEnemy.TimeLabel,
+            });
+        }
+
+        string title;
+        string summary;
+        string detail;
+        string confidence = severePositioning ? "Clear" : "Medium";
+        string type = "turning-point";
+        if (againstSquad && severePositioning && worstPositioning.HasValue)
+        {
+            FightDiagnosisPositioningSnapshot snapshot = worstPositioning.Value;
+            title = "Turning point: lost tag cohesion before enemy pressure";
+            summary = $"The likely mistake starts around {FormatTime(snapshot.Time)}: only {snapshot.InPosition}/{snapshot.Eligible} players were in position before {BuildPluralizedLabel(swing.VictimDowns, "squad down", "squad downs")} landed from {FormatTime(swing.Start)} to {FormatTime(swing.End)}.";
+            detail = "This looks like a failed restack or rotation under pressure. Support and mitigation may still have performed well, but the group entered the enemy counterpressure spread and laterally exposed.";
+        }
+        else if (againstSquad)
+        {
+            title = "Turning point: enemy pressure created the decisive down swing";
+            summary = $"The decisive window was {FormatTime(swing.Start)} to {FormatTime(swing.End)}, where the squad took {swing.VictimDowns} downs and created {swing.OpposingDowns} enemy downs.";
+            detail = "No single severe positioning collapse was detected in the setup window, so this reads more as enemy pressure execution or matchup pressure than one clear positional mistake.";
+            type = "pressure-swing";
+        }
+        else
+        {
+            title = "Turning point: squad pressure created the decisive swing";
+            summary = $"The decisive window was {FormatTime(swing.Start)} to {FormatTime(swing.End)}, where the squad created {swing.VictimDowns} enemy downs while taking {swing.OpposingDowns}.";
+            detail = "Enemy commander-relative positioning is not observable, so this identifies the offensive swing rather than claiming a specific enemy mistake.";
+            type = "pressure-swing";
+        }
+
+        return new CombatReplayFightDiagnosisDto
+        {
+            Available = true,
+            Type = type,
+            ConfidenceLabel = confidence,
+            Title = title,
+            Summary = summary,
+            Detail = detail,
+            Windows = windows,
+            Evidence = evidence,
+            Caveats =
+            [
+                "This is a deterministic replay diagnosis, not a voice-comm or intent read.",
+                "Timestamped windows are evidence anchors; review the replay around them before treating the diagnosis as final.",
+            ],
+        };
+    }
+
+    private static CombatReplayFightDiagnosisDto BuildSmallEdgeDiagnosis(
+        CombatReplayTeamAnalysisDto squadAnalysis,
+        CombatReplayTeamAnalysisDto enemyAnalysis,
+        CombatReplayPositioningAnalysisDto positioningAnalysis,
+        CombatReplayEventAnalysisDto eventAnalysis,
+        IReadOnlyList<long> times)
+    {
+        int squadDownsTaken = eventAnalysis.Downs.Events.Count(evt => !evt.IsEnemy);
+        int enemyDownsTaken = eventAnalysis.Downs.Events.Count(evt => evt.IsEnemy);
+        int squadDeaths = eventAnalysis.Kills.Events.Count(evt => !evt.IsEnemy);
+        int enemyDeaths = eventAnalysis.Kills.Events.Count(evt => evt.IsEnemy);
+        int squadRecoveries = eventAnalysis.Recovered.Events.Count(evt => !evt.IsEnemy);
+        int enemyRecoveries = eventAnalysis.Recovered.Events.Count(evt => evt.IsEnemy);
+        int downDiff = squadDownsTaken - enemyDownsTaken;
+        int deathDiff = squadDeaths - enemyDeaths;
+        int downCloseThreshold = Math.Max(3, (int)Math.Ceiling(Math.Max(squadDownsTaken, enemyDownsTaken) * 0.30));
+        int deathCloseThreshold = Math.Max(2, (int)Math.Ceiling(Math.Max(squadDeaths, enemyDeaths) * 0.30));
+        bool closeTrade = Math.Abs(downDiff) <= downCloseThreshold && Math.Abs(deathDiff) <= deathCloseThreshold;
+
+        var windows = new List<CombatReplayFightDiagnosisWindowDto>();
+        CombatReplayFightDiagnosisWindowDto? squadPeak = BuildPeakPressureWindow(squadAnalysis, times, 0, times[^1], "squad-peak", "Top squad pressure", "success");
+        CombatReplayFightDiagnosisWindowDto? enemyPeak = BuildPeakPressureWindow(enemyAnalysis, times, 0, times[^1], "enemy-peak", "Top enemy pressure", "danger");
+        if (squadPeak != null)
+        {
+            windows.Add(squadPeak);
+        }
+        if (enemyPeak != null)
+        {
+            windows.Add(enemyPeak);
+        }
+
+        var evidence = new List<CombatReplayFightDiagnosisEvidenceDto>
+        {
+            new()
+            {
+                Label = "Down trade",
+                Value = $"{enemyDownsTaken} created, {squadDownsTaken} taken",
+                Detail = closeTrade
+                    ? "The down trade stayed close enough that no single down window explains the fight by itself."
+                    : "The down trade favored one side over repeated exchanges rather than through one detected cascade.",
+                Tone = closeTrade ? "normal" : "warning",
+            },
+            new()
+            {
+                Label = "Kill trade",
+                Value = $"{enemyDeaths} enemy deaths, {squadDeaths} squad deaths",
+                Detail = "Kills are shown from the squad perspective: enemy deaths are conversions by the squad, squad deaths are conversions by the enemy.",
+                Tone = closeTrade ? "normal" : "warning",
+            },
+            new()
+            {
+                Label = "Recovery rates",
+                Value = $"{FormatOneDecimal(GetRecoveryRate(squadRecoveries, squadDownsTaken))}% squad, {FormatOneDecimal(GetRecoveryRate(enemyRecoveries, enemyDownsTaken))}% enemy",
+                Detail = $"{squadRecoveries}/{squadDownsTaken} squad downs recovered; {enemyRecoveries}/{enemyDownsTaken} enemy downs recovered.",
+                Tone = "normal",
+            },
+        };
+
+        if (positioningAnalysis.HasCommander && positioningAnalysis.SummaryEvaluatedSamples > 0)
+        {
+            evidence.Add(new CombatReplayFightDiagnosisEvidenceDto
+            {
+                Label = "Positioning summary",
+                Value = $"{FormatOneDecimal(positioningAnalysis.SummaryInPositionRate)}% in position",
+                Detail = $"{FormatOneDecimal(positioningAnalysis.SummaryTooFarRate)}% too far and {FormatOneDecimal(positioningAnalysis.SummaryLateralRiskRate)}% laterally exposed across {FormatWholeNumber(positioningAnalysis.SummaryEvaluatedSamples)} eligible samples.",
+                Tone = positioningAnalysis.SummaryInPositionRate >= 55.0 ? "success" : "warning",
+            });
+        }
+
+        if (squadPeak != null || enemyPeak != null)
+        {
+            evidence.Add(new CombatReplayFightDiagnosisEvidenceDto
+            {
+                Label = "Pressure peaks",
+                Value = $"{(squadPeak?.Summary ?? "No squad peak")} / {(enemyPeak?.Summary ?? "No enemy peak")}",
+                Detail = "Peaks are jumpable below for replay review.",
+                Tone = "normal",
+            });
+        }
+
+        return new CombatReplayFightDiagnosisDto
+        {
+            Available = true,
+            Type = closeTrade ? "small-edges" : "accumulated-pressure",
+            ConfidenceLabel = "Reduced",
+            Title = closeTrade
+                ? "Small edges: no clear turning-point mistake detected"
+                : "Accumulated pressure: no single setup mistake detected",
+            Summary = closeTrade
+                ? "The fight does not show one large punish window. It looks more likely decided by small pressure, recovery, positioning, or numbers/context edges."
+                : "The fight does not show one clean setup mistake, but the repeated down and kill trade leaned one way over time.",
+            Detail = "Use the evidence below as a checklist rather than a verdict. This diagnosis intentionally avoids forcing a big-mistake story when the replay does not support one.",
+            Windows = windows,
+            Evidence = evidence,
+            Caveats =
+            [
+                "No detected down cascade met the decisive-turning-point threshold.",
+                "Opponent skill, terrain, and voice calls are not directly visible in the log.",
+            ],
+        };
+    }
+
+    private static FightDiagnosisSwing? FindLargestDownSwing(
+        string victimSide,
+        IReadOnlyList<CombatReplayDownEventDto> victimDowns,
+        IReadOnlyList<CombatReplayDownEventDto> opposingDowns,
+        IReadOnlyList<CombatReplayKillEventDto> victimKills,
+        IReadOnlyList<CombatReplayKillEventDto> opposingKills,
+        long fightEnd)
+    {
+        if (victimDowns.Count == 0)
+        {
+            return null;
+        }
+
+        FightDiagnosisSwing? best = null;
+        foreach (CombatReplayDownEventDto anchor in victimDowns)
+        {
+            long start = anchor.Time;
+            long end = Math.Min(fightEnd, start + LookbackWindow);
+            List<CombatReplayDownEventDto> victimDownsInWindow = [.. victimDowns.Where(evt => evt.Time >= start && evt.Time <= end)];
+            int opposingDownCount = CountEventsInRange(opposingDowns, start, end);
+            List<CombatReplayKillEventDto> victimKillsInWindow = [.. victimKills.Where(evt => evt.Time >= start && evt.Time <= end)];
+            int opposingKillCount = CountEventsInRange(opposingKills, start, end);
+            double score = victimDownsInWindow.Count + victimKillsInWindow.Count * 0.75 - opposingDownCount * 0.85 - opposingKillCount * 0.75;
+            long actualEnd = victimDownsInWindow
+                .Select(evt => evt.Time)
+                .Concat(victimKillsInWindow.Select(evt => evt.Time))
+                .DefaultIfEmpty(end)
+                .Max();
+            var candidate = new FightDiagnosisSwing(
+                victimSide,
+                start,
+                actualEnd,
+                victimDownsInWindow.Count,
+                opposingDownCount,
+                victimKillsInWindow.Count,
+                opposingKillCount,
+                score);
+
+            if (!best.HasValue
+                || candidate.Score > best.Value.Score
+                || (Math.Abs(candidate.Score - best.Value.Score) < 0.01 && candidate.VictimDowns > best.Value.VictimDowns)
+                || (Math.Abs(candidate.Score - best.Value.Score) < 0.01 && candidate.VictimDowns == best.Value.VictimDowns && candidate.Start < best.Value.Start))
+            {
+                best = candidate;
+            }
+        }
+
+        return best;
+    }
+
+    private static int CountEventsInRange<TEvent>(IReadOnlyList<TEvent> events, long start, long end)
+        where TEvent : CombatReplayDownEventDto
+    {
+        return events.Count(evt => evt.Time >= start && evt.Time <= end);
+    }
+
+    private static FightDiagnosisPositioningSnapshot? FindWorstPositioningSnapshot(
+        CombatReplayPositioningAnalysisDto positioning,
+        IReadOnlyList<long> times,
+        long start,
+        long end)
+    {
+        FightDiagnosisPositioningSnapshot? best = null;
+        int limit = GetPositioningSampleLimit(positioning, times);
+        for (int index = 0; index < limit; index++)
+        {
+            long time = times[index];
+            if (time < start || time > end)
+            {
+                continue;
+            }
+
+            FightDiagnosisPositioningSnapshot? snapshot = TryBuildPositioningSnapshot(positioning, times, index);
+            if (!snapshot.HasValue || snapshot.Value.Eligible < 10 || snapshot.Value.EngagedEnemies < 5)
+            {
+                continue;
+            }
+
+            if (!best.HasValue
+                || snapshot.Value.Score > best.Value.Score
+                || (Math.Abs(snapshot.Value.Score - best.Value.Score) < 0.01 && snapshot.Value.InPositionRate < best.Value.InPositionRate))
+            {
+                best = snapshot;
+            }
+        }
+
+        return best;
+    }
+
+    private static FightDiagnosisPositioningSnapshot? FindBestPositioningSnapshot(
+        CombatReplayPositioningAnalysisDto positioning,
+        IReadOnlyList<long> times,
+        long start,
+        long end)
+    {
+        FightDiagnosisPositioningSnapshot? best = null;
+        int limit = GetPositioningSampleLimit(positioning, times);
+        for (int index = 0; index < limit; index++)
+        {
+            long time = times[index];
+            if (time < start || time > end)
+            {
+                continue;
+            }
+
+            FightDiagnosisPositioningSnapshot? snapshot = TryBuildPositioningSnapshot(positioning, times, index);
+            if (!snapshot.HasValue || snapshot.Value.Eligible < 10 || snapshot.Value.EngagedEnemies < 5)
+            {
+                continue;
+            }
+
+            if (!best.HasValue || snapshot.Value.InPositionRate > best.Value.InPositionRate)
+            {
+                best = snapshot;
+            }
+        }
+
+        return best;
+    }
+
+    private static int GetPositioningSampleLimit(CombatReplayPositioningAnalysisDto positioning, IReadOnlyList<long> times)
+    {
+        return new[]
+        {
+            times.Count,
+            positioning.EligiblePlayerCount.Length,
+            positioning.InPositionCount.Length,
+            positioning.TooFarCount.Length,
+            positioning.LateralRiskCount.Length,
+            positioning.OverextendedCount.Length,
+            positioning.EngagedEnemyCount.Length,
+        }.Min();
+    }
+
+    private static FightDiagnosisPositioningSnapshot? TryBuildPositioningSnapshot(
+        CombatReplayPositioningAnalysisDto positioning,
+        IReadOnlyList<long> times,
+        int index)
+    {
+        int eligible = positioning.EligiblePlayerCount[index];
+        if (eligible <= 0)
+        {
+            return null;
+        }
+
+        int inPosition = positioning.InPositionCount[index];
+        int tooFar = positioning.TooFarCount[index];
+        int lateralRisk = positioning.LateralRiskCount[index];
+        int overextended = positioning.OverextendedCount[index];
+        double inPositionRate = Math.Round(inPosition * 100.0 / eligible, 1);
+        double tooFarRate = Math.Round(tooFar * 100.0 / eligible, 1);
+        double lateralRiskRate = Math.Round(lateralRisk * 100.0 / eligible, 1);
+        double overextendedRate = Math.Round(overextended * 100.0 / eligible, 1);
+        double score = (100.0 - inPositionRate) + tooFarRate * 0.45 + lateralRiskRate * 0.65 + overextendedRate * 0.25;
+        return new FightDiagnosisPositioningSnapshot(
+            index,
+            times[index],
+            eligible,
+            inPosition,
+            tooFar,
+            lateralRisk,
+            overextended,
+            positioning.EngagedEnemyCount[index],
+            inPositionRate,
+            tooFarRate,
+            lateralRiskRate,
+            overextendedRate,
+            score);
+    }
+
+    private static CombatReplayFightDiagnosisWindowDto? BuildPeakPressureWindow(
+        CombatReplayTeamAnalysisDto analysis,
+        IReadOnlyList<long> times,
+        long start,
+        long end,
+        string key,
+        string label,
+        string tone)
+    {
+        CombatReplayAnalysisBurstSummaryDto? burst = analysis.TopBursts
+            .Where(entry => entry.Time >= start && entry.Time <= end)
+            .Where(entry => entry.Downs + entry.Kills > 0)
+            .OrderByDescending(entry => entry.Downs + entry.Kills)
+            .ThenByDescending(entry => entry.Damage)
+            .ThenByDescending(entry => entry.Downs)
+            .ThenByDescending(entry => entry.Kills)
+            .ThenByDescending(entry => entry.Strips)
+            .FirstOrDefault();
+        if (burst != null)
+        {
+            return new CombatReplayFightDiagnosisWindowDto
+            {
+                Key = key,
+                Label = label,
+                Time = burst.Time,
+                TimeLabel = FormatTime(burst.Time),
+                EndTime = burst.Time,
+                EndTimeLabel = FormatTime(burst.Time),
+                Tone = tone,
+                Summary = $"{FormatWholeNumber(burst.Damage)} damage, {burst.Downs} downs, {burst.Strips} strips",
+                Detail = $"{label} peak at {FormatTime(burst.Time)}.",
+            };
+        }
+
+        int limit = Math.Min(times.Count, Math.Min(analysis.Damage.Length, Math.Min(analysis.Downs.Length, Math.Min(analysis.Kills.Length, analysis.Strips.Length))));
+        int bestIndex = -1;
+        for (int index = 0; index < limit; index++)
+        {
+            long time = times[index];
+            if (time < start || time > end || analysis.Damage[index] <= 0)
+            {
+                continue;
+            }
+
+            if (bestIndex < 0 || IsBetterDiagnosisPressureSnapshot(analysis, index, bestIndex, times))
+            {
+                bestIndex = index;
+            }
+        }
+
+        if (bestIndex >= 0 && analysis.Downs[bestIndex] + analysis.Kills[bestIndex] > 0)
+        {
+            return new CombatReplayFightDiagnosisWindowDto
+            {
+                Key = key,
+                Label = label,
+                Time = times[bestIndex],
+                TimeLabel = FormatTime(times[bestIndex]),
+                EndTime = times[bestIndex],
+                EndTimeLabel = FormatTime(times[bestIndex]),
+                Tone = tone,
+                Summary = $"{FormatWholeNumber(analysis.Damage[bestIndex])} damage, {analysis.Downs[bestIndex]} downs, {analysis.Strips[bestIndex]} strips",
+                Detail = $"{label} peak at {FormatTime(times[bestIndex])}.",
+            };
+        }
+
+        burst = analysis.TopBursts
+            .Where(entry => entry.Time >= start && entry.Time <= end)
+            .OrderByDescending(entry => entry.Damage)
+            .ThenByDescending(entry => entry.Strips)
+            .ThenByDescending(entry => entry.Downs)
+            .ThenByDescending(entry => entry.Kills)
+            .FirstOrDefault();
+        if (burst != null)
+        {
+            return new CombatReplayFightDiagnosisWindowDto
+            {
+                Key = key,
+                Label = label,
+                Time = burst.Time,
+                TimeLabel = FormatTime(burst.Time),
+                EndTime = burst.Time,
+                EndTimeLabel = FormatTime(burst.Time),
+                Tone = tone,
+                Summary = $"{FormatWholeNumber(burst.Damage)} damage, {burst.Downs} downs, {burst.Strips} strips",
+                Detail = $"{label} peak at {FormatTime(burst.Time)}.",
+            };
+        }
+
+        if (bestIndex < 0)
+        {
+            return null;
+        }
+
+        return new CombatReplayFightDiagnosisWindowDto
+        {
+            Key = key,
+            Label = label,
+            Time = times[bestIndex],
+            TimeLabel = FormatTime(times[bestIndex]),
+            EndTime = times[bestIndex],
+            EndTimeLabel = FormatTime(times[bestIndex]),
+            Tone = tone,
+            Summary = $"{FormatWholeNumber(analysis.Damage[bestIndex])} damage, {analysis.Downs[bestIndex]} downs, {analysis.Strips[bestIndex]} strips",
+            Detail = $"{label} peak at {FormatTime(times[bestIndex])}.",
+        };
+    }
+
+    private static bool IsBetterDiagnosisPressureSnapshot(CombatReplayTeamAnalysisDto analysis, int candidateIndex, int currentBestIndex, IReadOnlyList<long> times)
+    {
+        int candidateEvents = analysis.Downs[candidateIndex] + analysis.Kills[candidateIndex];
+        int currentEvents = analysis.Downs[currentBestIndex] + analysis.Kills[currentBestIndex];
+        if (candidateEvents != currentEvents)
+        {
+            return candidateEvents > currentEvents;
+        }
+        if (analysis.Damage[candidateIndex] != analysis.Damage[currentBestIndex])
+        {
+            return analysis.Damage[candidateIndex] > analysis.Damage[currentBestIndex];
+        }
+        if (analysis.Strips[candidateIndex] != analysis.Strips[currentBestIndex])
+        {
+            return analysis.Strips[candidateIndex] > analysis.Strips[currentBestIndex];
+        }
+        return times[candidateIndex] < times[currentBestIndex];
+    }
+
+    private static double GetRecoveryRate(int recoveries, int downs)
+    {
+        return downs > 0 ? Math.Round(recoveries * 100.0 / downs, 1) : 0.0;
     }
 
     private static EvaluationBuildResult BuildEvaluationData(

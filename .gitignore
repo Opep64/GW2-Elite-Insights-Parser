@@ -266,6 +266,10 @@ __pycache__/
 #Output
 /GW2EI.bin
 
+# Local combat-replay diagnosis validation outputs
+/diagnosis-*.conf
+/temp-diagnosis-*/
+
 # Stability test logs
 /GW2EIParser.tst/EvtcLogs/StabilityTest/**/*.evtc
 /GW2EIParser.tst/EvtcLogs/StabilityTest/**/*.zevtc

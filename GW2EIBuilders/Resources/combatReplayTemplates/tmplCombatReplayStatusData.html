@@ -178,6 +178,109 @@
         `,
     });
 
+    Vue.component("combat-replay-fight-diagnosis-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time", "selectedactorid"],
+        template: `
+        <div class="combat-replay-wvw-analysis-card">
+            <div class="combat-replay-wvw-analysis-card-title">Fight Diagnosis</div>
+            <div v-if="!diagnosis || !diagnosis.available" class="combat-replay-wvw-analysis-detail">
+                No fight diagnosis was generated for this replay.
+            </div>
+            <div v-else-if="!revealed" class="combat-replay-wvw-analysis-grid">
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Replay diagnosis</div>
+                    <div class="combat-replay-wvw-analysis-value">{{diagnosis.title}}</div>
+                    <div class="combat-replay-wvw-analysis-detail">
+                        Runs a deterministic pass over downs, kills, pressure windows, and commander-relative positioning.
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary mt-2" @click="revealed = true">Explain fight</button>
+                </div>
+            </div>
+            <div v-else class="d-flex flex-column">
+                <div class="combat-replay-wvw-analysis-grid mb-2">
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Diagnosis</div>
+                        <div class="combat-replay-wvw-analysis-value">
+                            {{diagnosis.title}}
+                            <span class="combat-replay-wvw-analysis-pill" :class="diagnosisPillClass">{{diagnosis.confidenceLabel}}</span>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail">{{diagnosis.summary}}</div>
+                        <div class="combat-replay-wvw-analysis-detail mt-1">{{diagnosis.detail}}</div>
+                    </div>
+                </div>
+                <div v-if="windows.length > 0" class="combat-replay-wvw-analysis-bursts mb-2">
+                    <div class="combat-replay-wvw-analysis-card-title">Replay Anchors</div>
+                    <button v-for="window in windows" :key="window.key + '-' + window.time" type="button" class="combat-replay-wvw-analysis-burst-entry" @click="jumpToBurst(window.time)">
+                        <span class="combat-replay-wvw-analysis-burst-rank">{{window.timeLabel}}</span>
+                        <span class="combat-replay-wvw-analysis-burst-time">{{window.label}}</span>
+                        <span class="combat-replay-wvw-analysis-burst-detail">{{window.summary}}</span>
+                    </button>
+                </div>
+                <div v-if="evidence.length > 0" class="combat-replay-wvw-analysis-grid">
+                    <button v-for="entry in evidence" :key="entry.label + '-' + entry.timeLabel" type="button" class="combat-replay-wvw-analysis-metric combat-replay-wvw-analysis-metric-button" @click="jumpToEvidence(entry)">
+                        <div class="combat-replay-wvw-analysis-label">{{entry.label}}</div>
+                        <div class="combat-replay-wvw-analysis-value">
+                            {{entry.value}}
+                            <span v-if="entry.timeLabel" class="combat-replay-wvw-analysis-pill" :class="getTonePillClass(entry.tone)">{{entry.timeLabel}}</span>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail">{{entry.detail}}</div>
+                    </button>
+                </div>
+                <div v-if="diagnosis.caveats && diagnosis.caveats.length > 0" class="combat-replay-wvw-analysis-grid mt-2">
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Reading Notes</div>
+                        <div v-for="caveat in diagnosis.caveats" :key="caveat" class="combat-replay-wvw-analysis-detail">{{caveat}}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `,
+        data: function () {
+            return {
+                revealed: false,
+            };
+        },
+        computed: {
+            diagnosis: function () {
+                return this.crAnalysis && this.crAnalysis.diagnosis ? this.crAnalysis.diagnosis : null;
+            },
+            windows: function () {
+                return this.diagnosis && this.diagnosis.windows ? this.diagnosis.windows : [];
+            },
+            evidence: function () {
+                return this.diagnosis && this.diagnosis.evidence ? this.diagnosis.evidence : [];
+            },
+            diagnosisPillClass: function () {
+                const label = this.diagnosis && this.diagnosis.confidenceLabel ? this.diagnosis.confidenceLabel.toLowerCase() : "";
+                if (label === "clear") {
+                    return "combat-replay-wvw-analysis-pill-success";
+                }
+                if (label === "medium") {
+                    return "combat-replay-wvw-analysis-pill-normal";
+                }
+                return "combat-replay-wvw-analysis-pill-muted";
+            },
+        },
+        methods: {
+            getTonePillClass: function (tone) {
+                if (tone === "danger" || tone === "warning") {
+                    return "combat-replay-wvw-analysis-pill-weak";
+                }
+                if (tone === "success") {
+                    return "combat-replay-wvw-analysis-pill-success";
+                }
+                return "combat-replay-wvw-analysis-pill-muted";
+            },
+            jumpToEvidence: function (entry) {
+                if (!entry || entry.time == null) {
+                    return;
+                }
+                this.jumpToBurst(entry.time);
+            },
+        },
+    });
+
     function getCombatReplayAnalysisNavigationState() {
         if (!window.reactiveCombatReplayAnalysisNavigation && window.Vue && Vue.observable) {
             window.reactiveCombatReplayAnalysisNavigation = Vue.observable({
@@ -200,6 +303,9 @@
             <ul v-if="hasanalysis" class="nav nav-pills d-flex flex-row justify-content-center mb-2 scale85 combat-replay-wvw-analysis-subtabs">
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: overviewMode === 0}" @click="overviewMode = 0">Overview</a>
+                </li>
+                <li v-if="hasDiagnosis" class="nav-item">
+                    <a class="nav-link" :class="{active: overviewMode === 7}" @click="overviewMode = 7">Diagnosis</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: overviewMode === 1}" @click="overviewMode = 1">Burst</a>
@@ -233,6 +339,7 @@
                 <combat-replay-events-component v-else-if="hasanalysis && overviewMode === 4" :time="time" :selectedactorid="selectedactorid"></combat-replay-events-component>
                 <combat-replay-defense-component v-else-if="hasanalysis && overviewMode === 5" :time="time" :selectedactorid="selectedactorid"></combat-replay-defense-component>
                 <combat-replay-player-analysis-component v-else-if="hasanalysis && overviewMode === 6" :time="time" :selectedactorid="selectedactorid"></combat-replay-player-analysis-component>
+                <combat-replay-fight-diagnosis-component v-else-if="hasanalysis && overviewMode === 7" :time="time" :selectedactorid="selectedactorid"></combat-replay-fight-diagnosis-component>
             </keep-alive>
             <div v-if="showOverviewHelp" class="wvw-summary-modal-backdrop" @click.self="showOverviewHelp = false">
                 <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay compact card help">
@@ -297,6 +404,9 @@
             },
             requestedSelectedActorId: function () {
                 return getCombatReplayAnalysisNavigationState().selectedActorId;
+            },
+            hasDiagnosis: function () {
+                return !!(crData && crData.analysis && crData.analysis.diagnosis && crData.analysis.diagnosis.available);
             },
         },
         mounted: function () {
