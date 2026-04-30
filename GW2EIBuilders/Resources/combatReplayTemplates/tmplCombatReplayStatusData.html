@@ -120,6 +120,9 @@
             getPositioningAnalysis: function () {
                 return this.crAnalysis && this.crAnalysis.positioning ? this.crAnalysis.positioning : null;
             },
+            getEnemyAnchorAnalysis: function () {
+                return this.crAnalysis && this.crAnalysis.enemyAnchor ? this.crAnalysis.enemyAnchor : null;
+            },
             getEventAnalysis: function () {
                 return this.crAnalysis && this.crAnalysis.events ? this.crAnalysis.events : null;
             },
@@ -176,6 +179,146 @@
             <combat-replay-targets-stats-component v-if="!targetless" :time="time" :selectedtargetid="selectedactorid" :analysis="true"></combat-replay-targets-stats-component>
         </div>
         `,
+    });
+
+    Vue.component("combat-replay-enemy-anchor-overview-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time"],
+        template: `
+        <div v-if="hasAnchor" class="combat-replay-wvw-analysis-card combat-replay-enemy-anchor-overview mb-2">
+            <div class="combat-replay-enemy-anchor-header">
+                <div class="combat-replay-wvw-analysis-card-title">Enemy Anchor</div>
+                <span class="combat-replay-wvw-analysis-pill" :class="candidatePillClass">{{enemyAnchor.confidenceLabel || "Low"}}</span>
+            </div>
+            <div class="combat-replay-wvw-analysis-grid">
+                <button v-if="enemyAnchor.topCandidateId" type="button" class="combat-replay-wvw-analysis-metric combat-replay-wvw-analysis-metric-button" title="Select inferred anchor candidate" @click="selectReplayActor(enemyAnchor.topCandidateId)">
+                    <div class="combat-replay-wvw-analysis-label">Likely Anchor</div>
+                    <div class="combat-replay-wvw-analysis-value">{{topCandidateLabel}}</div>
+                    <div class="combat-replay-wvw-analysis-detail">{{topCandidateDetail}}</div>
+                </button>
+                <div v-else class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Likely Anchor</div>
+                    <div class="combat-replay-wvw-analysis-value">No standout candidate</div>
+                    <div class="combat-replay-wvw-analysis-detail">Anchor path was detected, but no tracked player dominated it.</div>
+                </div>
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Current Core</div>
+                    <div class="combat-replay-wvw-analysis-value">{{currentCoreCount}} / {{currentActiveCount}}</div>
+                    <div class="combat-replay-wvw-analysis-detail">{{currentAnchorDetail}}</div>
+                </div>
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Anchor Radius</div>
+                    <div class="combat-replay-wvw-analysis-value">{{formatAmount(enemyAnchor.averageRadius)}} units</div>
+                    <div class="combat-replay-wvw-analysis-detail">{{formatPercent(enemyAnchor.stabilityRate)}} stable core snapshots.</div>
+                </div>
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Coverage</div>
+                    <div class="combat-replay-wvw-analysis-value">{{formatCount(enemyAnchor.anchorSamples)}} / {{formatCount(enemyAnchor.evaluatedSamples)}}</div>
+                    <div class="combat-replay-wvw-analysis-detail">Snapshots with enough grouped enemy positions.</div>
+                </div>
+            </div>
+            <div v-if="enemyAnchor.summary" class="combat-replay-wvw-analysis-detail combat-replay-enemy-anchor-summary">{{enemyAnchor.summary}}</div>
+            <div v-if="enemyAnchor.detail" class="combat-replay-wvw-analysis-detail">{{enemyAnchor.detail}}</div>
+            <div class="combat-replay-enemy-anchor-actions">
+                <button v-if="hasOverlay" type="button" class="btn btn-sm" :class="overlayEnabled ? 'btn-primary' : 'btn-secondary'" @click="toggleEnemyAnchorOverlay">{{overlayEnabled ? "Hide Paths" : "Show Paths"}}</button>
+            </div>
+        </div>
+        `,
+        data: function () {
+            return {
+                overlayEnabled: false,
+            };
+        },
+        computed: {
+            enemyAnchor: function () {
+                return this.getEnemyAnchorAnalysis();
+            },
+            hasAnchor: function () {
+                return !!(this.enemyAnchor && this.enemyAnchor.available);
+            },
+            hasOverlay: function () {
+                return !!(animator && animator.hasEnemyPositionOverlay && animator.hasEnemyPositionOverlay());
+            },
+            candidatePillClass: function () {
+                const label = this.enemyAnchor && this.enemyAnchor.confidenceLabel ? this.enemyAnchor.confidenceLabel.toLowerCase() : "";
+                if (label === "clear") {
+                    return "combat-replay-wvw-analysis-pill-success";
+                }
+                if (label === "medium") {
+                    return "combat-replay-wvw-analysis-pill-normal";
+                }
+                return "combat-replay-wvw-analysis-pill-muted";
+            },
+            topCandidate: function () {
+                if (!this.enemyAnchor || !this.enemyAnchor.candidates || this.enemyAnchor.candidates.length === 0) {
+                    return null;
+                }
+                return this.enemyAnchor.candidates.find(candidate => String(candidate.id) === String(this.enemyAnchor.topCandidateId)) || this.enemyAnchor.candidates[0];
+            },
+            topCandidateLabel: function () {
+                if (!this.enemyAnchor) {
+                    return "";
+                }
+                return this.enemyAnchor.topCandidateName || this.getActorLabel(this.enemyAnchor.topCandidateId);
+            },
+            topCandidateDetail: function () {
+                if (!this.topCandidate) {
+                    return "";
+                }
+                return "Core " + this.formatPercent(this.topCandidate.coreRate) +
+                    ", nearest " + this.formatPercent(this.topCandidate.nearestRate) +
+                    ", avg distance " + this.formatAmount(this.topCandidate.averageDistance);
+            },
+            currentHasAnchor: function () {
+                return !!(this.enemyAnchor &&
+                    this.snapshotIndex >= 0 &&
+                    this.enemyAnchor.hasAnchor &&
+                    this.enemyAnchor.hasAnchor[this.snapshotIndex]);
+            },
+            currentActiveCount: function () {
+                return this.currentHasAnchor ? Number(this.enemyAnchor.activeEnemyCount[this.snapshotIndex] || 0) : 0;
+            },
+            currentCoreCount: function () {
+                return this.currentHasAnchor ? Number(this.enemyAnchor.coreEnemyCount[this.snapshotIndex] || 0) : 0;
+            },
+            currentAnchorDetail: function () {
+                if (!this.currentHasAnchor) {
+                    return "No anchor sample at the current replay time.";
+                }
+                const radius = Number(this.enemyAnchor.radius[this.snapshotIndex] || 0);
+                return "Radius " + this.formatAmount(radius) + " around the inferred enemy group center.";
+            },
+        },
+        mounted: function () {
+            this.overlayEnabled = !!(animator && animator.displaySettings && animator.displaySettings.displayEnemyPositionOverlay);
+            this._enemyPositionOverlayChangedHandler = (event) => {
+                this.overlayEnabled = !!(event && event.detail && event.detail.enabled);
+            };
+            window.addEventListener("combatReplayEnemyPositionOverlayChanged", this._enemyPositionOverlayChangedHandler);
+        },
+        beforeDestroy: function () {
+            if (this._enemyPositionOverlayChangedHandler) {
+                window.removeEventListener("combatReplayEnemyPositionOverlayChanged", this._enemyPositionOverlayChangedHandler);
+            }
+        },
+        methods: {
+            getActorLabel: function (uniqueId) {
+                if (!uniqueId) {
+                    return "";
+                }
+                const actor = this.getActorByUniqueId(uniqueId);
+                if (actor && actor.name) {
+                    return actor.name;
+                }
+                return "Actor " + uniqueId;
+            },
+            toggleEnemyAnchorOverlay: function () {
+                if (!animator || !animator.toggleEnemyPositionOverlay) {
+                    return;
+                }
+                this.overlayEnabled = animator.toggleEnemyPositionOverlay();
+            },
+        },
     });
 
     Vue.component("combat-replay-fight-diagnosis-component", {
@@ -363,6 +506,7 @@
                 <div class="combat-replay-overview-help-row">
                     <button type="button" class="combat-replay-overview-help-button" title="Compact card help" aria-label="Show compact card help" @click="showOverviewHelp = true">?</button>
                 </div>
+                <combat-replay-enemy-anchor-overview-component v-if="hasanalysis" :time="time"></combat-replay-enemy-anchor-overview-component>
                 <combat-replay-overview-stats-component :time="time" :selectedactorid="selectedactorid" :targetless="targetless"></combat-replay-overview-stats-component>
             </div>
             <keep-alive>

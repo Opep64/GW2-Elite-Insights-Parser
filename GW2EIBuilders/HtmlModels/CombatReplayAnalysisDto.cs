@@ -20,6 +20,7 @@ internal class CombatReplayAnalysisDto
     public CombatReplayTeamAnalysisDto Squad { get; set; } = new();
     public CombatReplayTeamAnalysisDto Enemy { get; set; } = new();
     public CombatReplayThreatBoonAnalysisDto ThreatBoons { get; set; } = new();
+    public CombatReplayEnemyAnchorAnalysisDto EnemyAnchor { get; set; } = new();
     public CombatReplayPositioningAnalysisDto Positioning { get; set; } = new();
     public CombatReplayEventAnalysisDto Events { get; set; } = new();
     public CombatReplayDefenseAnalysisDto Defense { get; set; } = new();
@@ -79,6 +80,47 @@ internal class CombatReplayDamageOverlayEntryDto
     public string TargetSide { get; set; } = "";
     public long[] DamageTaken { get; set; } = [];
     public Dictionary<int, long[][]> TopContributors { get; set; } = [];
+}
+
+internal class CombatReplayEnemyAnchorAnalysisDto
+{
+    public bool Available { get; set; }
+    public string ConfidenceLabel { get; set; } = "";
+    public double Confidence { get; set; }
+    public string Summary { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public int TopCandidateId { get; set; }
+    public string TopCandidateName { get; set; } = "";
+    public int EvaluatedSamples { get; set; }
+    public int AnchorSamples { get; set; }
+    public int StableSamples { get; set; }
+    public double StabilityRate { get; set; }
+    public double AverageRadius { get; set; }
+    public int CommanderId { get; set; }
+    public bool HasCommanderPath { get; set; }
+    public bool[] HasAnchor { get; set; } = [];
+    public float[] X { get; set; } = [];
+    public float[] Y { get; set; } = [];
+    public int[] Radius { get; set; } = [];
+    public int[] ActiveEnemyCount { get; set; } = [];
+    public int[] CoreEnemyCount { get; set; } = [];
+    public int[] CandidateIds { get; set; } = [];
+    public bool[] CommanderHasPosition { get; set; } = [];
+    public float[] CommanderX { get; set; } = [];
+    public float[] CommanderY { get; set; } = [];
+    public List<CombatReplayEnemyAnchorCandidateDto> Candidates { get; set; } = [];
+}
+
+internal class CombatReplayEnemyAnchorCandidateDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public double Score { get; set; }
+    public int Samples { get; set; }
+    public double PresenceRate { get; set; }
+    public double CoreRate { get; set; }
+    public double NearestRate { get; set; }
+    public double AverageDistance { get; set; }
 }
 
 internal class CombatReplayTeamAnalysisDto
@@ -1092,6 +1134,12 @@ internal static class CombatReplayAnalysisBuilder
     private const int BucketSize = 1000;
     private const double MeaningfulContributionThreshold = 0.10;
     private const float RangeThreshold = 1200.0f;
+    private const int EnemyAnchorMinimumEnemies = 5;
+    private const int EnemyAnchorMinimumCoreEnemies = 4;
+    private const double EnemyAnchorCoreShare = 0.55;
+    private const double EnemyAnchorStableRadius = 520.0;
+    private const double EnemyAnchorDistanceCap = 900.0;
+    private const int EnemyAnchorMapCoordinateDigits = 3;
     private static readonly PositioningCriteria PositioningSettings = new(
         DesiredCommanderDistance: 240.0f,
         MingledCommanderDistance: 180.0f,
@@ -1196,6 +1244,7 @@ internal static class CombatReplayAnalysisBuilder
     private readonly record struct FightDiagnosisSwing(string VictimSide, long Start, long End, int VictimDowns, int OpposingDowns, int VictimKills, int OpposingKills, double Score);
     private readonly record struct FightDiagnosisPositioningSnapshot(int Index, long Time, int Eligible, int InPosition, int TooFar, int LateralRisk, int Overextended, int EngagedEnemies, double InPositionRate, double TooFarRate, double LateralRiskRate, double OverextendedRate, double Score);
     private readonly record struct FightDiagnosisNumbers(int SquadPlayers, int EnemyPlayers);
+    private readonly record struct EnemyAnchorPosition(SingleActor Actor, Vector3 Position);
     private readonly record struct PlayerEventContributionSummary(double TotalAmount, int WindowsHit, int WindowsTotal, int FastWindowsHit);
     private readonly record struct PlayerRecoveryContributionSummary(int WindowsHit, int WindowsTotal, double DownedHealing, double RezCasts, double RezTime, int ClassWindowsHit, double ClassDownedHealing, double ClassRecoveryActions);
     private readonly record struct RecoverySupportActionEvent(long Time, AgentItem Provider, long SkillId, string Name, string Icon, double DurationSeconds);
@@ -1213,6 +1262,15 @@ internal static class CombatReplayAnalysisBuilder
         public int RezCasts { get; set; }
         public double RezTimeSeconds { get; set; }
         public int RecoveryActions { get; set; }
+    }
+
+    private sealed class EnemyAnchorCandidateAccumulator
+    {
+        public required SingleActor Actor { get; init; }
+        public int ActiveSamples { get; set; }
+        public int CoreSamples { get; set; }
+        public int NearestSamples { get; set; }
+        public double DistanceTotal { get; set; }
     }
 
     private readonly record struct PlayerLaneSnapshot(
@@ -1308,6 +1366,7 @@ internal static class CombatReplayAnalysisBuilder
         var enemyAnalysis = BuildTeamAnalysis(log, enemyContext, boonIDs, times, snapshotCount);
         Player? commander = log.PlayerList.FirstOrDefault(player => !player.IsFakeActor && player.IsCommander(log));
         var threatAnalysis = BuildThreatBoonAnalysis(log, squadPlayers, times, pollingRate, squadAnalysis);
+        CombatReplayEnemyAnchorAnalysisDto enemyAnchorAnalysis = BuildEnemyAnchorAnalysis(log, hostileTargets, commander, times);
         var positioningAnalysis = BuildPositioningAnalysis(log, squadPlayers, hostileTargets, commander, times);
         CombatReplayEventAnalysisDto eventAnalysis = BuildEventAnalysis(log, squadPlayers, hostileTargets);
         CombatReplayDefenseAnalysisDto defenseAnalysis = BuildDefenseAnalysis(log, squadPlayers, enemyAnalysis, times);
@@ -1342,6 +1401,7 @@ internal static class CombatReplayAnalysisBuilder
             Squad = squadAnalysis,
             Enemy = enemyAnalysis,
             ThreatBoons = threatAnalysis,
+            EnemyAnchor = enemyAnchorAnalysis,
             Positioning = positioningAnalysis,
             Events = eventAnalysis,
             Defense = defenseAnalysis,
@@ -2217,6 +2277,205 @@ internal static class CombatReplayAnalysisBuilder
         result.SummaryOverextendedRate = totalEvaluatedSamples > 0 ? Math.Round(totalOverextendedSamples * 100.0 / totalEvaluatedSamples, 1) : 0;
         result.SummaryLateralRiskRate = totalEvaluatedSamples > 0 ? Math.Round(totalLateralRiskSamples * 100.0 / totalEvaluatedSamples, 1) : 0;
         return result;
+    }
+
+    private static CombatReplayEnemyAnchorAnalysisDto BuildEnemyAnchorAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> hostileTargets,
+        Player? commander,
+        IReadOnlyList<long> times)
+    {
+        var snapshotCount = times.Count;
+        var result = new CombatReplayEnemyAnchorAnalysisDto
+        {
+            CommanderId = commander?.UniqueID ?? 0,
+            HasAnchor = new bool[snapshotCount],
+            X = new float[snapshotCount],
+            Y = new float[snapshotCount],
+            Radius = new int[snapshotCount],
+            ActiveEnemyCount = new int[snapshotCount],
+            CoreEnemyCount = new int[snapshotCount],
+            CandidateIds = new int[snapshotCount],
+            CommanderHasPosition = new bool[snapshotCount],
+            CommanderX = new float[snapshotCount],
+            CommanderY = new float[snapshotCount],
+        };
+
+        if (hostileTargets.Count < EnemyAnchorMinimumEnemies || snapshotCount == 0)
+        {
+            result.Summary = "No enemy anchor candidate was inferred.";
+            result.Detail = "There were not enough tracked hostile players to infer a reliable enemy anchor.";
+            result.ConfidenceLabel = "Low";
+            return result;
+        }
+
+        CombatReplayMap map = log.LogData.Logic.GetCombatReplayMap(log);
+        var candidateAccumulators = hostileTargets.ToDictionary(
+            target => target.UniqueID,
+            target => new EnemyAnchorCandidateAccumulator { Actor = target });
+        var anchorSamples = 0;
+        var stableSamples = 0;
+        var radiusTotal = 0.0;
+
+        for (var snapshotIndex = 0; snapshotIndex < snapshotCount; snapshotIndex++)
+        {
+            long time = times[snapshotIndex];
+            if (commander != null && TryGetEligiblePosition(commander, log, time, out Vector3 commanderPosition))
+            {
+                Vector2 mapCommanderPosition = GetMapPosition(map, commanderPosition);
+                result.HasCommanderPath = true;
+                result.CommanderHasPosition[snapshotIndex] = true;
+                result.CommanderX[snapshotIndex] = mapCommanderPosition.X;
+                result.CommanderY[snapshotIndex] = mapCommanderPosition.Y;
+            }
+
+            var activePositions = new List<EnemyAnchorPosition>(hostileTargets.Count);
+            foreach (SingleActor enemy in hostileTargets)
+            {
+                if (TryGetEligiblePosition(enemy, log, time, out Vector3 position))
+                {
+                    activePositions.Add(new EnemyAnchorPosition(enemy, position));
+                }
+            }
+
+            result.ActiveEnemyCount[snapshotIndex] = activePositions.Count;
+            if (activePositions.Count < EnemyAnchorMinimumEnemies)
+            {
+                continue;
+            }
+
+            Vector3 coarseCenter = GetMedianPosition([.. activePositions.Select(position => position.Position)]);
+            int coreTargetCount = Math.Clamp(
+                (int)Math.Ceiling(activePositions.Count * EnemyAnchorCoreShare),
+                Math.Min(EnemyAnchorMinimumCoreEnemies, activePositions.Count),
+                activePositions.Count);
+            List<EnemyAnchorPosition> corePositions =
+            [
+                .. activePositions
+                    .OrderBy(position => GetDistance2D(position.Position, coarseCenter))
+                    .Take(coreTargetCount),
+            ];
+            if (corePositions.Count < EnemyAnchorMinimumCoreEnemies)
+            {
+                continue;
+            }
+
+            Vector3 anchorCenter = GetMedianPosition([.. corePositions.Select(position => position.Position)]);
+            List<double> coreDistances = [.. corePositions.Select(position => (double)GetDistance2D(position.Position, anchorCenter))];
+            int radius = Math.Max(120, (int)Math.Round(GetPercentile(coreDistances, 0.85)));
+            EnemyAnchorPosition nearest = activePositions
+                .OrderBy(position => GetDistance2D(position.Position, anchorCenter))
+                .First();
+            HashSet<int> coreIds = [.. corePositions.Select(position => position.Actor.UniqueID)];
+
+            anchorSamples++;
+            radiusTotal += radius;
+            if (radius <= EnemyAnchorStableRadius)
+            {
+                stableSamples++;
+            }
+
+            Vector2 mapAnchorCenter = GetMapPosition(map, anchorCenter);
+            result.HasAnchor[snapshotIndex] = true;
+            result.X[snapshotIndex] = mapAnchorCenter.X;
+            result.Y[snapshotIndex] = mapAnchorCenter.Y;
+            result.Radius[snapshotIndex] = radius;
+            result.CoreEnemyCount[snapshotIndex] = corePositions.Count;
+            result.CandidateIds[snapshotIndex] = nearest.Actor.UniqueID;
+
+            foreach (EnemyAnchorPosition activePosition in activePositions)
+            {
+                EnemyAnchorCandidateAccumulator accumulator = candidateAccumulators[activePosition.Actor.UniqueID];
+                accumulator.ActiveSamples++;
+                accumulator.DistanceTotal += Math.Min(EnemyAnchorDistanceCap, GetDistance2D(activePosition.Position, anchorCenter));
+                if (coreIds.Contains(activePosition.Actor.UniqueID))
+                {
+                    accumulator.CoreSamples++;
+                }
+                if (activePosition.Actor.UniqueID == nearest.Actor.UniqueID)
+                {
+                    accumulator.NearestSamples++;
+                }
+            }
+        }
+
+        result.EvaluatedSamples = snapshotCount;
+        result.AnchorSamples = anchorSamples;
+        result.StableSamples = stableSamples;
+        result.StabilityRate = anchorSamples > 0 ? Math.Round(stableSamples * 100.0 / anchorSamples, 1) : 0.0;
+        result.AverageRadius = anchorSamples > 0 ? Math.Round(radiusTotal / anchorSamples, 1) : 0.0;
+        result.Available = anchorSamples >= Math.Max(3, snapshotCount / 20);
+        if (!result.Available)
+        {
+            result.ConfidenceLabel = "Low";
+            result.Summary = "No stable enemy anchor path was detected.";
+            result.Detail = "The enemy side did not maintain enough active grouped samples for a meaningful anchor candidate.";
+            return result;
+        }
+
+        List<CombatReplayEnemyAnchorCandidateDto> candidates =
+        [
+            .. candidateAccumulators.Values
+                .Where(accumulator => accumulator.ActiveSamples > 0)
+                .Select(accumulator => BuildEnemyAnchorCandidate(accumulator, anchorSamples))
+                .OrderByDescending(candidate => candidate.Score)
+                .ThenBy(candidate => candidate.AverageDistance)
+                .Take(5),
+        ];
+        result.Candidates = candidates;
+
+        CombatReplayEnemyAnchorCandidateDto? topCandidate = candidates.FirstOrDefault();
+        if (topCandidate != null)
+        {
+            result.TopCandidateId = topCandidate.Id;
+            result.TopCandidateName = topCandidate.Name;
+            double margin = candidates.Count > 1 ? topCandidate.Score - candidates[1].Score : topCandidate.Score;
+            result.Confidence = ComputeEnemyAnchorConfidence(topCandidate.Score, margin, result.StabilityRate, anchorSamples);
+            result.ConfidenceLabel = result.Confidence switch
+            {
+                >= 70.0 => "Clear",
+                >= 50.0 => "Medium",
+                _ => "Low",
+            };
+            result.Summary = $"{topCandidate.Name} is the strongest enemy anchor candidate at {FormatOneDecimal(result.Confidence)}% confidence.";
+            result.Detail = $"{BuildPluralizedLabel(anchorSamples, "anchor sample", "anchor samples")} found, {FormatOneDecimal(result.StabilityRate)}% stable core rate, average anchor radius {FormatWholeNumber((int)Math.Round(result.AverageRadius))}. This is an inferred movement anchor, not proof of enemy tag.";
+        }
+        else
+        {
+            result.ConfidenceLabel = "Low";
+            result.Summary = "Enemy anchor path was detected, but no player stood out as the anchor candidate.";
+            result.Detail = $"{BuildPluralizedLabel(anchorSamples, "anchor sample", "anchor samples")} found, with {FormatOneDecimal(result.StabilityRate)}% stable core rate.";
+        }
+        return result;
+    }
+
+    private static CombatReplayEnemyAnchorCandidateDto BuildEnemyAnchorCandidate(EnemyAnchorCandidateAccumulator accumulator, int anchorSamples)
+    {
+        double presenceRate = ComputePercent(accumulator.ActiveSamples, anchorSamples);
+        double coreRate = ComputePercent(accumulator.CoreSamples, anchorSamples);
+        double nearestRate = ComputePercent(accumulator.NearestSamples, anchorSamples);
+        double averageDistance = accumulator.ActiveSamples > 0 ? accumulator.DistanceTotal / accumulator.ActiveSamples : EnemyAnchorDistanceCap;
+        double closeness = Math.Clamp(1.0 - averageDistance / EnemyAnchorDistanceCap, 0.0, 1.0) * 100.0;
+        double score = presenceRate * 0.15 + coreRate * 0.35 + nearestRate * 0.25 + closeness * 0.25;
+        return new CombatReplayEnemyAnchorCandidateDto
+        {
+            Id = accumulator.Actor.UniqueID,
+            Name = accumulator.Actor.Character,
+            Score = Math.Round(score, 1),
+            Samples = accumulator.ActiveSamples,
+            PresenceRate = Math.Round(presenceRate, 1),
+            CoreRate = Math.Round(coreRate, 1),
+            NearestRate = Math.Round(nearestRate, 1),
+            AverageDistance = Math.Round(averageDistance, 1),
+        };
+    }
+
+    private static double ComputeEnemyAnchorConfidence(double topScore, double margin, double stabilityRate, int anchorSamples)
+    {
+        double sampleFactor = Math.Clamp(anchorSamples / 20.0, 0.35, 1.0);
+        double marginFactor = Math.Clamp(margin / 12.0, 0.45, 1.0);
+        double stabilityFactor = Math.Clamp(stabilityRate / 75.0, 0.45, 1.0);
+        return Math.Round(topScore * sampleFactor * marginFactor * stabilityFactor, 1);
     }
 
     private static ThreatBoonDefinition CreateThreatBoonDefinition(
@@ -9952,6 +10211,45 @@ internal static class CombatReplayAnalysisBuilder
         return MathF.Sqrt(dx * dx + dy * dy);
     }
 
+    private static Vector3 GetMedianPosition(IReadOnlyList<Vector3> positions)
+    {
+        if (positions.Count == 0)
+        {
+            return default;
+        }
+        return new Vector3(
+            (float)GetMedian([.. positions.Select(position => (double)position.X)]),
+            (float)GetMedian([.. positions.Select(position => (double)position.Y)]),
+            (float)GetMedian([.. positions.Select(position => (double)position.Z)]));
+    }
+
+    private static Vector2 GetMapPosition(CombatReplayMap map, Vector3 position)
+    {
+        (int width, int height) = map.GetPixelMapSize();
+        double x = (position.X - map.TopX) / (map.BottomX - map.TopX);
+        double y = (position.Y - map.TopY) / (map.BottomY - map.TopY);
+        if (double.IsNaN(x) || double.IsNaN(y) || double.IsInfinity(x) || double.IsInfinity(y))
+        {
+            return default;
+        }
+        return new Vector2(
+            (float)Math.Round(width * x, EnemyAnchorMapCoordinateDigits),
+            (float)Math.Round(height - height * y, EnemyAnchorMapCoordinateDigits));
+    }
+
+    private static double GetMedian(IReadOnlyList<double> values)
+    {
+        if (values.Count == 0)
+        {
+            return 0.0;
+        }
+        var ordered = values.OrderBy(value => value).ToArray();
+        var middle = ordered.Length / 2;
+        return ordered.Length % 2 == 1
+            ? ordered[middle]
+            : (ordered[middle - 1] + ordered[middle]) / 2.0;
+    }
+
     private static bool IsPlayerAheadOfCommander(Vector3 commanderPosition, Vector3 playerPosition, Vector3 enemyPosition)
     {
         var commanderToPlayerX = playerPosition.X - commanderPosition.X;
@@ -10030,6 +10328,17 @@ internal static class CombatReplayAnalysisBuilder
         if (values.Count == 0)
         {
             return 0;
+        }
+        var ordered = values.OrderBy(value => value).ToArray();
+        var index = Math.Clamp((int)Math.Floor((ordered.Length - 1) * percentile), 0, ordered.Length - 1);
+        return ordered[index];
+    }
+
+    private static double GetPercentile(IReadOnlyList<double> values, double percentile)
+    {
+        if (values.Count == 0)
+        {
+            return 0.0;
         }
         var ordered = values.OrderBy(value => value).ToArray();
         var index = Math.Clamp((int)Math.Floor((ordered.Length - 1) * percentile), 0, ordered.Length - 1);

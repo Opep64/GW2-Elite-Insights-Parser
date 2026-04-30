@@ -506,6 +506,29 @@ h6.actor-shorten-cr-compact {
     text-align: center;
 }
 
+.combat-replay-enemy-anchor-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.combat-replay-enemy-anchor-header .combat-replay-wvw-analysis-card-title {
+    margin-bottom: 0;
+}
+
+.combat-replay-enemy-anchor-summary {
+    margin-top: 0.45rem;
+}
+
+.combat-replay-enemy-anchor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.55rem;
+}
+
 .combat-replay-fight-diagnosis {
     overflow: hidden;
 }

@@ -263,6 +263,7 @@ class Animator {
             skillMechanicsMask: DefaultSkillDecorations,
             displayTrashMobs: true,
             useActorHitboxWidth: false,
+            hideReplayActors: false,
             displayDamageOverlay: false,
             displayStickyDamageOverlayLinks: false,
             displayPositionOverlay: false,
@@ -296,6 +297,7 @@ class Animator {
         this.selectedActor = null;
         this.damageOverlayData = this._buildDamageOverlayData(options ? options.analysis : null);
         this.positionOverlayData = this._buildPositionOverlayData(options ? options.analysis : null);
+        this.enemyAnchorData = this._buildEnemyAnchorData(options ? options.analysis : null);
         // maps
         this.backgroundImages = new RenderablesRoot(start, end);
         // animation
@@ -852,11 +854,29 @@ class Animator {
     toggleEnemyPositionOverlay() {
         if (!this.hasEnemyPositionOverlay()) {
             this.displaySettings.displayEnemyPositionOverlay = false;
+            this._notifyEnemyPositionOverlayChanged();
             return false;
         }
         this.displaySettings.displayEnemyPositionOverlay = !this.displaySettings.displayEnemyPositionOverlay;
         animateCanvas(noUpdateTime);
+        this._notifyEnemyPositionOverlayChanged();
         return this.displaySettings.displayEnemyPositionOverlay;
+    }
+
+    toggleReplayActors() {
+        this.displaySettings.hideReplayActors = !this.displaySettings.hideReplayActors;
+        animateCanvas(noUpdateTime);
+        return this.displaySettings.hideReplayActors;
+    }
+
+    _notifyEnemyPositionOverlayChanged() {
+        if (typeof window !== "undefined" && window.dispatchEvent && typeof CustomEvent !== "undefined") {
+            window.dispatchEvent(new CustomEvent("combatReplayEnemyPositionOverlayChanged", {
+                detail: {
+                    enabled: !!this.displaySettings.displayEnemyPositionOverlay,
+                },
+            }));
+        }
     }
 
     setStickyDamageOverlayLinksEnabled(enabled) {
@@ -884,7 +904,11 @@ class Animator {
     }
 
     hasEnemyPositionOverlay() {
-        return this.hasPositionOverlay() && !!(logData && logData.targets && logData.targets.length > 0);
+        return !!(this.enemyAnchorData &&
+            this.enemyAnchorData.times &&
+            this.enemyAnchorData.times.length > 0 &&
+            this.enemyAnchorData.hasAnchor &&
+            this.enemyAnchorData.hasAnchor.some(value => !!value));
     }
 
     getDamageOverlayInfo(actorId) {
@@ -1596,6 +1620,38 @@ class Animator {
         };
     }
 
+    _buildEnemyAnchorData(analysis) {
+        if (!analysis || !analysis.times || analysis.times.length === 0 || !analysis.enemyAnchor) {
+            return null;
+        }
+        const anchor = analysis.enemyAnchor;
+        if (!anchor.available || !anchor.hasAnchor || !anchor.x || !anchor.y) {
+            return null;
+        }
+        return {
+            times: analysis.times,
+            available: !!anchor.available,
+            confidenceLabel: anchor.confidenceLabel || "",
+            confidence: Number(anchor.confidence || 0),
+            summary: anchor.summary || "",
+            detail: anchor.detail || "",
+            topCandidateId: Number(anchor.topCandidateId || 0),
+            topCandidateName: anchor.topCandidateName || "",
+            commanderId: Number(anchor.commanderId || 0),
+            hasCommanderPath: !!anchor.hasCommanderPath,
+            hasAnchor: anchor.hasAnchor || [],
+            x: anchor.x || [],
+            y: anchor.y || [],
+            radius: anchor.radius || [],
+            activeEnemyCount: anchor.activeEnemyCount || [],
+            coreEnemyCount: anchor.coreEnemyCount || [],
+            candidateIds: anchor.candidateIds || [],
+            commanderHasPosition: anchor.commanderHasPosition || [],
+            commanderX: anchor.commanderX || [],
+            commanderY: anchor.commanderY || [],
+        };
+    }
+
     _findSnapshotIndex(times, time) {
         if (!times || times.length === 0) {
             return -1;
@@ -1623,6 +1679,11 @@ class Animator {
 
     _findPositionOverlaySnapshotIndex(time) {
         const times = this.positionOverlayData ? this.positionOverlayData.times : null;
+        return this._findSnapshotIndex(times, time);
+    }
+
+    _findEnemyAnchorSnapshotIndex(time) {
+        const times = this.enemyAnchorData ? this.enemyAnchorData.times : null;
         return this._findSnapshotIndex(times, time);
     }
 
@@ -1840,55 +1901,55 @@ class Animator {
         this._drawPositionOverlayRing(ctx, commanderPosition, overlayData.mingledRange, mingledStroke, snapshot.mingled ? "rgba(255, 116, 234, 0.08)" : null, snapshot.mingled ? 2.0 : 1.2, [4, 4]);
     }
 
-    _getMedian(values) {
-        if (!values || values.length === 0) {
-            return 0;
-        }
-        const sorted = [...values].sort((left, right) => left - right);
-        const middle = Math.floor(sorted.length / 2);
-        if (sorted.length % 2 === 1) {
-            return sorted[middle];
-        }
-        return (sorted[middle - 1] + sorted[middle]) / 2;
-    }
-
     _getEnemyPositionOverlayState() {
         if (!this.displaySettings.displayEnemyPositionOverlay || !this.hasEnemyPositionOverlay()) {
             return null;
         }
-        const snapshot = this._getPositionOverlaySnapshot();
-        if (!snapshot || snapshot.engagedEnemyCount <= 0) {
+        const snapshotIndex = this._findEnemyAnchorSnapshotIndex(this.reactiveDataStatus.time);
+        const data = this.enemyAnchorData;
+        if (snapshotIndex < 0 || !data || !data.hasAnchor || !data.hasAnchor[snapshotIndex]) {
             return null;
         }
-        const enemyPositions = [];
-        for (let i = 0; i < logData.targets.length; i++) {
-            const target = logData.targets[i];
-            if (!target || target.uniqueID == null) {
-                continue;
+        const trail = [];
+        const trailStartTime = this.reactiveDataStatus.time - 6000;
+        for (let i = snapshotIndex; i >= 0 && trail.length < 24; i--) {
+            if (data.times[i] < trailStartTime) {
+                break;
             }
-            const actor = this.getActorData(target.uniqueID);
-            if (!actor || !actor.canDraw()) {
-                continue;
+            if (data.hasAnchor[i]) {
+                trail.push({
+                    x: Number(data.x[i] || 0),
+                    y: Number(data.y[i] || 0),
+                });
             }
-            const position = actor.getPosition();
-            if (position === null) {
-                continue;
-            }
-            if (!this._isPositionWithinRange(position, snapshot.commanderPosition, snapshot.overlayData.engageRange)) {
-                continue;
-            }
-            enemyPositions.push(position);
         }
-        if (enemyPositions.length === 0) {
-            return null;
+        trail.reverse();
+        const commanderTrail = [];
+        if (data.hasCommanderPath && data.commanderHasPosition && data.commanderX && data.commanderY) {
+            for (let i = snapshotIndex; i >= 0 && commanderTrail.length < 24; i--) {
+                if (data.times[i] < trailStartTime) {
+                    break;
+                }
+                if (data.commanderHasPosition[i]) {
+                    commanderTrail.push({
+                        x: Number(data.commanderX[i] || 0),
+                        y: Number(data.commanderY[i] || 0),
+                    });
+                }
+            }
+            commanderTrail.reverse();
         }
         return {
             center: {
-                x: this._getMedian(enemyPositions.map(position => position.x)),
-                y: this._getMedian(enemyPositions.map(position => position.y)),
+                x: Number(data.x[snapshotIndex] || 0),
+                y: Number(data.y[snapshotIndex] || 0),
             },
-            count: enemyPositions.length,
-            radius: snapshot.overlayData.desiredCommanderDistance,
+            radius: Number(data.radius[snapshotIndex] || 240),
+            fixedRadius: this.positionOverlayData ? Number(this.positionOverlayData.desiredCommanderDistance || 240) : 240,
+            count: Number(data.activeEnemyCount[snapshotIndex] || 0),
+            coreCount: Number(data.coreEnemyCount[snapshotIndex] || 0),
+            trail: trail,
+            commanderTrail: commanderTrail,
         };
     }
 
@@ -1906,7 +1967,50 @@ class Animator {
         }
         const ctx = this.mainContext;
         const center = state.center;
-        this._drawPositionOverlayRing(ctx, center, state.radius, "rgba(255, 92, 92, 0.72)", "rgba(255, 92, 92, 0.065)", 2.2, []);
+        if (state.trail && state.trail.length > 1) {
+            ctx.save();
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            ctx.lineWidth = 2 / this.scale;
+            ctx.strokeStyle = "rgba(255, 92, 92, 0.48)";
+            ctx.beginPath();
+            ctx.moveTo(state.trail[0].x, state.trail[0].y);
+            for (let i = 1; i < state.trail.length; i++) {
+                ctx.lineTo(state.trail[i].x, state.trail[i].y);
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+        if (state.commanderTrail && state.commanderTrail.length > 1) {
+            ctx.save();
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            ctx.lineWidth = 2 / this.scale;
+            ctx.strokeStyle = "rgba(111, 255, 166, 0.58)";
+            ctx.beginPath();
+            ctx.moveTo(state.commanderTrail[0].x, state.commanderTrail[0].y);
+            for (let i = 1; i < state.commanderTrail.length; i++) {
+                ctx.lineTo(state.commanderTrail[i].x, state.commanderTrail[i].y);
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+        if (state.commanderTrail && state.commanderTrail.length > 0) {
+            const commanderPoint = state.commanderTrail[state.commanderTrail.length - 1];
+            ctx.save();
+            ctx.lineWidth = 2 / this.scale;
+            ctx.strokeStyle = "rgba(111, 255, 166, 0.88)";
+            ctx.fillStyle = "rgba(111, 255, 166, 0.26)";
+            ctx.beginPath();
+            ctx.arc(commanderPoint.x, commanderPoint.y, 7 / this.scale, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+        if (state.radius > 0 && Math.abs(state.radius - state.fixedRadius) > 20) {
+            this._drawPositionOverlayRing(ctx, center, state.radius, "rgba(255, 138, 138, 0.32)", null, 1.2, [7, 7]);
+        }
+        this._drawPositionOverlayRing(ctx, center, state.fixedRadius, "rgba(255, 92, 92, 0.72)", "rgba(255, 92, 92, 0.065)", 2.2, []);
 
         ctx.save();
         ctx.lineCap = "round";
@@ -2127,26 +2231,28 @@ class Animator {
             this._drawPositionOverlayRules();
             this._drawEnemyPositionOverlay();
 
-            if (!this.displaySettings.useActorHitboxWidth) {
+            if (!this.displaySettings.hideReplayActors && !this.displaySettings.useActorHitboxWidth) {
                 this.friendlyMobData.draw(selectableDraw);
                 this.friendlyPlayerData.draw(selectableDraw);
                 this.playerData.draw(selectableDraw);
             }
 
-            if (this.displaySettings.displayTrashMobs) {
+            if (!this.displaySettings.hideReplayActors && this.displaySettings.displayTrashMobs) {
                 this.trashMobData.draw(selectableDraw);
             }
 
-            this.targetData.draw(selectableDraw);
-            this.targetPlayerData.draw(selectableDraw);
-            if (this.displaySettings.useActorHitboxWidth) {
+            if (!this.displaySettings.hideReplayActors) {
+                this.targetData.draw(selectableDraw);
+                this.targetPlayerData.draw(selectableDraw);
+            }
+            if (!this.displaySettings.hideReplayActors && this.displaySettings.useActorHitboxWidth) {
                 this.friendlyMobData.draw(selectableDraw);
                 this.friendlyPlayerData.draw(selectableDraw);
                 this.playerData.draw(selectableDraw);
             }
             this._drawPositionOverlayPlayerHighlights();
             this._drawSelectedDamageContributorLinks();
-            if (this.selectedActor !== null) {
+            if (!this.displaySettings.hideReplayActors && this.selectedActor !== null) {
                 this.selectedActor.draw();
                 this._drawActorOrientation(this.selectedActor.id);
             }
@@ -2161,10 +2267,14 @@ class Animator {
             {
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
                 // Screen space actors
-                this.screenSpaceActorData.draw(standardDraw);
+                if (!this.displaySettings.hideReplayActors) {
+                    this.screenSpaceActorData.draw(standardDraw);
+                }
             }
             ctx.restore();
-            this._drawHoveredActorLabel();
+            if (!this.displaySettings.hideReplayActors) {
+                this._drawHoveredActorLabel();
+            }
         }
         //ctx.restore();  
     }

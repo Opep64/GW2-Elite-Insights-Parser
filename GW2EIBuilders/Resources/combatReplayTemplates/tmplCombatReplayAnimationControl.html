@@ -119,6 +119,9 @@
                         :class="{'active': backwards, 'btn-dark': !light, 'btn-light': light}">Backwards</div>
                     <div @click="resetViewpoint();" class="btn btn-small"
                         :class="{'btn-dark': !light, 'btn-light': light}">Reset Viewpoint</div>
+                    <div @click="toggleReplayActors();" class="btn btn-small"
+                        :class="{'active': actorsHidden, 'btn-dark': !light, 'btn-light': light}"
+                        title="Hide replay actors while keeping paths and overlays visible">{{actorsHidden ? "Show Actors" : "Hide Actors"}}</div>
                     <div v-if="hasDamageOverlay" @click="toggleDamageOverlay();" class="btn btn-small"
                         :class="{'active': damageOverlayEnabled, 'btn-dark': !light, 'btn-light': light}"
                         title="Show recent damage taken on replay actors">Damage Overlay</div>
@@ -127,7 +130,7 @@
                         title="Show commander-relative positioning rules and out-of-position players">Position Overlay</div>
                     <div v-if="hasEnemyPositionOverlay" @click="toggleEnemyPositionOverlay();" class="btn btn-small"
                         :class="{'active': enemyPositionOverlayEnabled, 'btn-dark': !light, 'btn-light': light}"
-                        title="Show the estimated enemy center and enemy ball radius">Enemy Position</div>
+                        title="Show the inferred enemy anchor path, grouped radius, and our commander path">Enemy Anchor</div>
                     <div @click="toggleStickySelectedInfo();" class="btn btn-small"
                         :class="{'active': stickySelectedInfoEnabled, 'btn-dark': !light, 'btn-light': light}"
                         title="Pin the selected actor info card on the replay">Sticky Info</div>
@@ -170,6 +173,7 @@
                 damageOverlayEnabled: false,
                 positionOverlayEnabled: false,
                 enemyPositionOverlayEnabled: false,
+                actorsHidden: false,
                 stickySelectedInfoEnabled: false,
                 hoverBuffsToShow: ["Boons", "Conditions", "Encounter Specifics", "Shared", "Consumables", "Others"],
                 hoverTargetBuffsToShow: ["Boons", "Conditions", "Encounter Specifics", "Shared", "Others"],
@@ -192,8 +196,18 @@
             this.damageOverlayEnabled = !!(animator && animator.displaySettings && animator.displaySettings.displayDamageOverlay);
             this.positionOverlayEnabled = !!(animator && animator.displaySettings && animator.displaySettings.displayPositionOverlay);
             this.enemyPositionOverlayEnabled = !!(animator && animator.displaySettings && animator.displaySettings.displayEnemyPositionOverlay);
+            this.actorsHidden = !!(animator && animator.displaySettings && animator.displaySettings.hideReplayActors);
+            this._enemyPositionOverlayChangedHandler = (event) => {
+                this.enemyPositionOverlayEnabled = !!(event && event.detail && event.detail.enabled);
+            };
+            window.addEventListener("combatReplayEnemyPositionOverlayChanged", this._enemyPositionOverlayChangedHandler);
             const encounterPhase = this.encounterPhase;
             this.updateAnimatorTimes(encounterPhase);
+        },
+        beforeDestroy() {
+            if (this._enemyPositionOverlayChangedHandler) {
+                window.removeEventListener("combatReplayEnemyPositionOverlayChanged", this._enemyPositionOverlayChangedHandler);
+            }
         },
         computed: {
             phases: function() {
@@ -604,6 +618,9 @@
             },
             toggleEnemyPositionOverlay: function () {
                 this.enemyPositionOverlayEnabled = animator.toggleEnemyPositionOverlay();
+            },
+            toggleReplayActors: function () {
+                this.actorsHidden = animator.toggleReplayActors();
             },
             toggleAnimate: function () {
                 animator.toggleAnimate();
