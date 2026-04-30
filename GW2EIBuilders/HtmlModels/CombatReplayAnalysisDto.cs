@@ -1195,6 +1195,7 @@ internal static class CombatReplayAnalysisBuilder
     private readonly record struct EvaluationWindow(long Start, long End);
     private readonly record struct FightDiagnosisSwing(string VictimSide, long Start, long End, int VictimDowns, int OpposingDowns, int VictimKills, int OpposingKills, double Score);
     private readonly record struct FightDiagnosisPositioningSnapshot(int Index, long Time, int Eligible, int InPosition, int TooFar, int LateralRisk, int Overextended, int EngagedEnemies, double InPositionRate, double TooFarRate, double LateralRiskRate, double OverextendedRate, double Score);
+    private readonly record struct FightDiagnosisNumbers(int SquadPlayers, int EnemyPlayers);
     private readonly record struct PlayerEventContributionSummary(double TotalAmount, int WindowsHit, int WindowsTotal, int FastWindowsHit);
     private readonly record struct PlayerRecoveryContributionSummary(int WindowsHit, int WindowsTotal, double DownedHealing, double RezCasts, double RezTime, int ClassWindowsHit, double ClassDownedHealing, double ClassRecoveryActions);
     private readonly record struct RecoverySupportActionEvent(long Time, AgentItem Provider, long SkillId, string Name, string Icon, double DurationSeconds);
@@ -1312,7 +1313,15 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayDefenseAnalysisDto defenseAnalysis = BuildDefenseAnalysis(log, squadPlayers, enemyAnalysis, times);
         CombatReplayFightDemandDto fightDemand = BuildFightDemand(squadAnalysis, enemyAnalysis, eventAnalysis, defenseAnalysis, threatAnalysis, times);
         string winnerSideId = InferFightDiagnosisWinnerSide(eventAnalysis);
-        CombatReplayFightDiagnosisDto diagnosis = BuildFightDiagnosis(squadAnalysis, enemyAnalysis, positioningAnalysis, eventAnalysis, times, log.LogData.LogEnd, winnerSideId);
+        CombatReplayFightDiagnosisDto diagnosis = BuildFightDiagnosis(
+            squadAnalysis,
+            enemyAnalysis,
+            positioningAnalysis,
+            eventAnalysis,
+            times,
+            log.LogData.LogEnd,
+            winnerSideId,
+            new FightDiagnosisNumbers(squadPlayers.Count, hostileTargets.Count));
         CombatReplayDamageOverlayDto damageOverlay = BuildDamageOverlay(log, squadContext, enemyContext, times, snapshotCount, usedSkills);
         EvaluationBuildResult evaluationData = BuildEvaluationData(
             log,
@@ -2298,7 +2307,8 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayEventAnalysisDto eventAnalysis,
         IReadOnlyList<long> times,
         long fightEnd,
-        string winnerSideId)
+        string winnerSideId,
+        FightDiagnosisNumbers numbers)
     {
         if (times.Count == 0)
         {
@@ -2323,7 +2333,16 @@ internal static class CombatReplayAnalysisBuilder
 
         if (!decisiveSwing.HasValue || !IsDecisiveSwing(decisiveSwing))
         {
-            return BuildSmallEdgeDiagnosis(squadAnalysis, enemyAnalysis, positioningAnalysis, eventAnalysis, times);
+            return BuildSmallEdgeDiagnosis(
+                squadAnalysis,
+                enemyAnalysis,
+                positioningAnalysis,
+                eventAnalysis,
+                times,
+                winnerSideId,
+                squadSwing,
+                enemySwing,
+                numbers);
         }
 
         FightDiagnosisSwing selectedSwing = decisiveSwing.Value;
@@ -2334,7 +2353,8 @@ internal static class CombatReplayAnalysisBuilder
             positioningAnalysis,
             eventAnalysis,
             times,
-            fightEnd);
+            fightEnd,
+            numbers);
     }
 
     private static string InferFightDiagnosisWinnerSide(CombatReplayEventAnalysisDto eventAnalysis)
@@ -2419,7 +2439,8 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayPositioningAnalysisDto positioningAnalysis,
         CombatReplayEventAnalysisDto eventAnalysis,
         IReadOnlyList<long> times,
-        long fightEnd)
+        long fightEnd,
+        FightDiagnosisNumbers numbers)
     {
         bool againstSquad = string.Equals(swing.VictimSide, "squad", StringComparison.OrdinalIgnoreCase);
         long setupStart = Math.Max(0, swing.Start - 6000);
@@ -2506,7 +2527,7 @@ internal static class CombatReplayAnalysisBuilder
             pressureSource,
             times,
             Math.Max(0, swing.Start - LookbackWindow),
-            Math.Min(fightEnd, swing.End + LookbackWindow),
+            Math.Min(fightEnd, swing.End + 1000),
             "pressure-peak",
             pressureSourceLabel,
             againstSquad ? "danger" : "success");
@@ -2523,6 +2544,7 @@ internal static class CombatReplayAnalysisBuilder
                 TimeLabel = pressureWindow.TimeLabel,
             });
         }
+        AddNumberContextEvidence(evidence, numbers);
 
         CombatReplayDownEventDto? recoveredEnemy = againstSquad
             ? eventAnalysis.Downs.Events
@@ -2585,6 +2607,7 @@ internal static class CombatReplayAnalysisBuilder
             detail = "Enemy commander-relative positioning is not observable, so this identifies the offensive swing rather than claiming a specific enemy mistake.";
             type = "pressure-swing";
         }
+        detail = AppendDecisiveNumberContext(detail, numbers, againstSquad);
 
         return new CombatReplayFightDiagnosisDto
         {
@@ -2600,8 +2623,34 @@ internal static class CombatReplayAnalysisBuilder
             [
                 "This is a deterministic replay diagnosis, not a voice-comm or intent read.",
                 "Timestamped windows are evidence anchors; review the replay around them before treating the diagnosis as final.",
+                "Tracked player counts are visible combat replay participants, not exact map population.",
             ],
         };
+    }
+
+    private static string AppendDecisiveNumberContext(string detail, FightDiagnosisNumbers numbers, bool againstSquad)
+    {
+        if (numbers.SquadPlayers <= 0 || numbers.EnemyPlayers <= 0)
+        {
+            return detail;
+        }
+
+        int enemyEdge = numbers.EnemyPlayers - numbers.SquadPlayers;
+        if (enemyEdge >= 3)
+        {
+            string addition = againstSquad
+                ? $"Enemy also had a tracked +{enemyEdge} player edge, so read the punish as pressure plus numbers context rather than only one execution failure."
+                : $"This happened despite an enemy tracked +{enemyEdge} player edge, which strengthens the squad-pressure read.";
+            return $"{detail} {addition}";
+        }
+        if (enemyEdge <= -3)
+        {
+            string addition = againstSquad
+                ? $"This happened despite a squad tracked +{-enemyEdge} player edge, which makes the enemy punish more meaningful."
+                : $"Squad also had a tracked +{-enemyEdge} player edge, so read the offensive swing with that numbers context.";
+            return $"{detail} {addition}";
+        }
+        return detail;
     }
 
     private static CombatReplayFightDiagnosisDto BuildSmallEdgeDiagnosis(
@@ -2609,7 +2658,11 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayTeamAnalysisDto enemyAnalysis,
         CombatReplayPositioningAnalysisDto positioningAnalysis,
         CombatReplayEventAnalysisDto eventAnalysis,
-        IReadOnlyList<long> times)
+        IReadOnlyList<long> times,
+        string winnerSideId,
+        FightDiagnosisSwing? squadSwing,
+        FightDiagnosisSwing? enemySwing,
+        FightDiagnosisNumbers numbers)
     {
         int squadDownsTaken = eventAnalysis.Downs.Events.Count(evt => !evt.IsEnemy);
         int enemyDownsTaken = eventAnalysis.Downs.Events.Count(evt => evt.IsEnemy);
@@ -2624,6 +2677,8 @@ internal static class CombatReplayAnalysisBuilder
         bool closeTrade = Math.Abs(downDiff) <= downCloseThreshold && Math.Abs(deathDiff) <= deathCloseThreshold;
 
         var windows = new List<CombatReplayFightDiagnosisWindowDto>();
+        AddSwingAnchorWindow(windows, enemySwing, "squad-best-exchange");
+        AddSwingAnchorWindow(windows, squadSwing, "enemy-best-exchange");
         CombatReplayFightDiagnosisWindowDto? squadPeak = BuildPeakPressureWindow(squadAnalysis, times, 0, times[^1], "squad-peak", "Top squad pressure", "success");
         CombatReplayFightDiagnosisWindowDto? enemyPeak = BuildPeakPressureWindow(enemyAnalysis, times, 0, times[^1], "enemy-peak", "Top enemy pressure", "danger");
         if (squadPeak != null)
@@ -2661,6 +2716,8 @@ internal static class CombatReplayAnalysisBuilder
                 Tone = "normal",
             },
         };
+        AddSwingComparisonEvidence(evidence, squadSwing, enemySwing, winnerSideId);
+        AddNumberContextEvidence(evidence, numbers);
 
         if (positioningAnalysis.HasCommander && positioningAnalysis.SummaryEvaluatedSamples > 0)
         {
@@ -2692,17 +2749,249 @@ internal static class CombatReplayAnalysisBuilder
             Title = closeTrade
                 ? "Small edges: no clear turning-point mistake detected"
                 : "Accumulated pressure: no single setup mistake detected",
-            Summary = closeTrade
-                ? "The fight does not show one large punish window. It looks more likely decided by small pressure, recovery, positioning, or numbers/context edges."
-                : "The fight does not show one clean setup mistake, but the repeated down and kill trade leaned one way over time.",
-            Detail = "Use the evidence below as a checklist rather than a verdict. This diagnosis intentionally avoids forcing a big-mistake story when the replay does not support one.",
+            Summary = BuildSmallEdgeSummary(
+                closeTrade,
+                winnerSideId,
+                squadDownsTaken,
+                enemyDownsTaken,
+                squadDeaths,
+                enemyDeaths,
+                squadRecoveries,
+                enemyRecoveries,
+                numbers),
+            Detail = "Use the evidence below as a checklist rather than a verdict. Best-exchange anchors show the strongest local swings, but the diagnosis intentionally avoids forcing a big-mistake story when the replay does not support one.",
             Windows = windows,
             Evidence = evidence,
             Caveats =
             [
                 "No detected down cascade met the decisive-turning-point threshold.",
                 "Opponent skill, terrain, and voice calls are not directly visible in the log.",
+                "Tracked player counts are visible combat replay participants, not exact map population.",
             ],
+        };
+    }
+
+    private static void AddSwingAnchorWindow(List<CombatReplayFightDiagnosisWindowDto> windows, FightDiagnosisSwing? swing, string key)
+    {
+        if (!swing.HasValue || (swing.Value.VictimDowns <= 0 && swing.Value.VictimKills <= 0))
+        {
+            return;
+        }
+
+        FightDiagnosisSwing value = swing.Value;
+        bool againstSquad = string.Equals(value.VictimSide, "squad", StringComparison.OrdinalIgnoreCase);
+        windows.Add(new CombatReplayFightDiagnosisWindowDto
+        {
+            Key = key,
+            Label = againstSquad ? "Enemy best exchange" : "Squad best exchange",
+            Time = value.Start,
+            TimeLabel = FormatTime(value.Start),
+            EndTime = value.End,
+            EndTimeLabel = FormatTime(value.End),
+            Tone = againstSquad ? "danger" : "success",
+            Summary = BuildSwingAnchorSummary(value),
+            Detail = againstSquad
+                ? "This was the enemy's strongest local down/kill exchange, but it did not line up cleanly enough with the final outcome to call it the whole fight."
+                : "This was the squad's strongest local down/kill exchange, but it did not line up cleanly enough with the final outcome to call it the whole fight.",
+        });
+    }
+
+    private static string BuildSwingAnchorSummary(FightDiagnosisSwing swing)
+    {
+        bool againstSquad = string.Equals(swing.VictimSide, "squad", StringComparison.OrdinalIgnoreCase);
+        string victim = againstSquad ? "squad" : "enemy";
+        string opposing = againstSquad ? "enemy" : "squad";
+        return $"{BuildPluralizedLabel(swing.VictimDowns, $"{victim} down", $"{victim} downs")}, {BuildPluralizedLabel(swing.VictimKills, $"{victim} death", $"{victim} deaths")}, against {BuildPluralizedLabel(swing.OpposingDowns, $"{opposing} down", $"{opposing} downs")}.";
+    }
+
+    private static void AddSwingComparisonEvidence(
+        List<CombatReplayFightDiagnosisEvidenceDto> evidence,
+        FightDiagnosisSwing? squadSwing,
+        FightDiagnosisSwing? enemySwing,
+        string winnerSideId)
+    {
+        if (!squadSwing.HasValue && !enemySwing.HasValue)
+        {
+            return;
+        }
+
+        bool winnerHadAdverseSwing = string.Equals(winnerSideId, "squad", StringComparison.OrdinalIgnoreCase)
+            ? IsMeaningfulSwing(squadSwing)
+            : string.Equals(winnerSideId, "enemy", StringComparison.OrdinalIgnoreCase) && IsMeaningfulSwing(enemySwing);
+        string detail = winnerHadAdverseSwing
+            ? "The apparent winner still absorbed a real adverse exchange, so this should be read as recovery/conversion context rather than a one-mistake story."
+            : "Compare the best-exchange anchors with the pressure peaks to see whether momentum came from one exchange or repeated smaller trades.";
+
+        evidence.Add(new CombatReplayFightDiagnosisEvidenceDto
+        {
+            Label = "Best exchanges",
+            Value = $"{BuildCompactSwingValue(enemySwing, "squad")} / {BuildCompactSwingValue(squadSwing, "enemy")}",
+            Detail = detail,
+            Tone = winnerHadAdverseSwing ? "warning" : "normal",
+        });
+    }
+
+    private static bool IsMeaningfulSwing(FightDiagnosisSwing? swing)
+    {
+        return swing.HasValue && (swing.Value.VictimDowns >= 3 || swing.Value.VictimKills >= 2);
+    }
+
+    private static string BuildCompactSwingValue(FightDiagnosisSwing? swing, string pressureSide)
+    {
+        if (!swing.HasValue)
+        {
+            return $"{pressureSide} best: none";
+        }
+
+        FightDiagnosisSwing value = swing.Value;
+        string victim = string.Equals(value.VictimSide, "squad", StringComparison.OrdinalIgnoreCase) ? "squad" : "enemy";
+        return $"{pressureSide} best: {value.VictimDowns} {victim} downs at {FormatTime(value.Start)}";
+    }
+
+    private static void AddNumberContextEvidence(List<CombatReplayFightDiagnosisEvidenceDto> evidence, FightDiagnosisNumbers numbers)
+    {
+        if (numbers.SquadPlayers <= 0 || numbers.EnemyPlayers <= 0)
+        {
+            return;
+        }
+
+        int enemyEdge = numbers.EnemyPlayers - numbers.SquadPlayers;
+        evidence.Add(new CombatReplayFightDiagnosisEvidenceDto
+        {
+            Label = "Tracked numbers",
+            Value = BuildNumberContextValue(numbers),
+            Detail = BuildNumberContextDetail(enemyEdge),
+            Tone = enemyEdge >= 3 ? "warning" : enemyEdge <= -3 ? "success" : "normal",
+        });
+    }
+
+    private static string BuildNumberContextValue(FightDiagnosisNumbers numbers)
+    {
+        int enemyEdge = numbers.EnemyPlayers - numbers.SquadPlayers;
+        string edge = enemyEdge switch
+        {
+            > 0 => $"enemy +{enemyEdge}",
+            < 0 => $"squad +{-enemyEdge}",
+            _ => "even",
+        };
+        return $"{numbers.SquadPlayers} squad, {numbers.EnemyPlayers} enemy ({edge})";
+    }
+
+    private static string BuildNumberContextDetail(int enemyEdge)
+    {
+        return enemyEdge switch
+        {
+            >= 3 => $"The enemy side had {enemyEdge} more tracked combat replay participants. That can amplify otherwise small pressure, recovery, and conversion edges.",
+            <= -3 => $"The squad had {-enemyEdge} more tracked combat replay participants. Treat offensive swings with that context before assigning all credit to execution.",
+            _ => "Tracked counts were close enough that numbers alone should not be treated as the fight story.",
+        };
+    }
+
+    private static string BuildSmallEdgeSummary(
+        bool closeTrade,
+        string winnerSideId,
+        int squadDownsTaken,
+        int enemyDownsTaken,
+        int squadDeaths,
+        int enemyDeaths,
+        int squadRecoveries,
+        int enemyRecoveries,
+        FightDiagnosisNumbers numbers)
+    {
+        string numberLead = BuildNumberContextLead(numbers);
+        if (closeTrade)
+        {
+            string driver = BuildSmallEdgeDriver(
+                squadDownsTaken,
+                enemyDownsTaken,
+                squadDeaths,
+                enemyDeaths,
+                squadRecoveries,
+                enemyRecoveries,
+                numbers);
+            return string.IsNullOrWhiteSpace(numberLead)
+                ? $"No large punish window stands out. The replay points more toward {driver}."
+                : $"No large punish window stands out. {numberLead} The replay points more toward {driver}.";
+        }
+
+        string tradeLean = BuildAccumulatedPressureLean(winnerSideId, squadDownsTaken, enemyDownsTaken, squadDeaths, enemyDeaths);
+        return string.IsNullOrWhiteSpace(numberLead)
+            ? tradeLean
+            : $"{numberLead} {tradeLean}";
+    }
+
+    private static string BuildSmallEdgeDriver(
+        int squadDownsTaken,
+        int enemyDownsTaken,
+        int squadDeaths,
+        int enemyDeaths,
+        int squadRecoveries,
+        int enemyRecoveries,
+        FightDiagnosisNumbers numbers)
+    {
+        int squadKillEdge = enemyDeaths - squadDeaths;
+        int squadDownEdge = enemyDownsTaken - squadDownsTaken;
+        double squadRecoveryRate = GetRecoveryRate(squadRecoveries, squadDownsTaken);
+        double enemyRecoveryRate = GetRecoveryRate(enemyRecoveries, enemyDownsTaken);
+        if (squadKillEdge >= 3 && squadDownEdge <= 2)
+        {
+            return "squad conversion/recovery winning after an otherwise even or adverse down trade";
+        }
+        if (squadKillEdge <= -3 && squadDownEdge >= -2)
+        {
+            return "enemy conversion/recovery winning after an otherwise even or adverse down trade";
+        }
+        if (squadRecoveryRate - enemyRecoveryRate >= 20.0)
+        {
+            return "squad recovery turning close pressure into a kill-trade edge";
+        }
+        if (enemyRecoveryRate - squadRecoveryRate >= 20.0)
+        {
+            return "enemy recovery denying finishes and turning repeated pressure back";
+        }
+        if (Math.Abs(numbers.EnemyPlayers - numbers.SquadPlayers) >= 3)
+        {
+            return "small execution edges amplified by the tracked numbers difference";
+        }
+        return "small pressure, recovery, positioning, or execution edges";
+    }
+
+    private static string BuildAccumulatedPressureLean(string winnerSideId, int squadDownsTaken, int enemyDownsTaken, int squadDeaths, int enemyDeaths)
+    {
+        int squadKillEdge = enemyDeaths - squadDeaths;
+        int squadDownEdge = enemyDownsTaken - squadDownsTaken;
+        if (squadKillEdge > 0)
+        {
+            return $"No one clean setup mistake stands out. The kill trade leaned squad-side by {Math.Abs(squadKillEdge)}, with {Math.Abs(squadDownEdge)} down trade difference across repeated exchanges.";
+        }
+        if (squadKillEdge < 0)
+        {
+            return $"No one clean setup mistake stands out. The kill trade leaned enemy-side by {Math.Abs(squadKillEdge)}, with {Math.Abs(squadDownEdge)} down trade difference across repeated exchanges.";
+        }
+        if (string.Equals(winnerSideId, "squad", StringComparison.OrdinalIgnoreCase) || squadDownEdge > 0)
+        {
+            return $"No one clean setup mistake stands out. The down trade leaned squad-side by {Math.Abs(squadDownEdge)}, while the kill trade stayed even.";
+        }
+        if (string.Equals(winnerSideId, "enemy", StringComparison.OrdinalIgnoreCase) || squadDownEdge < 0)
+        {
+            return $"No one clean setup mistake stands out. The down trade leaned enemy-side by {Math.Abs(squadDownEdge)}, while the kill trade stayed even.";
+        }
+        return "No one clean setup mistake stands out. The repeated down and kill trade leaned one way over time.";
+    }
+
+    private static string BuildNumberContextLead(FightDiagnosisNumbers numbers)
+    {
+        if (numbers.SquadPlayers <= 0 || numbers.EnemyPlayers <= 0)
+        {
+            return "";
+        }
+
+        int enemyEdge = numbers.EnemyPlayers - numbers.SquadPlayers;
+        return enemyEdge switch
+        {
+            >= 3 => $"Enemy had a tracked +{enemyEdge} player edge.",
+            <= -3 => $"Squad had a tracked +{-enemyEdge} player edge.",
+            _ => "",
         };
     }
 

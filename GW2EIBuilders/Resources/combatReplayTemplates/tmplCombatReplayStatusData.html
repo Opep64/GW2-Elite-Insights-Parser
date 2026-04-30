@@ -218,7 +218,7 @@
                     </button>
                 </div>
                 <div v-if="evidence.length > 0" class="combat-replay-wvw-analysis-grid">
-                    <button v-for="entry in evidence" :key="entry.label + '-' + entry.timeLabel" type="button" class="combat-replay-wvw-analysis-metric combat-replay-wvw-analysis-metric-button" @click="jumpToEvidence(entry)">
+                    <button v-for="entry in evidence" :key="entry.label + '-' + entry.timeLabel" type="button" class="combat-replay-wvw-analysis-metric combat-replay-wvw-analysis-metric-button" :disabled="entry.time == null" :title="entry.time == null ? 'Context only' : 'Jump to ' + entry.timeLabel" @click="jumpToEvidence(entry)">
                         <div class="combat-replay-wvw-analysis-label">{{entry.label}}</div>
                         <div class="combat-replay-wvw-analysis-value">
                             {{entry.value}}
