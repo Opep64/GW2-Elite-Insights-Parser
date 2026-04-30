@@ -182,56 +182,63 @@
         mixins: [combatReplayWvWAnalysisMixin],
         props: ["time", "selectedactorid"],
         template: `
-        <div class="combat-replay-wvw-analysis-card">
+        <div class="combat-replay-wvw-analysis-card combat-replay-fight-diagnosis">
             <div class="combat-replay-wvw-analysis-card-title">Fight Diagnosis</div>
             <div v-if="!diagnosis || !diagnosis.available" class="combat-replay-wvw-analysis-detail">
                 No fight diagnosis was generated for this replay.
             </div>
-            <div v-else-if="!revealed" class="combat-replay-wvw-analysis-grid">
-                <div class="combat-replay-wvw-analysis-metric">
-                    <div class="combat-replay-wvw-analysis-label">Replay diagnosis</div>
-                    <div class="combat-replay-wvw-analysis-value">{{diagnosis.title}}</div>
-                    <div class="combat-replay-wvw-analysis-detail">
-                        Runs a deterministic pass over downs, kills, pressure windows, and commander-relative positioning.
+            <div v-else-if="!revealed" class="combat-replay-fight-diagnosis-reveal">
+                <div class="combat-replay-fight-diagnosis-reveal-copy">
+                    <div class="combat-replay-fight-diagnosis-kicker">
+                        <span class="combat-replay-wvw-analysis-label">Replay diagnosis</span>
+                        <span class="combat-replay-wvw-analysis-pill" :class="diagnosisPillClass">{{diagnosis.confidenceLabel}}</span>
                     </div>
-                    <button type="button" class="btn btn-sm btn-primary mt-2" @click="revealed = true">Explain fight</button>
+                    <div class="combat-replay-fight-diagnosis-title">{{diagnosis.title}}</div>
+                    <div v-if="diagnosis.summary" class="combat-replay-wvw-analysis-detail">{{diagnosis.summary}}</div>
                 </div>
+                <button type="button" class="btn btn-sm btn-primary combat-replay-fight-diagnosis-button" @click="revealed = true">Explain fight</button>
             </div>
-            <div v-else class="d-flex flex-column">
-                <div class="combat-replay-wvw-analysis-grid mb-2">
-                    <div class="combat-replay-wvw-analysis-metric">
-                        <div class="combat-replay-wvw-analysis-label">Diagnosis</div>
-                        <div class="combat-replay-wvw-analysis-value">
-                            {{diagnosis.title}}
-                            <span class="combat-replay-wvw-analysis-pill" :class="diagnosisPillClass">{{diagnosis.confidenceLabel}}</span>
+            <div v-else class="combat-replay-fight-diagnosis-body">
+                <div class="combat-replay-fight-diagnosis-summary">
+                    <div class="combat-replay-fight-diagnosis-summary-header">
+                        <div class="combat-replay-fight-diagnosis-summary-copy">
+                            <div class="combat-replay-wvw-analysis-label">Diagnosis</div>
+                            <div class="combat-replay-fight-diagnosis-title">{{diagnosis.title}}</div>
                         </div>
-                        <div class="combat-replay-wvw-analysis-detail">{{diagnosis.summary}}</div>
-                        <div class="combat-replay-wvw-analysis-detail mt-1">{{diagnosis.detail}}</div>
+                        <div class="combat-replay-fight-diagnosis-pill-row">
+                            <span class="combat-replay-wvw-analysis-pill" :class="diagnosisPillClass">{{diagnosis.confidenceLabel}}</span>
+                            <span v-if="diagnosisTypeLabel" class="combat-replay-wvw-analysis-pill combat-replay-wvw-analysis-pill-muted">{{diagnosisTypeLabel}}</span>
+                        </div>
                     </div>
+                    <div v-if="diagnosis.summary" class="combat-replay-fight-diagnosis-lead">{{diagnosis.summary}}</div>
+                    <div v-if="diagnosis.detail" class="combat-replay-wvw-analysis-detail">{{diagnosis.detail}}</div>
                 </div>
-                <div v-if="windows.length > 0" class="combat-replay-wvw-analysis-bursts mb-2">
+                <div v-if="windows.length > 0" class="combat-replay-wvw-analysis-bursts combat-replay-fight-diagnosis-anchors">
                     <div class="combat-replay-wvw-analysis-card-title">Replay Anchors</div>
-                    <button v-for="window in windows" :key="window.key + '-' + window.time" type="button" class="combat-replay-wvw-analysis-burst-entry" @click="jumpToBurst(window.time)">
-                        <span class="combat-replay-wvw-analysis-burst-rank">{{window.timeLabel}}</span>
-                        <span class="combat-replay-wvw-analysis-burst-time">{{window.label}}</span>
-                        <span class="combat-replay-wvw-analysis-burst-detail">{{window.summary}}</span>
+                    <button v-for="window in windows" :key="window.key + '-' + window.time" type="button" class="combat-replay-wvw-analysis-burst-entry combat-replay-fight-diagnosis-anchor" :class="getToneBlockClass(window.tone)" :title="'Jump to ' + windowRangeLabel(window)" @click="jumpToBurst(window.time)">
+                        <span class="combat-replay-fight-diagnosis-anchor-time">{{windowRangeLabel(window)}}</span>
+                        <span class="combat-replay-fight-diagnosis-anchor-copy">
+                            <span class="combat-replay-fight-diagnosis-anchor-label">{{window.label}}</span>
+                            <span class="combat-replay-fight-diagnosis-anchor-detail">{{window.summary}}</span>
+                            <span v-if="window.detail && window.detail !== window.summary" class="combat-replay-fight-diagnosis-anchor-detail combat-replay-fight-diagnosis-anchor-extra">{{window.detail}}</span>
+                        </span>
                     </button>
                 </div>
-                <div v-if="evidence.length > 0" class="combat-replay-wvw-analysis-grid">
-                    <button v-for="entry in evidence" :key="entry.label + '-' + entry.timeLabel" type="button" class="combat-replay-wvw-analysis-metric combat-replay-wvw-analysis-metric-button" :disabled="entry.time == null" :title="entry.time == null ? 'Context only' : 'Jump to ' + entry.timeLabel" @click="jumpToEvidence(entry)">
+                <div v-if="evidence.length > 0" class="combat-replay-wvw-analysis-grid combat-replay-fight-diagnosis-evidence-grid">
+                    <component v-for="entry in evidence" :key="entry.label + '-' + entry.timeLabel" :is="entry.time == null ? 'div' : 'button'" :type="entry.time == null ? null : 'button'" class="combat-replay-wvw-analysis-metric combat-replay-fight-diagnosis-evidence" :class="[getToneBlockClass(entry.tone), {'combat-replay-wvw-analysis-metric-button combat-replay-fight-diagnosis-evidence-action': entry.time != null}]" :title="entry.time == null ? 'Context only' : 'Jump to ' + entry.timeLabel" @click="jumpToEvidence(entry)">
                         <div class="combat-replay-wvw-analysis-label">{{entry.label}}</div>
                         <div class="combat-replay-wvw-analysis-value">
                             {{entry.value}}
                             <span v-if="entry.timeLabel" class="combat-replay-wvw-analysis-pill" :class="getTonePillClass(entry.tone)">{{entry.timeLabel}}</span>
                         </div>
                         <div class="combat-replay-wvw-analysis-detail">{{entry.detail}}</div>
-                    </button>
+                    </component>
                 </div>
-                <div v-if="diagnosis.caveats && diagnosis.caveats.length > 0" class="combat-replay-wvw-analysis-grid mt-2">
-                    <div class="combat-replay-wvw-analysis-metric">
-                        <div class="combat-replay-wvw-analysis-label">Reading Notes</div>
-                        <div v-for="caveat in diagnosis.caveats" :key="caveat" class="combat-replay-wvw-analysis-detail">{{caveat}}</div>
-                    </div>
+                <div v-if="diagnosis.caveats && diagnosis.caveats.length > 0" class="combat-replay-fight-diagnosis-notes">
+                    <div class="combat-replay-wvw-analysis-label">Reading Notes</div>
+                    <ul class="combat-replay-fight-diagnosis-note-list">
+                        <li v-for="caveat in diagnosis.caveats" :key="caveat">{{caveat}}</li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -250,6 +257,14 @@
             },
             evidence: function () {
                 return this.diagnosis && this.diagnosis.evidence ? this.diagnosis.evidence : [];
+            },
+            diagnosisTypeLabel: function () {
+                if (!this.diagnosis || !this.diagnosis.type) {
+                    return "";
+                }
+                return this.diagnosis.type.split("-").map(function (part) {
+                    return part.length > 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part;
+                }).join(" ");
             },
             diagnosisPillClass: function () {
                 const label = this.diagnosis && this.diagnosis.confidenceLabel ? this.diagnosis.confidenceLabel.toLowerCase() : "";
@@ -271,6 +286,24 @@
                     return "combat-replay-wvw-analysis-pill-success";
                 }
                 return "combat-replay-wvw-analysis-pill-muted";
+            },
+            getToneBlockClass: function (tone) {
+                if (tone === "danger" || tone === "warning") {
+                    return "combat-replay-fight-diagnosis-tone-danger";
+                }
+                if (tone === "success") {
+                    return "combat-replay-fight-diagnosis-tone-success";
+                }
+                return "combat-replay-fight-diagnosis-tone-normal";
+            },
+            windowRangeLabel: function (window) {
+                if (!window) {
+                    return "";
+                }
+                if (window.endTimeLabel && window.endTimeLabel !== window.timeLabel) {
+                    return window.timeLabel + " - " + window.endTimeLabel;
+                }
+                return window.timeLabel || "";
             },
             jumpToEvidence: function (entry) {
                 if (!entry || entry.time == null) {

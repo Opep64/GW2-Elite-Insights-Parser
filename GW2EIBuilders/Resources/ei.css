@@ -506,6 +506,197 @@ h6.actor-shorten-cr-compact {
     text-align: center;
 }
 
+.combat-replay-fight-diagnosis {
+    overflow: hidden;
+}
+
+.combat-replay-fight-diagnosis-reveal {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    border: 1px solid rgba(124, 130, 136, 0.35);
+    border-radius: 0.3rem;
+    padding: 0.6rem 0.7rem;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.combat-replay-fight-diagnosis-reveal-copy,
+.combat-replay-fight-diagnosis-summary-copy {
+    min-width: 0;
+}
+
+.combat-replay-fight-diagnosis-kicker {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.2rem;
+}
+
+.combat-replay-fight-diagnosis-title {
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.combat-replay-fight-diagnosis-button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.combat-replay-fight-diagnosis-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.combat-replay-fight-diagnosis-summary {
+    border: 1px solid rgba(124, 130, 136, 0.35);
+    border-radius: 0.3rem;
+    padding: 0.6rem 0.7rem;
+    background: rgba(0, 0, 0, 0.14);
+}
+
+.combat-replay-fight-diagnosis-summary-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.7rem;
+}
+
+.combat-replay-fight-diagnosis-pill-row {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.3rem;
+}
+
+.combat-replay-fight-diagnosis-lead {
+    margin-top: 0.45rem;
+    font-size: 0.86rem;
+    font-weight: 600;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.combat-replay-fight-diagnosis-anchors {
+    margin-bottom: 0;
+}
+
+.combat-replay-fight-diagnosis-anchor {
+    align-items: flex-start;
+    flex-wrap: nowrap;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.combat-replay-fight-diagnosis-anchor-time {
+    flex: 0 0 8.5rem;
+    border: 1px solid rgba(124, 130, 136, 0.28);
+    border-radius: 0.25rem;
+    padding: 0.14rem 0.32rem;
+    background: rgba(0, 0, 0, 0.18);
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.combat-replay-fight-diagnosis-anchor-copy {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.12rem;
+    min-width: 0;
+}
+
+.combat-replay-fight-diagnosis-anchor-label {
+    font-size: 0.84rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.combat-replay-fight-diagnosis-anchor-detail {
+    font-size: 0.78rem;
+    line-height: 1.25;
+    opacity: 0.9;
+    overflow-wrap: anywhere;
+}
+
+.combat-replay-fight-diagnosis-anchor-extra {
+    opacity: 0.72;
+}
+
+.combat-replay-fight-diagnosis-evidence-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.combat-replay-fight-diagnosis-evidence {
+    min-height: 100%;
+    overflow-wrap: anywhere;
+}
+
+.combat-replay-fight-diagnosis-evidence-action {
+    cursor: pointer;
+}
+
+.combat-replay-fight-diagnosis-tone-danger {
+    border-color: rgba(191, 92, 92, 0.48);
+    box-shadow: inset 3px 0 0 rgba(191, 92, 92, 0.55);
+}
+
+.combat-replay-fight-diagnosis-tone-success {
+    border-color: rgba(47, 150, 95, 0.5);
+    box-shadow: inset 3px 0 0 rgba(47, 150, 95, 0.6);
+}
+
+.combat-replay-fight-diagnosis-tone-normal {
+    border-color: rgba(124, 130, 136, 0.35);
+}
+
+.combat-replay-fight-diagnosis-notes {
+    border-top: 1px solid rgba(124, 130, 136, 0.25);
+    padding-top: 0.55rem;
+}
+
+.combat-replay-fight-diagnosis-note-list {
+    margin: 0.15rem 0 0;
+    padding-left: 1rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    opacity: 0.85;
+}
+
+.combat-replay-fight-diagnosis-note-list li + li {
+    margin-top: 0.18rem;
+}
+
+@media (max-width: 900px) {
+    .combat-replay-fight-diagnosis-reveal,
+    .combat-replay-fight-diagnosis-summary-header,
+    .combat-replay-fight-diagnosis-anchor {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .combat-replay-fight-diagnosis-button,
+    .combat-replay-fight-diagnosis-pill-row {
+        align-self: flex-start;
+    }
+
+    .combat-replay-fight-diagnosis-pill-row {
+        justify-content: flex-start;
+    }
+
+    .combat-replay-fight-diagnosis-anchor-time {
+        flex-basis: auto;
+        width: max-content;
+        max-width: 100%;
+    }
+}
+
 .combat-replay-threat-boon-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
