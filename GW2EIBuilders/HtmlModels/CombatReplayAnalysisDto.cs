@@ -2087,6 +2087,7 @@ internal static class CombatReplayAnalysisBuilder
             CreateThreatBoonDefinition(log, Protection, false),
             CreateThreatBoonDefinition(log, Resolution, false),
             CreateThreatBoonDefinition(log, Resistance, false),
+            CreateThreatBoonDefinition(log, Regeneration, false),
             CreateThreatBoonDefinition(log, Aegis, false),
             CreateThreatBoonDefinition(log, Might, true),
             CreateThreatBoonDefinition(log, Fury, false),
@@ -4850,6 +4851,7 @@ internal static class CombatReplayAnalysisBuilder
             [Protection] = 0.20,
             [Resolution] = 0.15,
             [Resistance] = 0.15,
+            [Regeneration] = 0.10,
             [Aegis] = 0.10,
             [Quickness] = 0.10,
         };

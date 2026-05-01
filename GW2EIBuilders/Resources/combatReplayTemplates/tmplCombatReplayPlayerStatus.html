@@ -102,6 +102,9 @@
             protectionInfo: function () {
                 return this.getCurrentBuffInfo(["Protection"]);
             },
+            regenerationInfo: function () {
+                return this.getCurrentBuffInfo(["Regeneration"]);
+            },
             aegisInfo: function () {
                 return this.getCurrentBuffInfo(["Aegis"]);
             },
@@ -124,6 +127,9 @@
                 var res = [];
                 if (this.protectionInfo && this.protectionInfo.state > 0) {
                     res.push(this.protectionInfo.buff);
+                }
+                if (this.regenerationInfo && this.regenerationInfo.state > 0) {
+                    res.push(this.regenerationInfo.buff);
                 }
                 if (this.aegisInfo && this.aegisInfo.state > 0) {
                     res.push(this.aegisInfo.buff);

@@ -81,6 +81,7 @@ internal class WvwSummaryDto
         new(Protection, 0.25, 85.0),
         new(Resolution, 0.20, 85.0),
         new(Resistance, 0.15, 55.0),
+        new(Regeneration, 0.10, 75.0),
         new(Aegis, 0.10, 30.0),
     ];
     private static readonly IReadOnlyList<WvwSummaryExecutionBoonExpectation> ExecutionOffensiveBoonExpectations =
@@ -570,7 +571,7 @@ internal class WvwSummaryDto
                     "Defensive boon coverage",
                     defensiveBoonCoverage,
                     $"{FormatDecimal(defensiveBoonCoverage)}% target-adjusted defensive boon coverage",
-                    $"{defensiveBoonCoverageNote} Resistance uses a lower WvW target than the easier defensive boons; Alacrity is intentionally excluded."));
+                    $"{defensiveBoonCoverageNote} Resistance, Regeneration, and Aegis use WvW-specific targets; Alacrity is intentionally excluded."));
         }
         else
         {
