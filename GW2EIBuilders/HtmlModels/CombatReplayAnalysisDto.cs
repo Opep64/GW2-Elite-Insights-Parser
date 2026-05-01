@@ -248,9 +248,61 @@ internal class CombatReplayDefenseAnalysisDto
     public CombatReplayDefenseBurstBarrierDto BurstBarrier { get; set; } = new();
     public CombatReplayDefenseMitigationDto Mitigation { get; set; } = new();
     public CombatReplayDefenseSavedPlayersSummaryDto SavedPlayersSummary { get; set; } = new();
+    public CombatReplayDefenseBarrierOvercapDto BarrierOvercap { get; set; } = new();
     public List<CombatReplayEventActorSummaryDto> TopBarrierProviders { get; set; } = [];
     public List<CombatReplayEventActorSummaryDto> TopPetMinionAbsorbers { get; set; } = [];
     public List<CombatReplayDefenseNegatedHitSummaryDto> NegatedHitSummaries { get; set; } = [];
+}
+
+internal class CombatReplayDefenseBarrierOvercapDto
+{
+    public bool Available { get; set; }
+    public double RawBarrierEvaluated { get; set; }
+    public double EstimatedOvercap { get; set; }
+    public double OvercapPercentOfEvaluated { get; set; }
+    public int EvaluatedApplicationGroups { get; set; }
+    public int OvercapApplicationGroups { get; set; }
+    public int HighConfidenceGroups { get; set; }
+    public int EstimatedHealthPoolGroups { get; set; }
+    public int SkippedNoBarrierStateGroups { get; set; }
+    public List<CombatReplayEventActorSummaryDto> TopProviders { get; set; } = [];
+    public List<CombatReplayEventActorSummaryDto> TopRecipients { get; set; } = [];
+    public List<CombatReplayDefenseBarrierOvercapSkillDto> TopSkills { get; set; } = [];
+    public List<CombatReplayDefenseBarrierOvercapEventDto> TopEvents { get; set; } = [];
+}
+
+internal class CombatReplayDefenseBarrierOvercapSkillDto
+{
+    public long SkillId { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public int Count { get; set; }
+    public double Amount { get; set; }
+}
+
+internal class CombatReplayDefenseBarrierOvercapEventDto
+{
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public int TargetId { get; set; }
+    public string TargetName { get; set; } = "";
+    public string TargetIcon { get; set; } = "";
+    public int? ProviderId { get; set; }
+    public string ProviderName { get; set; } = "";
+    public string ProviderIcon { get; set; } = "";
+    public string ProviderSummary { get; set; } = "";
+    public long SkillId { get; set; }
+    public string SkillName { get; set; } = "";
+    public string SkillIcon { get; set; } = "";
+    public string SkillSummary { get; set; } = "";
+    public double RawBarrier { get; set; }
+    public double EstimatedOvercap { get; set; }
+    public double PreBarrierPercent { get; set; }
+    public double PostBarrierPercent { get; set; }
+    public int HealthPoolUsed { get; set; }
+    public bool HealthPoolEstimated { get; set; }
+    public int EventCount { get; set; }
+    public string ConfidenceLabel { get; set; } = "";
 }
 
 internal class CombatReplayDefenseNegatedHitSummaryDto
@@ -1131,6 +1183,11 @@ internal static class CombatReplayAnalysisBuilder
     private const double DamageOverlayFullHeatPercentile = 0.95;
     private const int DamageOverlayTopContributorCount = 3;
     private const int RecoveryRezAttributionWindow = 500;
+    private const double BarrierOvercapCapPercent = 25.0;
+    private const double BarrierOvercapHighConfidencePercent = 24.5;
+    private const long BarrierOvercapPostStateWindow = 250;
+    private const int BarrierOvercapTopCount = 5;
+    private const int BarrierOvercapTopEventCount = 20;
     private const int BucketSize = 1000;
     private const double MeaningfulContributionThreshold = 0.10;
     private const float RangeThreshold = 1200.0f;
@@ -6358,11 +6415,376 @@ internal static class CombatReplayAnalysisBuilder
         summary.TotalBarrierGranted = totalBarrierGranted;
         summary.InitialBarrierOnSquad = initialBarrierOnSquad;
         summary.TotalBarrierAvailable = totalBarrierGranted + initialBarrierOnSquad;
+        summary.BarrierOvercap = BuildBarrierOvercapAnalysis(log, squadPlayers);
         summary.BurstBarrier = BuildDefenseBurstBarrierAnalysis(log, squadPlayers, enemyAnalysis, times);
         summary.Mitigation = BuildDefenseMitigationAnalysis(log, squadPlayers);
         summary.SavedPlayersSummary = BuildDefenseSavedPlayersSummary(log, summary.Mitigation);
         summary.TopBarrierProviders = BuildTopActorSummaries(topBarrierProviderContributions);
         return summary;
+    }
+
+    private static CombatReplayDefenseBarrierOvercapDto BuildBarrierOvercapAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers)
+    {
+        var result = new CombatReplayDefenseBarrierOvercapDto
+        {
+            Available = log.CombatData.HasEXTBarrier,
+        };
+        if (!log.CombatData.HasEXTBarrier)
+        {
+            return result;
+        }
+
+        Dictionary<int, SingleActor> squadPlayersById = squadPlayers.ToDictionary(player => player.UniqueID);
+        Dictionary<AgentItem, SingleActor> squadPlayersByAgent = BuildSquadPlayersByAgent(squadPlayers);
+        Dictionary<int, IReadOnlyList<BarrierUpdateEvent>> barrierUpdatesByPlayer = squadPlayers.ToDictionary(
+            player => player.UniqueID,
+            player => GetSortedBarrierUpdateEvents(log, player));
+        var applicationGroups = new Dictionary<(int TargetId, long Time), List<EXTBarrierEvent>>();
+
+        foreach (SingleActor target in squadPlayers)
+        {
+            foreach (EXTBarrierEvent barrierEvent in target.EXTBarrier.GetIncomingBarrierEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd))
+            {
+                if (barrierEvent.BarrierGiven <= 0)
+                {
+                    continue;
+                }
+
+                var key = (target.UniqueID, barrierEvent.Time);
+                if (!applicationGroups.TryGetValue(key, out List<EXTBarrierEvent>? events))
+                {
+                    events = [];
+                    applicationGroups[key] = events;
+                }
+                events.Add(barrierEvent);
+            }
+        }
+
+        var providerContributions = new List<(int? ActorId, string Name, string Icon, double Amount, long EventTime)>();
+        var recipientContributions = new List<(int? ActorId, string Name, string Icon, double Amount, long EventTime)>();
+        var skillContributions = new List<(long SkillId, string Name, string Icon, double Amount, long EventTime)>();
+        var topEvents = new List<CombatReplayDefenseBarrierOvercapEventDto>();
+
+        foreach (((int targetId, long time), List<EXTBarrierEvent> events) in applicationGroups)
+        {
+            if (!squadPlayersById.TryGetValue(targetId, out SingleActor? target)
+                || !barrierUpdatesByPlayer.TryGetValue(targetId, out IReadOnlyList<BarrierUpdateEvent>? barrierUpdates))
+            {
+                continue;
+            }
+
+            double? preBarrierPercent = GetBarrierPercentBefore(barrierUpdates, time);
+            if (preBarrierPercent == null)
+            {
+                result.SkippedNoBarrierStateGroups++;
+                continue;
+            }
+
+            double rawBarrier = events.Sum(barrierEvent => Math.Max(0, barrierEvent.BarrierGiven));
+            if (rawBarrier <= 0.0)
+            {
+                continue;
+            }
+
+            (int healthPoolUsed, bool healthPoolEstimated) = GetMitigationHealthPool(target, log);
+            double prePercent = Math.Clamp(preBarrierPercent.Value, 0.0, BarrierOvercapCapPercent);
+            double barrierRoom = healthPoolUsed * Math.Max(0.0, BarrierOvercapCapPercent - prePercent) / 100.0;
+            double estimatedOvercap = Math.Min(rawBarrier, Math.Max(0.0, rawBarrier - barrierRoom));
+
+            result.EvaluatedApplicationGroups++;
+            result.RawBarrierEvaluated += rawBarrier;
+            if (healthPoolEstimated)
+            {
+                result.EstimatedHealthPoolGroups++;
+            }
+
+            if (estimatedOvercap <= 0.5)
+            {
+                continue;
+            }
+
+            result.OvercapApplicationGroups++;
+            result.EstimatedOvercap += estimatedOvercap;
+            if (prePercent >= BarrierOvercapHighConfidencePercent)
+            {
+                result.HighConfidenceGroups++;
+            }
+
+            recipientContributions.Add((target.UniqueID, target.Character, target.GetIcon(), estimatedOvercap, time));
+            foreach (EXTBarrierEvent barrierEvent in events)
+            {
+                double eventBarrier = Math.Max(0, barrierEvent.BarrierGiven);
+                double contribution = rawBarrier > 0.0 ? estimatedOvercap * eventBarrier / rawBarrier : 0.0;
+                if (contribution <= 0.0)
+                {
+                    continue;
+                }
+
+                SingleActor? provider = TryFindSquadPlayerByAgent(squadPlayersByAgent, barrierEvent.CreditedFrom);
+                if (provider != null)
+                {
+                    providerContributions.Add((provider.UniqueID, provider.Character, provider.GetIcon(), contribution, barrierEvent.Time));
+                }
+
+                skillContributions.Add((
+                    barrierEvent.SkillID,
+                    GetSkillDisplayName(barrierEvent.Skill),
+                    barrierEvent.Skill.Icon,
+                    contribution,
+                    barrierEvent.Time));
+            }
+
+            double postPercent = GetBarrierPercentAfter(
+                barrierUpdates,
+                time,
+                Math.Min(log.LogData.LogEnd, time + BarrierOvercapPostStateWindow),
+                prePercent);
+            topEvents.Add(BuildBarrierOvercapEventDto(
+                squadPlayersByAgent,
+                target,
+                events,
+                rawBarrier,
+                estimatedOvercap,
+                prePercent,
+                postPercent,
+                healthPoolUsed,
+                healthPoolEstimated));
+        }
+
+        result.RawBarrierEvaluated = Math.Round(result.RawBarrierEvaluated, 1);
+        result.EstimatedOvercap = Math.Round(result.EstimatedOvercap, 1);
+        result.OvercapPercentOfEvaluated = result.RawBarrierEvaluated > 0.0
+            ? Math.Round(result.EstimatedOvercap * 100.0 / result.RawBarrierEvaluated, 1)
+            : 0.0;
+        result.TopProviders = BuildTopActorSummaries(providerContributions);
+        result.TopRecipients = BuildTopActorSummaries(recipientContributions);
+        result.TopSkills = BuildTopBarrierOvercapSkills(skillContributions);
+        result.TopEvents = [.. topEvents
+            .OrderByDescending(entry => entry.EstimatedOvercap)
+            .ThenBy(entry => entry.Time)
+            .Take(BarrierOvercapTopEventCount)];
+        return result;
+    }
+
+    private static Dictionary<AgentItem, SingleActor> BuildSquadPlayersByAgent(IReadOnlyList<SingleActor> squadPlayers)
+    {
+        var playersByAgent = new Dictionary<AgentItem, SingleActor>();
+        foreach (SingleActor player in squadPlayers)
+        {
+            AddSquadPlayerAgent(playersByAgent, player.AgentItem, player);
+            AddSquadPlayerAgent(playersByAgent, player.EnglobingAgentItem, player);
+            AddSquadPlayerAgent(playersByAgent, player.AgentItem.GetFinalMaster(), player);
+            AddSquadPlayerAgent(playersByAgent, player.AgentItem.GetFinalMaster().EnglobingAgentItem, player);
+        }
+        return playersByAgent;
+    }
+
+    private static void AddSquadPlayerAgent(
+        Dictionary<AgentItem, SingleActor> playersByAgent,
+        AgentItem agent,
+        SingleActor player)
+    {
+        if (!agent.IsUnknown)
+        {
+            playersByAgent.TryAdd(agent, player);
+        }
+    }
+
+    private static SingleActor? TryFindSquadPlayerByAgent(
+        IReadOnlyDictionary<AgentItem, SingleActor> squadPlayersByAgent,
+        AgentItem agent)
+    {
+        if (agent.IsUnknown)
+        {
+            return null;
+        }
+
+        if (squadPlayersByAgent.TryGetValue(agent, out SingleActor? player))
+        {
+            return player;
+        }
+
+        AgentItem finalMaster = agent.GetFinalMaster();
+        if (!finalMaster.IsUnknown && squadPlayersByAgent.TryGetValue(finalMaster, out player))
+        {
+            return player;
+        }
+
+        AgentItem englobingAgent = agent.EnglobingAgentItem;
+        if (!englobingAgent.IsUnknown && squadPlayersByAgent.TryGetValue(englobingAgent, out player))
+        {
+            return player;
+        }
+
+        AgentItem finalEnglobingAgent = finalMaster.EnglobingAgentItem;
+        return !finalEnglobingAgent.IsUnknown && squadPlayersByAgent.TryGetValue(finalEnglobingAgent, out player)
+            ? player
+            : null;
+    }
+
+    private static IReadOnlyList<BarrierUpdateEvent> GetSortedBarrierUpdateEvents(ParsedEvtcLog log, SingleActor player)
+    {
+        var updates = new List<BarrierUpdateEvent>();
+        updates.AddRange(log.CombatData.GetBarrierUpdateEvents(player.AgentItem));
+        if (player.EnglobingAgentItem != player.AgentItem)
+        {
+            updates.AddRange(log.CombatData.GetBarrierUpdateEvents(player.EnglobingAgentItem));
+        }
+        return [.. updates
+            .Distinct()
+            .OrderBy(update => update.Time)
+            .ThenBy(update => update.BarrierPercent)];
+    }
+
+    private static double? GetBarrierPercentBefore(IReadOnlyList<BarrierUpdateEvent> updates, long time)
+    {
+        for (int i = updates.Count - 1; i >= 0; i--)
+        {
+            if (updates[i].Time < time)
+            {
+                return Math.Round(Math.Max(0.0, updates[i].BarrierPercent), 1);
+            }
+        }
+        return null;
+    }
+
+    private static double GetBarrierPercentAfter(
+        IReadOnlyList<BarrierUpdateEvent> updates,
+        long time,
+        long end,
+        double fallback)
+    {
+        foreach (BarrierUpdateEvent update in updates)
+        {
+            if (update.Time < time)
+            {
+                continue;
+            }
+            if (update.Time > end)
+            {
+                break;
+            }
+            return Math.Round(Math.Max(0.0, update.BarrierPercent), 1);
+        }
+        return Math.Round(Math.Max(0.0, fallback), 1);
+    }
+
+    private static CombatReplayDefenseBarrierOvercapEventDto BuildBarrierOvercapEventDto(
+        IReadOnlyDictionary<AgentItem, SingleActor> squadPlayersByAgent,
+        SingleActor target,
+        IReadOnlyList<EXTBarrierEvent> events,
+        double rawBarrier,
+        double estimatedOvercap,
+        double preBarrierPercent,
+        double postBarrierPercent,
+        int healthPoolUsed,
+        bool healthPoolEstimated)
+    {
+        List<(SingleActor Actor, double Amount)> providerEntries = [];
+        foreach (EXTBarrierEvent barrierEvent in events)
+        {
+            SingleActor? provider = TryFindSquadPlayerByAgent(squadPlayersByAgent, barrierEvent.CreditedFrom);
+            if (provider != null)
+            {
+                providerEntries.Add((provider, Math.Max(0, barrierEvent.BarrierGiven)));
+            }
+        }
+
+        var providerSummaries = providerEntries
+            .GroupBy(entry => entry.Actor.UniqueID)
+            .Select(group => (
+                Actor: group.First().Actor,
+                Amount: group.Sum(entry => entry.Amount)))
+            .OrderByDescending(entry => entry.Amount)
+            .ThenBy(entry => entry.Actor.Character, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var skillSummaries = events
+            .GroupBy(barrierEvent => barrierEvent.SkillID)
+            .Select(group => (
+                SkillId: group.Key,
+                Skill: group.First().Skill,
+                Amount: group.Sum(barrierEvent => (double)Math.Max(0, barrierEvent.BarrierGiven))))
+            .OrderByDescending(entry => entry.Amount)
+            .ThenBy(entry => GetSkillDisplayName(entry.Skill), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        SingleActor? topProvider = providerSummaries.Count > 0 ? providerSummaries[0].Actor : null;
+        SkillItem? topSkill = skillSummaries.Count > 0 ? skillSummaries[0].Skill : null;
+        string confidenceLabel = preBarrierPercent >= BarrierOvercapHighConfidencePercent
+            ? "High"
+            : healthPoolEstimated ? "Estimated" : "Medium";
+
+        return new CombatReplayDefenseBarrierOvercapEventDto
+        {
+            Time = events[0].Time,
+            TimeLabel = FormatTime(events[0].Time),
+            TargetId = target.UniqueID,
+            TargetName = target.Character,
+            TargetIcon = target.GetIcon(),
+            ProviderId = topProvider?.UniqueID,
+            ProviderName = topProvider?.Character ?? "",
+            ProviderIcon = topProvider?.GetIcon() ?? "",
+            ProviderSummary = BuildBarrierOvercapProviderSummary(providerSummaries),
+            SkillId = topSkill?.ID ?? 0,
+            SkillName = topSkill != null ? GetSkillDisplayName(topSkill) : "",
+            SkillIcon = topSkill?.Icon ?? "",
+            SkillSummary = BuildBarrierOvercapSkillSummary(skillSummaries),
+            RawBarrier = Math.Round(rawBarrier, 1),
+            EstimatedOvercap = Math.Round(estimatedOvercap, 1),
+            PreBarrierPercent = Math.Round(preBarrierPercent, 1),
+            PostBarrierPercent = Math.Round(postBarrierPercent, 1),
+            HealthPoolUsed = healthPoolUsed,
+            HealthPoolEstimated = healthPoolEstimated,
+            EventCount = events.Count,
+            ConfidenceLabel = confidenceLabel,
+        };
+    }
+
+    private static List<CombatReplayDefenseBarrierOvercapSkillDto> BuildTopBarrierOvercapSkills(
+        IEnumerable<(long SkillId, string Name, string Icon, double Amount, long EventTime)> contributions)
+    {
+        return [.. contributions
+            .GroupBy(entry => entry.SkillId)
+            .Select(group => new CombatReplayDefenseBarrierOvercapSkillDto
+            {
+                SkillId = group.Key,
+                Name = group.First().Name,
+                Icon = group.First().Icon,
+                Count = group.Count(),
+                Amount = Math.Round(group.Sum(entry => entry.Amount), 1),
+            })
+            .OrderByDescending(entry => entry.Amount)
+            .ThenByDescending(entry => entry.Count)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(BarrierOvercapTopCount)];
+    }
+
+    private static string BuildBarrierOvercapProviderSummary(IReadOnlyList<(SingleActor Actor, double Amount)> providers)
+    {
+        if (providers.Count == 0)
+        {
+            return "Unknown provider";
+        }
+        return providers.Count == 1
+            ? providers[0].Actor.Character
+            : $"{providers[0].Actor.Character} +{providers.Count - 1}";
+    }
+
+    private static string BuildBarrierOvercapSkillSummary(IReadOnlyList<(long SkillId, SkillItem Skill, double Amount)> skills)
+    {
+        if (skills.Count == 0)
+        {
+            return "Unknown skill";
+        }
+        string topSkill = GetSkillDisplayName(skills[0].Skill);
+        return skills.Count == 1 ? topSkill : $"{topSkill} +{skills.Count - 1}";
+    }
+
+    private static string GetSkillDisplayName(SkillItem skill)
+    {
+        return string.IsNullOrWhiteSpace(skill.Name) ? $"Skill {skill.ID}" : skill.Name;
     }
 
     private static long ComputePetMinionAbsorptionTotal(ParsedEvtcLog log, SingleActor player)

@@ -3720,6 +3720,7 @@
                 mitigationSavedOnly: false,
                 mitigationListScrollTop: 0,
                 pendingMitigationScrollRestore: false,
+                barrierOvercapDetailsExpanded: false,
                 negatedHitDetailModal: null,
                 showMitigationSummaryHelp: false,
                 showMitigationCasesHelp: false,
@@ -3742,6 +3743,12 @@
                                 <div class="combat-replay-wvw-analysis-label">Overall Barrier Absorption</div>
                                 <div class="combat-replay-wvw-analysis-value">{{formatPercent(defenseAnalysis.barrierAbsorptionPercent)}}</div>
                                 <div class="combat-replay-wvw-analysis-detail">{{formatAmount(defenseAnalysis.barrierDamageAbsorbed)}} damage absorbed out of {{formatAmount(defenseAnalysis.totalDamageToSquad)}} total damage</div>
+                            </div>
+                            <div v-if="barrierOvercap && barrierOvercap.available && barrierOvercap.rawBarrierEvaluated > 0" class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Barrier Overcap</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatPercent(barrierOvercap.overcapPercentOfEvaluated)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatAmount(barrierOvercap.estimatedOvercap)}} estimated overcap from {{formatAmount(barrierOvercap.rawBarrierEvaluated)}} evaluated barrier</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatCount(barrierOvercap.highConfidenceGroups)}} high-confidence capped groups</div>
                             </div>
                             <div class="combat-replay-wvw-analysis-metric">
                                 <div class="combat-replay-wvw-analysis-label">Pet / Minion Absorption</div>
@@ -3790,6 +3797,124 @@
                             </div>
                         </div>
                     </div>
+                </div>
+                <details v-if="barrierOvercap && barrierOvercap.available && barrierOvercap.rawBarrierEvaluated > 0" class="mt-3" style="border-top: 1px solid rgba(255,255,255,0.12); padding-top: 0.65rem;" @toggle="barrierOvercapDetailsExpanded = $event.target.open">
+                    <summary class="combat-replay-wvw-analysis-label" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; list-style-position: inside;">
+                        <span>
+                            <span style="display: inline-flex; justify-content: center; width: 1rem; margin-right: 0.35rem; color: #8ac8ff;">{{barrierOvercapDetailsExpanded ? '-' : '+'}}</span>
+                            Barrier Overcap Estimate
+                        </span>
+                        <span class="combat-replay-wvw-analysis-detail" style="font-weight: 600; text-transform: none; letter-spacing: 0;">
+                            {{barrierOvercapDetailsExpanded ? 'Click to collapse' : 'Click to expand'}} | {{formatAmount(barrierOvercap.estimatedOvercap)}} estimated overcap | {{formatPercent(barrierOvercap.overcapPercentOfEvaluated)}} evaluated barrier
+                        </span>
+                    </summary>
+                    <div class="mt-2">
+                    <div class="combat-replay-wvw-analysis-grid mb-2" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));">
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Estimated overcap</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatAmount(barrierOvercap.estimatedOvercap)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">{{formatPercent(barrierOvercap.overcapPercentOfEvaluated)}} of evaluated barrier applications</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Application groups</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(barrierOvercap.overcapApplicationGroups)}} / {{formatCount(barrierOvercap.evaluatedApplicationGroups)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">Target/time groups with estimated overcap</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Confidence</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(barrierOvercap.highConfidenceGroups)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">Groups already at {{formatPercent(24.5)}} barrier or higher before application</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-metric">
+                            <div class="combat-replay-wvw-analysis-label">Coverage notes</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatCount(barrierOvercap.skippedNoBarrierStateGroups)}}</div>
+                            <div class="combat-replay-wvw-analysis-detail">Groups skipped with no prior barrier state; {{formatCount(barrierOvercap.estimatedHealthPoolGroups)}} used estimated health pools</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-xl-4 mb-3 mb-xl-0">
+                            <div class="combat-replay-wvw-analysis-label mb-1">Top overcap providers</div>
+                            <div v-if="barrierOvercap.topProviders && barrierOvercap.topProviders.length > 0" class="combat-replay-wvw-analysis-top-actors" style="max-height: 17vh; overflow-y: auto; padding-right: 0.25rem;">
+                                <button
+                                    v-for="(entry, index) in barrierOvercap.topProviders"
+                                    :key="'barrier-overcap-provider-' + index + '-' + entry.actorId"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                    :disabled="!entry.actorId"
+                                    @click.stop="focusProvider(entry)">
+                                    <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </button>
+                            </div>
+                            <div v-else class="combat-replay-wvw-analysis-helper">No squad provider attribution was available.</div>
+                        </div>
+                        <div class="col-xl-4 mb-3 mb-xl-0">
+                            <div class="combat-replay-wvw-analysis-label mb-1">Top overcap recipients</div>
+                            <div v-if="barrierOvercap.topRecipients && barrierOvercap.topRecipients.length > 0" class="combat-replay-wvw-analysis-top-actors" style="max-height: 17vh; overflow-y: auto; padding-right: 0.25rem;">
+                                <button
+                                    v-for="(entry, index) in barrierOvercap.topRecipients"
+                                    :key="'barrier-overcap-recipient-' + index + '-' + entry.actorId"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                    :disabled="!entry.actorId"
+                                    @click.stop="focusProvider(entry)">
+                                    <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </button>
+                            </div>
+                            <div v-else class="combat-replay-wvw-analysis-helper">No recipient overcap was detected.</div>
+                        </div>
+                        <div class="col-xl-4">
+                            <div class="combat-replay-wvw-analysis-label mb-1">Top overcap skills</div>
+                            <div v-if="barrierOvercap.topSkills && barrierOvercap.topSkills.length > 0" class="combat-replay-wvw-analysis-top-actors" style="max-height: 17vh; overflow-y: auto; padding-right: 0.25rem;">
+                                <div
+                                    v-for="(entry, index) in barrierOvercap.topSkills"
+                                    :key="'barrier-overcap-skill-' + index + '-' + entry.skillId"
+                                    class="combat-replay-wvw-analysis-top-actor-entry">
+                                    <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img v-if="entry.icon" :src="entry.icon" alt="" class="icon icon-hover mx-1" />
+                                        {{entry.name}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                </div>
+                            </div>
+                            <div v-else class="combat-replay-wvw-analysis-helper">No skill attribution was available.</div>
+                        </div>
+                    </div>
+                    <div v-if="barrierOvercap.topEvents && barrierOvercap.topEvents.length > 0" class="mt-3">
+                        <div class="combat-replay-wvw-analysis-label mb-1">Largest overcap moments</div>
+                        <div class="combat-replay-wvw-analysis-top-actors" style="max-height: 28vh; overflow-y: auto; padding-right: 0.25rem;">
+                            <button
+                                v-for="event in barrierOvercap.topEvents"
+                                :key="'barrier-overcap-event-' + event.time + '-' + event.targetId + '-' + event.skillId"
+                                type="button"
+                                class="combat-replay-wvw-analysis-burst-entry combat-replay-wvw-analysis-top-actor-button"
+                                style="display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 0.5rem 0.9rem; align-items: center; text-align: left;"
+                                @click.stop="openBarrierOvercapEvent(event)">
+                                <span style="min-width: 0;">
+                                    <span class="combat-replay-wvw-analysis-burst-time">{{event.timeLabel}}</span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-name">
+                                        <img v-if="event.targetIcon" :src="event.targetIcon" alt="" class="icon icon-hover mx-1" />
+                                        {{event.targetName}}
+                                    </span>
+                                </span>
+                                <span class="combat-replay-wvw-analysis-detail" style="min-width: 0;">
+                                    {{event.providerSummary}} | {{event.skillSummary}}
+                                </span>
+                                <span style="display: grid; gap: 0.15rem; justify-items: end; white-space: nowrap;">
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(event.estimatedOvercap)}} overcap</span>
+                                    <span class="combat-replay-wvw-analysis-detail">{{formatPercent(event.preBarrierPercent)}} -> {{formatPercent(event.postBarrierPercent)}} barrier | {{event.confidenceLabel}}</span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                    </div>
+                </details>
+                <div v-else-if="barrierOvercap && barrierOvercap.available" class="combat-replay-wvw-analysis-helper mt-3">
+                    No barrier overcap could be evaluated from the available barrier state data.
                 </div>
                 <div v-if="defenseAnalysis.negatedHitSummaries && defenseAnalysis.negatedHitSummaries.length > 0" class="mt-3">
                     <div class="combat-replay-wvw-analysis-label mb-2 text-center">Negated Hit Estimates</div>
@@ -4235,6 +4360,9 @@
             burstBarrier: function () {
                 return this.defenseAnalysis && this.defenseAnalysis.burstBarrier ? this.defenseAnalysis.burstBarrier : null;
             },
+            barrierOvercap: function () {
+                return this.defenseAnalysis && this.defenseAnalysis.barrierOvercap ? this.defenseAnalysis.barrierOvercap : null;
+            },
             mitigationThresholds: function () {
                 return this.defenseAnalysis && this.defenseAnalysis.mitigation && this.defenseAnalysis.mitigation.thresholds
                     ? this.defenseAnalysis.mitigation.thresholds
@@ -4426,6 +4554,14 @@
                     }
                     current = current.$parent;
                 }
+            },
+            openBarrierOvercapEvent: function (event) {
+                if (!event) {
+                    return;
+                }
+                this.setOverviewMode();
+                this.jumpToBurst(event.time);
+                this.selectReplayActor(event.targetId);
             },
             openMitigationEventAt: function (event, time) {
                 if (!event) {
