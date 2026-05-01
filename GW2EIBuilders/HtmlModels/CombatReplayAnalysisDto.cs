@@ -249,9 +249,95 @@ internal class CombatReplayDefenseAnalysisDto
     public CombatReplayDefenseMitigationDto Mitigation { get; set; } = new();
     public CombatReplayDefenseSavedPlayersSummaryDto SavedPlayersSummary { get; set; } = new();
     public CombatReplayDefenseBarrierOvercapDto BarrierOvercap { get; set; } = new();
+    public CombatReplayDefenseReflectAnalysisDto Reflects { get; set; } = new();
     public List<CombatReplayEventActorSummaryDto> TopBarrierProviders { get; set; } = [];
     public List<CombatReplayEventActorSummaryDto> TopPetMinionAbsorbers { get; set; } = [];
     public List<CombatReplayDefenseNegatedHitSummaryDto> NegatedHitSummaries { get; set; } = [];
+}
+
+internal class CombatReplayDefenseReflectAnalysisDto
+{
+    public bool HasMissileData { get; set; }
+    public int TotalReflectedProjectiles { get; set; }
+    public int TotalLandedHits { get; set; }
+    public double TotalLandedDamage { get; set; }
+    public int TotalEstimatedMitigatedProjectiles { get; set; }
+    public double TotalEstimatedMitigatedDamage { get; set; }
+    public int TotalUnestimatedMitigatedProjectiles { get; set; }
+    public int TotalDowns { get; set; }
+    public int TotalKills { get; set; }
+    public CombatReplayDefenseReflectSideDto SquadToEnemy { get; set; } = new();
+    public CombatReplayDefenseReflectSideDto EnemyToSquad { get; set; } = new();
+}
+
+internal class CombatReplayDefenseReflectSideDto
+{
+    public string Label { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public string Tone { get; set; } = "";
+    public int ReflectedProjectiles { get; set; }
+    public int LandedHits { get; set; }
+    public double LandedDamage { get; set; }
+    public int EstimatedMitigatedProjectiles { get; set; }
+    public double EstimatedMitigatedDamage { get; set; }
+    public int HighConfidenceMitigatedProjectiles { get; set; }
+    public double HighConfidenceMitigatedDamage { get; set; }
+    public int FallbackEstimatedMitigatedProjectiles { get; set; }
+    public double FallbackEstimatedMitigatedDamage { get; set; }
+    public int UnestimatedMitigatedProjectiles { get; set; }
+    public int DownEvents { get; set; }
+    public int KillEvents { get; set; }
+    public int MatchedDamageEvents { get; set; }
+    public List<CombatReplayEventActorSummaryDto> TopAttributedActors { get; set; } = [];
+    public List<CombatReplayDefenseReflectSkillDto> TopSkills { get; set; } = [];
+    public List<CombatReplayDefenseReflectEventDto> TopEvents { get; set; } = [];
+}
+
+internal class CombatReplayDefenseReflectSkillDto
+{
+    public long SkillId { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public int ReflectedProjectiles { get; set; }
+    public int LandedHits { get; set; }
+    public double LandedDamage { get; set; }
+    public int EstimatedMitigatedProjectiles { get; set; }
+    public double EstimatedMitigatedDamage { get; set; }
+    public int HighConfidenceMitigatedProjectiles { get; set; }
+    public double HighConfidenceMitigatedDamage { get; set; }
+    public int FallbackEstimatedMitigatedProjectiles { get; set; }
+    public double FallbackEstimatedMitigatedDamage { get; set; }
+    public int DownEvents { get; set; }
+    public int KillEvents { get; set; }
+}
+
+internal class CombatReplayDefenseReflectEventDto
+{
+    public long Time { get; set; }
+    public string TimeLabel { get; set; } = "";
+    public long SkillId { get; set; }
+    public string SkillName { get; set; } = "";
+    public string SkillIcon { get; set; } = "";
+    public int OriginalSourceId { get; set; }
+    public string OriginalSourceName { get; set; } = "";
+    public string OriginalSourceIcon { get; set; } = "";
+    public int ReturnTargetId { get; set; }
+    public string ReturnTargetName { get; set; } = "";
+    public string ReturnTargetIcon { get; set; } = "";
+    public int? AttributedActorId { get; set; }
+    public string AttributedActorName { get; set; } = "";
+    public string AttributedActorIcon { get; set; } = "";
+    public int? ProtectedTargetId { get; set; }
+    public string ProtectedTargetName { get; set; } = "";
+    public string ProtectedTargetIcon { get; set; } = "";
+    public bool DidHit { get; set; }
+    public double LandedDamage { get; set; }
+    public double EstimatedMitigatedDamage { get; set; }
+    public int MitigationEstimateSamples { get; set; }
+    public string MitigationEstimateConfidence { get; set; } = "";
+    public int DownEvents { get; set; }
+    public int KillEvents { get; set; }
+    public int MatchedDamageEvents { get; set; }
 }
 
 internal class CombatReplayDefenseBarrierOvercapDto
@@ -1188,6 +1274,12 @@ internal static class CombatReplayAnalysisBuilder
     private const long BarrierOvercapPostStateWindow = 250;
     private const int BarrierOvercapTopCount = 5;
     private const int BarrierOvercapTopEventCount = 20;
+    private const long ReflectDamageMatchLeeway = 500;
+    private const long ReflectDamageFallbackWindow = 5000;
+    private const int ReflectTopCount = 5;
+    private const int ReflectTopEventCount = 12;
+    private const int ReflectMitigationMinimumSamples = 3;
+    private const int ReflectMitigationFallbackMinimumSamples = 10;
     private const int BucketSize = 1000;
     private const double MeaningfulContributionThreshold = 0.10;
     private const float RangeThreshold = 1200.0f;
@@ -1309,6 +1401,40 @@ internal static class CombatReplayAnalysisBuilder
         Dictionary<int, CombatReplayPlayerEvaluationDto> PlayerEvaluations,
         List<CombatReplaySpecCapabilityDto> SpecCapabilities);
 
+    private sealed class ReflectedMissileRecord
+    {
+        public MissileEvent Missile { get; init; } = null!;
+        public MissileLaunchEvent ReflectLaunch { get; init; } = null!;
+        public SingleActor OriginalSource { get; init; } = null!;
+        public SingleActor ReturnTarget { get; init; } = null!;
+        public SingleActor? ProtectedTarget { get; init; }
+        public SingleActor? AttributedActor { get; set; }
+        public List<HealthDamageEvent> MatchedDamageEvents { get; } = [];
+        public double EstimatedMitigatedDamage { get; set; }
+        public int MitigationEstimateSamples { get; set; }
+        public bool UsedFallbackMitigationEstimate { get; set; }
+
+        public bool DidHit => Missile.RemoveEvent?.DidHit == true
+            || MatchedDamageEvents.Any(evt => evt.HasHit && evt.HealthDamage > 0);
+        public bool HasMitigationEstimate => EstimatedMitigatedDamage > 0.0;
+        public bool HasHighConfidenceMitigationEstimate => HasMitigationEstimate && !UsedFallbackMitigationEstimate && MitigationEstimateSamples >= ReflectMitigationMinimumSamples;
+
+        public double LandedDamage
+        {
+            get
+            {
+                int missileDamage = Math.Max(0, Missile.RemoveEvent?.FriendlyFireTotalDamage ?? 0);
+                return missileDamage > 0
+                    ? missileDamage
+                    : MatchedDamageEvents.Sum(evt => Math.Max(0, evt.HealthDamage));
+            }
+        }
+
+        public int DownEvents => MatchedDamageEvents.Count(evt => evt.HasDowned);
+        public int KillEvents => MatchedDamageEvents.Count(evt => evt.HasKilled);
+        public long EventTime => Missile.RemoveEvent?.Time ?? ReflectLaunch.Time;
+    }
+
     private sealed class RecoverySupportActionTotals
     {
         public long SkillId { get; init; }
@@ -1426,7 +1552,7 @@ internal static class CombatReplayAnalysisBuilder
         CombatReplayEnemyAnchorAnalysisDto enemyAnchorAnalysis = BuildEnemyAnchorAnalysis(log, hostileTargets, commander, times);
         var positioningAnalysis = BuildPositioningAnalysis(log, squadPlayers, hostileTargets, commander, times);
         CombatReplayEventAnalysisDto eventAnalysis = BuildEventAnalysis(log, squadPlayers, hostileTargets);
-        CombatReplayDefenseAnalysisDto defenseAnalysis = BuildDefenseAnalysis(log, squadPlayers, enemyAnalysis, times);
+        CombatReplayDefenseAnalysisDto defenseAnalysis = BuildDefenseAnalysis(log, squadPlayers, hostileTargets, enemyAnalysis, times);
         CombatReplayFightDemandDto fightDemand = BuildFightDemand(squadAnalysis, enemyAnalysis, eventAnalysis, defenseAnalysis, threatAnalysis, times);
         string winnerSideId = InferFightDiagnosisWinnerSide(eventAnalysis);
         CombatReplayFightDiagnosisDto diagnosis = BuildFightDiagnosis(
@@ -6319,6 +6445,7 @@ internal static class CombatReplayAnalysisBuilder
     private static CombatReplayDefenseAnalysisDto BuildDefenseAnalysis(
         ParsedEvtcLog log,
         IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostileTargets,
         CombatReplayTeamAnalysisDto enemyAnalysis,
         IReadOnlyList<long> times)
     {
@@ -6379,6 +6506,7 @@ internal static class CombatReplayAnalysisBuilder
             : 0.0;
         summary.TopPetMinionAbsorbers = BuildTopActorSummaries(topPetMinionAbsorberContributions);
         summary.NegatedHitSummaries = BuildNegatedHitSummaries(log, squadPlayers);
+        summary.Reflects = BuildReflectAnalysis(log, squadPlayers, hostileTargets);
 
         if (!log.CombatData.HasEXTBarrier)
         {
@@ -6421,6 +6549,357 @@ internal static class CombatReplayAnalysisBuilder
         summary.SavedPlayersSummary = BuildDefenseSavedPlayersSummary(log, summary.Mitigation);
         summary.TopBarrierProviders = BuildTopActorSummaries(topBarrierProviderContributions);
         return summary;
+    }
+
+    private static CombatReplayDefenseReflectAnalysisDto BuildReflectAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<SingleActor> hostileTargets)
+    {
+        var result = new CombatReplayDefenseReflectAnalysisDto
+        {
+            HasMissileData = log.CombatData.HasMissileData,
+        };
+        result.SquadToEnemy = new CombatReplayDefenseReflectSideDto
+        {
+            Label = "Squad reflected onto enemy",
+            Detail = "Enemy projectiles reflected by our side back into enemy players.",
+            Tone = "success",
+        };
+        result.EnemyToSquad = new CombatReplayDefenseReflectSideDto
+        {
+            Label = "Enemy reflected onto squad",
+            Detail = "Squad projectiles reflected by enemy players back into us.",
+            Tone = "danger",
+        };
+        if (!log.CombatData.HasMissileData)
+        {
+            return result;
+        }
+
+        IReadOnlyDictionary<AgentItem, SingleActor> squadActorsByAgent = BuildSquadPlayersByAgent(squadPlayers);
+        IReadOnlyDictionary<AgentItem, SingleActor> hostileActorsByAgent = BuildSquadPlayersByAgent(hostileTargets);
+        List<ReflectedMissileRecord> squadToEnemyRecords = BuildReflectedMissileRecords(
+            log,
+            hostileActorsByAgent,
+            hostileActorsByAgent,
+            squadActorsByAgent,
+            squadActorsByAgent);
+        List<ReflectedMissileRecord> enemyToSquadRecords = BuildReflectedMissileRecords(
+            log,
+            squadActorsByAgent,
+            squadActorsByAgent,
+            hostileActorsByAgent,
+            hostileActorsByAgent);
+
+        AttachMatchedReflectDamageEvents(log, squadToEnemyRecords, hostileTargets, squadActorsByAgent);
+        AttachMatchedReflectDamageEvents(log, enemyToSquadRecords, squadPlayers, hostileActorsByAgent);
+        AttachReflectMitigationEstimates(log, squadToEnemyRecords, squadPlayers, hostileActorsByAgent);
+        AttachReflectMitigationEstimates(log, enemyToSquadRecords, hostileTargets, squadActorsByAgent);
+
+        result.SquadToEnemy = BuildReflectSideDto(
+            "Squad reflected onto enemy",
+            "Enemy projectiles reflected by our side back into enemy players.",
+            "success",
+            squadToEnemyRecords);
+        result.EnemyToSquad = BuildReflectSideDto(
+            "Enemy reflected onto squad",
+            "Squad projectiles reflected by enemy players back into us.",
+            "danger",
+            enemyToSquadRecords);
+        result.TotalReflectedProjectiles = result.SquadToEnemy.ReflectedProjectiles + result.EnemyToSquad.ReflectedProjectiles;
+        result.TotalLandedHits = result.SquadToEnemy.LandedHits + result.EnemyToSquad.LandedHits;
+        result.TotalLandedDamage = Math.Round(result.SquadToEnemy.LandedDamage + result.EnemyToSquad.LandedDamage, 1);
+        result.TotalEstimatedMitigatedProjectiles = result.SquadToEnemy.EstimatedMitigatedProjectiles + result.EnemyToSquad.EstimatedMitigatedProjectiles;
+        result.TotalEstimatedMitigatedDamage = Math.Round(result.SquadToEnemy.EstimatedMitigatedDamage + result.EnemyToSquad.EstimatedMitigatedDamage, 1);
+        result.TotalUnestimatedMitigatedProjectiles = result.SquadToEnemy.UnestimatedMitigatedProjectiles + result.EnemyToSquad.UnestimatedMitigatedProjectiles;
+        result.TotalDowns = result.SquadToEnemy.DownEvents + result.EnemyToSquad.DownEvents;
+        result.TotalKills = result.SquadToEnemy.KillEvents + result.EnemyToSquad.KillEvents;
+        return result;
+    }
+
+    private static List<ReflectedMissileRecord> BuildReflectedMissileRecords(
+        ParsedEvtcLog log,
+        IReadOnlyDictionary<AgentItem, SingleActor> originalSourceActorsByAgent,
+        IReadOnlyDictionary<AgentItem, SingleActor> returnTargetActorsByAgent,
+        IReadOnlyDictionary<AgentItem, SingleActor> reflectorActorsByAgent,
+        IReadOnlyDictionary<AgentItem, SingleActor> protectedTargetActorsByAgent)
+    {
+        var records = new List<ReflectedMissileRecord>();
+        foreach (MissileEvent missile in log.CombatData.GetMissileEvents())
+        {
+            MissileLaunchEvent? reflectedLaunch = missile.LaunchEvents.FirstOrDefault(launch => launch.MaybeReflected);
+            if (reflectedLaunch == null)
+            {
+                continue;
+            }
+
+            SingleActor? originalSource = TryFindSquadPlayerByAgent(originalSourceActorsByAgent, missile.Src);
+            if (originalSource == null)
+            {
+                continue;
+            }
+
+            SingleActor? returnTarget = TryFindSquadPlayerByAgent(returnTargetActorsByAgent, reflectedLaunch.TargetedAgent) ?? originalSource;
+            MissileLaunchEvent? originalLaunch = missile.LaunchEvents.FirstOrDefault(launch => launch.IsFirstLaunch) ?? missile.LaunchEvents.FirstOrDefault();
+            SingleActor? protectedTarget = originalLaunch != null
+                ? TryFindSquadPlayerByAgent(protectedTargetActorsByAgent, originalLaunch.TargetedAgent)
+                : null;
+            SingleActor? attributedActor = missile.RemoveEvent != null
+                ? TryFindSquadPlayerByAgent(reflectorActorsByAgent, missile.RemoveEvent.DamagingAgent)
+                : null;
+            records.Add(new ReflectedMissileRecord
+            {
+                Missile = missile,
+                ReflectLaunch = reflectedLaunch,
+                OriginalSource = originalSource,
+                ReturnTarget = returnTarget,
+                ProtectedTarget = protectedTarget,
+                AttributedActor = attributedActor,
+            });
+        }
+        return records;
+    }
+
+    private static void AttachReflectMitigationEstimates(
+        ParsedEvtcLog log,
+        IReadOnlyList<ReflectedMissileRecord> records,
+        IReadOnlyList<SingleActor> protectedTargets,
+        IReadOnlyDictionary<AgentItem, SingleActor> originalSourceActorsByAgent)
+    {
+        if (records.Count == 0)
+        {
+            return;
+        }
+
+        var damageSamplesBySkill = new Dictionary<long, List<double>>();
+        var allDamageSamples = new List<double>();
+        foreach (SingleActor target in protectedTargets)
+        {
+            foreach (HealthDamageEvent damageEvent in target.GetDamageTakenEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd))
+            {
+                if (!damageEvent.HasHit
+                    || damageEvent.HealthDamage <= 0
+                    || TryFindSquadPlayerByAgent(originalSourceActorsByAgent, damageEvent.CreditedFrom) == null)
+                {
+                    continue;
+                }
+
+                if (!damageSamplesBySkill.TryGetValue(damageEvent.SkillID, out List<double>? samples))
+                {
+                    samples = [];
+                    damageSamplesBySkill[damageEvent.SkillID] = samples;
+                }
+                samples.Add(damageEvent.HealthDamage);
+                allDamageSamples.Add(damageEvent.HealthDamage);
+            }
+        }
+
+        foreach (ReflectedMissileRecord record in records)
+        {
+            if (record.ProtectedTarget == null)
+            {
+                continue;
+            }
+
+            if (damageSamplesBySkill.TryGetValue(record.Missile.SkillID, out List<double>? samples)
+                && samples.Count >= ReflectMitigationMinimumSamples)
+            {
+                record.EstimatedMitigatedDamage = Math.Round(GetMedian(samples), 1);
+                record.MitigationEstimateSamples = samples.Count;
+                record.UsedFallbackMitigationEstimate = false;
+                continue;
+            }
+
+            if (allDamageSamples.Count >= ReflectMitigationFallbackMinimumSamples)
+            {
+                record.EstimatedMitigatedDamage = Math.Round(GetMedian(allDamageSamples), 1);
+                record.MitigationEstimateSamples = allDamageSamples.Count;
+                record.UsedFallbackMitigationEstimate = true;
+            }
+        }
+    }
+
+    private static void AttachMatchedReflectDamageEvents(
+        ParsedEvtcLog log,
+        IReadOnlyList<ReflectedMissileRecord> records,
+        IReadOnlyList<SingleActor> damageTargets,
+        IReadOnlyDictionary<AgentItem, SingleActor> reflectorActorsByAgent)
+    {
+        if (records.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<long, List<ReflectedMissileRecord>> recordsBySkill = records
+            .GroupBy(record => record.Missile.SkillID)
+            .ToDictionary(group => group.Key, group => group.OrderBy(record => record.ReflectLaunch.Time).ToList());
+        var matchedEvents = new HashSet<HealthDamageEvent>();
+        foreach (SingleActor target in damageTargets)
+        {
+            foreach (HealthDamageEvent damageEvent in target.GetDamageTakenEvents(null, log, log.LogData.LogStart, log.LogData.LogEnd))
+            {
+                if ((!damageEvent.HasHit && !damageEvent.HasDowned && !damageEvent.HasKilled)
+                    || !recordsBySkill.TryGetValue(damageEvent.SkillID, out List<ReflectedMissileRecord>? candidates))
+                {
+                    continue;
+                }
+
+                ReflectedMissileRecord? match = FindBestReflectDamageMatch(candidates, damageEvent.Time);
+                if (match == null || !matchedEvents.Add(damageEvent))
+                {
+                    continue;
+                }
+
+                match.MatchedDamageEvents.Add(damageEvent);
+                if (match.AttributedActor == null)
+                {
+                    match.AttributedActor = TryFindSquadPlayerByAgent(reflectorActorsByAgent, damageEvent.CreditedFrom);
+                }
+            }
+        }
+    }
+
+    private static ReflectedMissileRecord? FindBestReflectDamageMatch(
+        IReadOnlyList<ReflectedMissileRecord> candidates,
+        long damageEventTime)
+    {
+        ReflectedMissileRecord? best = null;
+        long bestDistance = long.MaxValue;
+        foreach (ReflectedMissileRecord candidate in candidates)
+        {
+            long start = candidate.ReflectLaunch.Time;
+            long end = candidate.Missile.RemoveEvent?.Time ?? start + ReflectDamageFallbackWindow;
+            long upperBound = end + ReflectDamageMatchLeeway;
+            if (damageEventTime < start || damageEventTime > upperBound)
+            {
+                continue;
+            }
+
+            long distance = Math.Abs(damageEventTime - end);
+            if (distance < bestDistance)
+            {
+                best = candidate;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    private static CombatReplayDefenseReflectSideDto BuildReflectSideDto(
+        string label,
+        string detail,
+        string tone,
+        IReadOnlyList<ReflectedMissileRecord> records)
+    {
+        var attributedContributions = new List<(int? ActorId, string Name, string Icon, double Amount, long EventTime)>();
+        foreach (ReflectedMissileRecord record in records)
+        {
+            double landedDamage = record.LandedDamage;
+            if (landedDamage <= 0.0 || record.AttributedActor == null)
+            {
+                continue;
+            }
+            attributedContributions.Add((
+                record.AttributedActor.UniqueID,
+                record.AttributedActor.Character,
+                record.AttributedActor.GetIcon(),
+                landedDamage,
+                record.EventTime));
+        }
+
+        int estimatedMitigatedProjectiles = records.Count(record => record.HasMitigationEstimate);
+        int highConfidenceMitigatedProjectiles = records.Count(record => record.HasHighConfidenceMitigationEstimate);
+        int fallbackEstimatedMitigatedProjectiles = records.Count(record => record.HasMitigationEstimate && record.UsedFallbackMitigationEstimate);
+        return new CombatReplayDefenseReflectSideDto
+        {
+            Label = label,
+            Detail = detail,
+            Tone = tone,
+            ReflectedProjectiles = records.Count,
+            LandedHits = records.Count(record => record.DidHit),
+            LandedDamage = Math.Round(records.Sum(record => record.LandedDamage), 1),
+            EstimatedMitigatedProjectiles = estimatedMitigatedProjectiles,
+            EstimatedMitigatedDamage = Math.Round(records.Sum(record => record.EstimatedMitigatedDamage), 1),
+            HighConfidenceMitigatedProjectiles = highConfidenceMitigatedProjectiles,
+            HighConfidenceMitigatedDamage = Math.Round(records.Where(record => record.HasHighConfidenceMitigationEstimate).Sum(record => record.EstimatedMitigatedDamage), 1),
+            FallbackEstimatedMitigatedProjectiles = fallbackEstimatedMitigatedProjectiles,
+            FallbackEstimatedMitigatedDamage = Math.Round(records.Where(record => record.HasMitigationEstimate && record.UsedFallbackMitigationEstimate).Sum(record => record.EstimatedMitigatedDamage), 1),
+            UnestimatedMitigatedProjectiles = Math.Max(0, records.Count - estimatedMitigatedProjectiles),
+            DownEvents = records.Sum(record => record.DownEvents),
+            KillEvents = records.Sum(record => record.KillEvents),
+            MatchedDamageEvents = records.Sum(record => record.MatchedDamageEvents.Count),
+            TopAttributedActors = BuildTopActorSummaries(attributedContributions),
+            TopSkills = BuildReflectTopSkills(records),
+            TopEvents = BuildReflectTopEvents(records),
+        };
+    }
+
+    private static List<CombatReplayDefenseReflectSkillDto> BuildReflectTopSkills(IReadOnlyList<ReflectedMissileRecord> records)
+    {
+        return [.. records
+            .GroupBy(record => record.Missile.SkillID)
+            .Select(group => new CombatReplayDefenseReflectSkillDto
+            {
+                SkillId = group.Key,
+                Name = GetSkillDisplayName(group.First().Missile.Skill),
+                Icon = group.First().Missile.Skill.Icon,
+                ReflectedProjectiles = group.Count(),
+                LandedHits = group.Count(record => record.DidHit),
+                LandedDamage = Math.Round(group.Sum(record => record.LandedDamage), 1),
+                EstimatedMitigatedProjectiles = group.Count(record => record.HasMitigationEstimate),
+                EstimatedMitigatedDamage = Math.Round(group.Sum(record => record.EstimatedMitigatedDamage), 1),
+                HighConfidenceMitigatedProjectiles = group.Count(record => record.HasHighConfidenceMitigationEstimate),
+                HighConfidenceMitigatedDamage = Math.Round(group.Where(record => record.HasHighConfidenceMitigationEstimate).Sum(record => record.EstimatedMitigatedDamage), 1),
+                FallbackEstimatedMitigatedProjectiles = group.Count(record => record.HasMitigationEstimate && record.UsedFallbackMitigationEstimate),
+                FallbackEstimatedMitigatedDamage = Math.Round(group.Where(record => record.HasMitigationEstimate && record.UsedFallbackMitigationEstimate).Sum(record => record.EstimatedMitigatedDamage), 1),
+                DownEvents = group.Sum(record => record.DownEvents),
+                KillEvents = group.Sum(record => record.KillEvents),
+            })
+            .OrderByDescending(entry => entry.LandedDamage)
+            .ThenByDescending(entry => entry.LandedHits)
+            .ThenByDescending(entry => entry.ReflectedProjectiles)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(ReflectTopCount)];
+    }
+
+    private static List<CombatReplayDefenseReflectEventDto> BuildReflectTopEvents(IReadOnlyList<ReflectedMissileRecord> records)
+    {
+        return [.. records
+            .Where(record => record.DidHit || record.LandedDamage > 0.0 || record.DownEvents > 0 || record.KillEvents > 0)
+            .OrderByDescending(record => record.LandedDamage)
+            .ThenByDescending(record => record.DownEvents)
+            .ThenByDescending(record => record.KillEvents)
+            .ThenBy(record => record.EventTime)
+            .Take(ReflectTopEventCount)
+            .Select(record => new CombatReplayDefenseReflectEventDto
+            {
+                Time = record.EventTime,
+                TimeLabel = FormatTime(record.EventTime),
+                SkillId = record.Missile.SkillID,
+                SkillName = GetSkillDisplayName(record.Missile.Skill),
+                SkillIcon = record.Missile.Skill.Icon,
+                OriginalSourceId = record.OriginalSource.UniqueID,
+                OriginalSourceName = record.OriginalSource.Character,
+                OriginalSourceIcon = record.OriginalSource.GetIcon(),
+                ReturnTargetId = record.ReturnTarget.UniqueID,
+                ReturnTargetName = record.ReturnTarget.Character,
+                ReturnTargetIcon = record.ReturnTarget.GetIcon(),
+                AttributedActorId = record.AttributedActor?.UniqueID,
+                AttributedActorName = record.AttributedActor?.Character ?? "",
+                AttributedActorIcon = record.AttributedActor?.GetIcon() ?? "",
+                ProtectedTargetId = record.ProtectedTarget?.UniqueID,
+                ProtectedTargetName = record.ProtectedTarget?.Character ?? "",
+                ProtectedTargetIcon = record.ProtectedTarget?.GetIcon() ?? "",
+                DidHit = record.DidHit,
+                LandedDamage = Math.Round(record.LandedDamage, 1),
+                EstimatedMitigatedDamage = Math.Round(record.EstimatedMitigatedDamage, 1),
+                MitigationEstimateSamples = record.MitigationEstimateSamples,
+                MitigationEstimateConfidence = record.HasHighConfidenceMitigationEstimate ? "High" : record.UsedFallbackMitigationEstimate ? "Fallback" : "",
+                DownEvents = record.DownEvents,
+                KillEvents = record.KillEvents,
+                MatchedDamageEvents = record.MatchedDamageEvents.Count,
+            })];
     }
 
     private static CombatReplayDefenseBarrierOvercapDto BuildBarrierOvercapAnalysis(

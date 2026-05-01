@@ -3721,6 +3721,7 @@
                 mitigationListScrollTop: 0,
                 pendingMitigationScrollRestore: false,
                 barrierOvercapDetailsExpanded: false,
+                reflectDetailsExpanded: false,
                 negatedHitDetailModal: null,
                 showMitigationSummaryHelp: false,
                 showMitigationCasesHelp: false,
@@ -3760,6 +3761,13 @@
                                 <div class="combat-replay-wvw-analysis-value">{{formatPercent(burstBarrier.burstBarrierAbsorptionPercent)}}</div>
                                 <div class="combat-replay-wvw-analysis-detail">{{formatAmount(burstBarrier.totalBurstBarrierAbsorbed)}} damage absorbed out of {{formatAmount(burstBarrier.totalBurstDamageToSquad)}} burst damage</div>
                                 <div class="combat-replay-wvw-analysis-detail">Across {{formatCount(burstBarrier.enemyBurstWindows)}} burst windows</div>
+                            </div>
+                            <div v-if="reflectAnalysis && reflectAnalysis.hasMissileData && reflectAnalysis.squadToEnemy && reflectAnalysis.squadToEnemy.reflectedProjectiles > 0" class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Squad Reflect Mitigation</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatAmount(reflectAnalysis.squadToEnemy.estimatedMitigatedDamage)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatAmount(reflectAnalysis.squadToEnemy.highConfidenceMitigatedDamage)}} high-confidence | {{formatAmount(reflectAnalysis.squadToEnemy.fallbackEstimatedMitigatedDamage)}} fallback-estimated</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatAmount(reflectAnalysis.squadToEnemy.landedDamage)}} landed return damage onto enemy</div>
+                                <div v-if="reflectAnalysis.squadToEnemy.unestimatedMitigatedProjectiles > 0" class="combat-replay-wvw-analysis-detail">{{formatCount(reflectAnalysis.squadToEnemy.unestimatedMitigatedProjectiles)}} reflected projectiles not estimated</div>
                             </div>
                         </div>
                     </div>
@@ -3913,13 +3921,130 @@
                     </div>
                     </div>
                 </details>
-                <div v-else-if="barrierOvercap && barrierOvercap.available" class="combat-replay-wvw-analysis-helper mt-3">
-                    No barrier overcap could be evaluated from the available barrier state data.
+            <div v-else-if="barrierOvercap && barrierOvercap.available" class="combat-replay-wvw-analysis-helper mt-3">
+                No barrier overcap could be evaluated from the available barrier state data.
+            </div>
+            <details v-if="reflectAnalysis && reflectAnalysis.hasMissileData && reflectAnalysis.totalReflectedProjectiles > 0" class="mt-3" style="border-top: 1px solid rgba(255,255,255,0.12); padding-top: 0.65rem;" @toggle="reflectDetailsExpanded = $event.target.open">
+                <summary class="combat-replay-wvw-analysis-label" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; list-style-position: inside;">
+                    <span>
+                        <span style="display: inline-flex; justify-content: center; width: 1rem; margin-right: 0.35rem; color: #8ac8ff;">{{reflectDetailsExpanded ? '-' : '+'}}</span>
+                        Projectile Reflects
+                    </span>
+                    <span class="combat-replay-wvw-analysis-detail" style="font-weight: 600; text-transform: none; letter-spacing: 0;">
+                        {{reflectDetailsExpanded ? 'Click to collapse' : 'Click to expand'}} | {{formatAmount(reflectAnalysis.squadToEnemy.estimatedMitigatedDamage)}} squad mitigation estimate | {{formatAmount(reflectAnalysis.squadToEnemy.landedDamage)}} landed return
+                    </span>
+                </summary>
+                <div class="mt-2">
+                <div class="row">
+                    <div v-for="side in [reflectAnalysis.squadToEnemy, reflectAnalysis.enemyToSquad]" :key="'reflect-side-' + side.label" class="col-xl-6 mb-3 mb-xl-0">
+                        <div class="combat-replay-wvw-analysis-label mb-1">{{side.label}}</div>
+                        <div class="combat-replay-wvw-analysis-detail mb-2">{{side.detail}}</div>
+                        <div class="combat-replay-wvw-analysis-grid mb-2" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Detected</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatCount(side.reflectedProjectiles)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">Reflected projectiles</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Mitigation estimate</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatAmount(side.estimatedMitigatedDamage)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatAmount(side.highConfidenceMitigatedDamage)}} high-confidence | {{formatAmount(side.fallbackEstimatedMitigatedDamage)}} fallback-estimated</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatCount(side.estimatedMitigatedProjectiles)}} estimated | {{formatCount(side.unestimatedMitigatedProjectiles)}} not estimated</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Landed return</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatCount(side.landedHits)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">{{formatAmount(side.landedDamage)}} damage</div>
+                            </div>
+                            <div class="combat-replay-wvw-analysis-metric">
+                                <div class="combat-replay-wvw-analysis-label">Downs / kills</div>
+                                <div class="combat-replay-wvw-analysis-value">{{formatCount(side.downEvents)}} / {{formatCount(side.killEvents)}}</div>
+                                <div class="combat-replay-wvw-analysis-detail">From matched damage events</div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-lg-6 mb-2">
+                                <div class="combat-replay-wvw-analysis-label mb-1">Top attributed reflectors</div>
+                                <div v-if="side.topAttributedActors && side.topAttributedActors.length > 0" class="combat-replay-wvw-analysis-top-actors" style="max-height: 14vh; overflow-y: auto; padding-right: 0.25rem;">
+                                    <button
+                                        v-for="(entry, index) in side.topAttributedActors"
+                                        :key="'reflect-actor-' + side.label + '-' + index + '-' + entry.actorId"
+                                        type="button"
+                                        class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button"
+                                        @click.stop="focusProvider(entry)">
+                                        <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                                        <span class="combat-replay-wvw-analysis-top-actor-name">
+                                            <img v-if="entry.icon" :src="entry.icon" alt="" class="icon icon-hover mx-1" />
+                                            {{entry.name}}
+                                        </span>
+                                        <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.amount)}}</span>
+                                    </button>
+                                </div>
+                                <div v-else class="combat-replay-wvw-analysis-helper">No actor attribution available.</div>
+                            </div>
+                            <div class="col-lg-6 mb-2">
+                                <div class="combat-replay-wvw-analysis-label mb-1">Top reflected skills</div>
+                                <div v-if="side.topSkills && side.topSkills.length > 0" class="combat-replay-wvw-analysis-top-actors" style="max-height: 14vh; overflow-y: auto; padding-right: 0.25rem;">
+                                    <div
+                                        v-for="(entry, index) in side.topSkills"
+                                        :key="'reflect-skill-' + side.label + '-' + index + '-' + entry.skillId"
+                                        class="combat-replay-wvw-analysis-top-actor-entry">
+                                        <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                                        <span class="combat-replay-wvw-analysis-top-actor-name">
+                                            <img v-if="entry.icon" :src="entry.icon" alt="" class="icon icon-hover mx-1" />
+                                            {{entry.name}}
+                                        </span>
+                                <span class="combat-replay-wvw-analysis-top-actor-value">{{formatAmount(entry.landedDamage)}}</span>
+                                    </div>
+                                </div>
+                                <div v-else class="combat-replay-wvw-analysis-helper">No reflected skill data.</div>
+                            </div>
+                        </div>
+                        <div v-if="side.topEvents && side.topEvents.length > 0" class="mt-2">
+                            <div class="combat-replay-wvw-analysis-label mb-1">Largest reflected moments</div>
+                            <div class="combat-replay-wvw-analysis-top-actors" style="max-height: 22vh; overflow-y: auto; padding-right: 0.25rem;">
+                                <button
+                                    v-for="event in side.topEvents"
+                                    :key="'reflect-event-' + side.label + '-' + event.time + '-' + event.originalSourceId + '-' + event.returnTargetId + '-' + event.skillId"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-burst-entry combat-replay-wvw-analysis-top-actor-button"
+                                    style="display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) auto; gap: 0.5rem 0.9rem; align-items: center; text-align: left;"
+                                    @click.stop="openReflectEvent(event)">
+                                    <span style="min-width: 0;">
+                                        <span class="combat-replay-wvw-analysis-burst-time">{{event.timeLabel}}</span>
+                                        <span class="combat-replay-wvw-analysis-top-actor-name">
+                                            <img v-if="event.skillIcon" :src="event.skillIcon" alt="" class="icon icon-hover mx-1" />
+                                            {{event.skillName}}
+                                        </span>
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-detail" style="min-width: 0;">
+                                        <span v-if="event.attributedActorName">{{event.attributedActorName}} reflected</span>
+                                        <span v-else>Reflect attribution unknown</span>
+                                        <br />
+                                        {{event.originalSourceName}} -> {{event.returnTargetName}}
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value" style="text-align: right;">
+                                        {{formatAmount(event.landedDamage)}} landed
+                                        <span v-if="event.downEvents > 0 || event.killEvents > 0" class="combat-replay-wvw-analysis-detail"><br />{{formatCount(event.downEvents)}} downs | {{formatCount(event.killEvents)}} kills</span>
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div v-if="defenseAnalysis.negatedHitSummaries && defenseAnalysis.negatedHitSummaries.length > 0" class="mt-3">
-                    <div class="combat-replay-wvw-analysis-label mb-2 text-center">Negated Hit Estimates</div>
-                    <div class="combat-replay-wvw-analysis-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
-                        <div
+                <div class="combat-replay-wvw-analysis-detail mt-2">Mitigation estimate is the estimated damage prevented by reflecting the projectile away from its original target. High-confidence rows use same-skill landed damage samples; fallback rows use broader landed damage samples for that side. Landed return damage is the damage dealt after the reflect.</div>
+                </div>
+            </details>
+            <div v-else-if="reflectAnalysis && reflectAnalysis.hasMissileData" class="combat-replay-wvw-analysis-helper mt-3">
+                No reflected projectiles were detected in missile data.
+            </div>
+            <div v-else-if="reflectAnalysis" class="combat-replay-wvw-analysis-helper mt-3">
+                Missile data was not available for projectile reflect analysis.
+            </div>
+            <div v-if="defenseAnalysis.negatedHitSummaries && defenseAnalysis.negatedHitSummaries.length > 0" class="mt-3">
+                <div class="combat-replay-wvw-analysis-label mb-2 text-center">Negated Hit Estimates</div>
+                <div class="combat-replay-wvw-analysis-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                    <div
                             v-for="summary in defenseAnalysis.negatedHitSummaries"
                             :key="'negated-hit-summary-' + summary.key"
                             class="combat-replay-wvw-analysis-metric">
@@ -4363,6 +4488,9 @@
             barrierOvercap: function () {
                 return this.defenseAnalysis && this.defenseAnalysis.barrierOvercap ? this.defenseAnalysis.barrierOvercap : null;
             },
+            reflectAnalysis: function () {
+                return this.defenseAnalysis && this.defenseAnalysis.reflects ? this.defenseAnalysis.reflects : null;
+            },
             mitigationThresholds: function () {
                 return this.defenseAnalysis && this.defenseAnalysis.mitigation && this.defenseAnalysis.mitigation.thresholds
                     ? this.defenseAnalysis.mitigation.thresholds
@@ -4562,6 +4690,14 @@
                 this.setOverviewMode();
                 this.jumpToBurst(event.time);
                 this.selectReplayActor(event.targetId);
+            },
+            openReflectEvent: function (event) {
+                if (!event) {
+                    return;
+                }
+                this.setOverviewMode();
+                this.jumpToBurst(event.time);
+                this.selectReplayActor(event.returnTargetId || event.originalSourceId || event.attributedActorId);
             },
             openMitigationEventAt: function (event, time) {
                 if (!event) {
