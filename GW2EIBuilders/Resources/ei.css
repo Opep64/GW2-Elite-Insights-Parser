@@ -486,10 +486,51 @@ h6.actor-shorten-cr-compact {
     cursor: pointer;
 }
 
+.combat-replay-analysis-layout {
+    gap: 2rem;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 0 0.5rem;
+}
+
+.combat-replay-analysis-replay-column {
+    flex: 0 0 760px;
+    min-width: 0;
+    max-width: 760px;
+    margin-left: auto;
+}
+
+.combat-replay-analysis-side-column {
+    flex: 1 1 620px;
+    min-width: 0;
+    max-width: 1280px;
+    margin-right: auto;
+}
+
+.combat-replay-analysis-side-column > * {
+    min-width: 0;
+}
+
+@media (max-width: 1400px) {
+    .combat-replay-analysis-layout {
+        flex-wrap: wrap;
+    }
+
+    .combat-replay-analysis-replay-column,
+    .combat-replay-analysis-side-column {
+        flex: 1 1 100%;
+        max-width: 100%;
+        margin-left: 0;
+        margin-right: 0;
+    }
+}
+
 .combat-replay-wvw-analysis-panel {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    min-width: 0;
 }
 
 .combat-replay-wvw-analysis-card {
@@ -497,6 +538,7 @@ h6.actor-shorten-cr-compact {
     border-radius: 0.35rem;
     background: rgba(32, 36, 40, 0.32);
     padding: 0.65rem 0.75rem;
+    min-width: 0;
 }
 
 .combat-replay-wvw-analysis-card-title {
@@ -1309,10 +1351,12 @@ h6.actor-shorten-cr-compact {
     display: flex;
     flex-direction: column;
     gap: 0.45rem;
-    border: 1px solid rgba(124, 130, 136, 0.28);
+    border: 1px solid rgba(154, 166, 178, 0.34);
     border-radius: 0.42rem;
     padding: 0.62rem 0.68rem;
-    background: rgba(0, 0, 0, 0.1);
+    background: rgba(18, 22, 27, 0.5);
+    color: rgba(217, 226, 232, 0.88);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 .combat-replay-spec-capability-card-button {
@@ -1323,13 +1367,13 @@ h6.actor-shorten-cr-compact {
 .combat-replay-spec-capability-card-button:hover,
 .combat-replay-spec-capability-card-button:focus-visible {
     border-color: rgba(94, 190, 212, 0.42);
-    background: rgba(94, 190, 212, 0.08);
+    background: rgba(32, 61, 72, 0.5);
     outline: none;
 }
 
 .combat-replay-spec-capability-card-selected {
     border-color: rgba(94, 190, 212, 0.42);
-    background: rgba(94, 190, 212, 0.08);
+    background: rgba(32, 61, 72, 0.5);
 }
 
 .combat-replay-spec-capability-header {
@@ -1378,34 +1422,36 @@ h6.actor-shorten-cr-compact {
     font-size: 0.85rem;
     font-weight: 700;
     line-height: 1.15;
+    color: rgba(217, 226, 232, 0.9);
 }
 
 .combat-replay-spec-capability-meta {
     font-size: 0.74rem;
-    opacity: 0.8;
+    color: rgba(217, 226, 232, 0.68);
 }
 
 .combat-replay-spec-capability-summary {
     font-size: 0.79rem;
     font-weight: 700;
+    color: rgba(217, 226, 232, 0.86);
 }
 
 .combat-replay-spec-capability-text {
     font-size: 0.75rem;
     line-height: 1.35;
-    opacity: 0.86;
+    color: rgba(217, 226, 232, 0.76);
 }
 
 .combat-replay-spec-capability-text-secondary {
-    opacity: 0.78;
+    color: rgba(217, 226, 232, 0.66);
 }
 
 .combat-replay-spec-fight-coverage {
     display: flex;
     flex-direction: column;
     gap: 0.34rem;
-    border-top: 1px solid rgba(124, 130, 136, 0.22);
-    border-bottom: 1px solid rgba(124, 130, 136, 0.18);
+    border-top: 1px solid rgba(154, 166, 178, 0.24);
+    border-bottom: 1px solid rgba(154, 166, 178, 0.18);
     padding: 0.5rem 0;
 }
 
@@ -1421,7 +1467,7 @@ h6.actor-shorten-cr-compact {
     font-weight: 800;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    opacity: 0.82;
+    color: rgba(217, 226, 232, 0.72);
 }
 
 .combat-replay-spec-fight-coverage-score {
@@ -1429,6 +1475,7 @@ h6.actor-shorten-cr-compact {
     font-weight: 800;
     text-align: right;
     white-space: nowrap;
+    color: rgba(217, 226, 232, 0.86);
 }
 
 .combat-replay-spec-capability-lanes {
@@ -1441,10 +1488,10 @@ h6.actor-shorten-cr-compact {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    border: 1px solid rgba(124, 130, 136, 0.22);
+    border: 1px solid rgba(154, 166, 178, 0.28);
     border-radius: 0.36rem;
     padding: 0.48rem 0.52rem;
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(6, 9, 13, 0.24);
 }
 
 .combat-replay-spec-capability-lane-button {
@@ -1456,7 +1503,7 @@ h6.actor-shorten-cr-compact {
 .combat-replay-spec-capability-lane-button:hover,
 .combat-replay-spec-capability-lane-button:focus-visible {
     border-color: rgba(94, 190, 212, 0.46);
-    background: rgba(94, 190, 212, 0.08);
+    background: rgba(27, 55, 65, 0.42);
     outline: none;
 }
 
@@ -1470,11 +1517,12 @@ h6.actor-shorten-cr-compact {
 .combat-replay-spec-capability-lane-title {
     font-size: 0.79rem;
     font-weight: 700;
+    color: rgba(217, 226, 232, 0.86);
 }
 
 .combat-replay-spec-capability-lane-share {
     font-size: 0.71rem;
-    opacity: 0.8;
+    color: rgba(217, 226, 232, 0.64);
     text-align: right;
 }
 
@@ -1487,14 +1535,14 @@ h6.actor-shorten-cr-compact {
 .combat-replay-spec-capability-lane-chip {
     display: inline-flex;
     align-items: center;
-    border: 1px solid rgba(124, 130, 136, 0.3);
+    border: 1px solid rgba(154, 166, 178, 0.3);
     border-radius: 999px;
     padding: 0.13rem 0.42rem;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.045);
     font-size: 0.68rem;
     font-weight: 600;
     letter-spacing: 0.02em;
-    opacity: 0.92;
+    color: rgba(217, 226, 232, 0.82);
 }
 
 .combat-replay-spec-capability-lane-chip-low,
@@ -1523,7 +1571,7 @@ h6.actor-shorten-cr-compact {
 .combat-replay-spec-capability-lane-evidence {
     font-size: 0.73rem;
     line-height: 1.35;
-    opacity: 0.88;
+    color: rgba(217, 226, 232, 0.7);
 }
 
 .combat-replay-player-lane-list {
@@ -2443,6 +2491,20 @@ h6.actor-shorten-cr-compact {
     gap: 0.9rem;
 }
 
+.wvw-summary-spec-layout > .wvw-summary-side-panel,
+.wvw-summary-spec-layout .wvw-summary-demand-panel {
+    border-color: rgba(154, 166, 178, 0.34);
+    background: rgba(18, 22, 27, 0.5);
+    color: rgba(217, 226, 232, 0.88);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.wvw-summary-spec-layout .wvw-summary-side-panel-subtitle,
+.wvw-summary-spec-layout .wvw-summary-demand-summary {
+    color: rgba(217, 226, 232, 0.68);
+    opacity: 1;
+}
+
 .wvw-summary-boons-layout {
     display: flex;
     flex-direction: column;
@@ -2453,7 +2515,7 @@ h6.actor-shorten-cr-compact {
     margin-top: 0.45rem;
     font-size: 0.84rem;
     line-height: 1.45;
-    color: rgba(217, 226, 232, 0.84);
+    color: rgba(217, 226, 232, 0.8);
 }
 
 .wvw-summary-boon-grid {
@@ -3688,6 +3750,42 @@ h6.actor-shorten-cr-compact {
     border-color: rgba(92, 108, 126, 0.22);
 }
 
+.theme-yeti .wvw-summary-spec-layout > .wvw-summary-side-panel,
+.theme-yeti .wvw-summary-spec-layout .wvw-summary-demand-panel,
+.theme-yeti .combat-replay-spec-capability-card {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(92, 108, 126, 0.28);
+    color: rgba(43, 51, 59, 0.86);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.52);
+}
+
+.theme-yeti .wvw-summary-spec-layout .wvw-summary-side-panel-subtitle,
+.theme-yeti .wvw-summary-spec-layout .wvw-summary-demand-summary,
+.theme-yeti .combat-replay-spec-capability-meta,
+.theme-yeti .combat-replay-spec-capability-text,
+.theme-yeti .combat-replay-spec-capability-lane-share,
+.theme-yeti .combat-replay-spec-capability-lane-evidence {
+    color: rgba(43, 51, 59, 0.68);
+}
+
+.theme-yeti .combat-replay-spec-capability-text-secondary {
+    color: rgba(43, 51, 59, 0.58);
+}
+
+.theme-yeti .combat-replay-spec-fight-coverage-title {
+    color: rgba(43, 51, 59, 0.72);
+}
+
+.theme-yeti .combat-replay-spec-capability-lane {
+    background: rgba(86, 144, 212, 0.04);
+    border-color: rgba(92, 108, 126, 0.22);
+}
+
+.theme-yeti .combat-replay-spec-capability-lane-chip {
+    background: rgba(86, 144, 212, 0.06);
+    border-color: rgba(92, 108, 126, 0.22);
+}
+
 .theme-yeti .wvw-summary-grade-panel {
     background: rgba(255, 255, 255, 0.88);
     border-color: rgba(92, 108, 126, 0.22);
@@ -4233,6 +4331,16 @@ canvas {
 
 .animation-control {
     z-index: 3;
+    max-width: 100%;
+}
+
+.combat-replay-control-button-row {
+    gap: 0.15rem;
+    max-width: 100%;
+}
+
+.combat-replay-control-button-row .btn-small {
+    margin: 0;
 }
 
 .combat-replay-mechanics-list-container {

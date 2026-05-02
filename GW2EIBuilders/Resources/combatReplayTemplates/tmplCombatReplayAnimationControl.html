@@ -107,7 +107,7 @@
                 </div>
             </div>
             <div class="animation-control">
-                <div class="d-flex justify-content-center mb-1">
+                <div class="d-flex justify-content-center flex-wrap combat-replay-control-button-row mb-1">
                     <div @click="toggleAnimate();" class="btn btn-small"
                         :class="{'btn-dark': !light, 'btn-light': light}" style="width: 50px;">{{animated ? "Pause" :
                         "Play"}}</div>
@@ -556,12 +556,19 @@
                 const cardWidth = isTarget ? 380 : 430;
                 const canvasLeft = animator && animator.mainCanvas ? animator.mainCanvas.offsetLeft : 0;
                 const canvasWidth = animator && animator.mainCanvas ? animator.mainCanvas.offsetWidth : this.canvasSize.x;
+                const containerWidth = Math.max(this.canvasSize.x, this.canvasSize.y);
+                const minMargin = 8;
+                const maxCardWidth = Math.min(cardWidth, Math.max(240, containerWidth - minMargin * 2));
+                let left = canvasLeft + canvasWidth + 18;
+                if (left + maxCardWidth > containerWidth - minMargin) {
+                    left = Math.max(minMargin, canvasLeft + canvasWidth - maxCardWidth - minMargin);
+                }
                 return {
                     position: 'absolute',
-                    left: (canvasLeft + canvasWidth + 18) + 'px',
+                    left: left + 'px',
                     top: '8px',
-                    width: cardWidth + 'px',
-                    maxWidth: cardWidth + 'px',
+                    width: maxCardWidth + 'px',
+                    maxWidth: 'calc(100% - 16px)',
                     padding: '8px 10px',
                     borderRadius: '8px',
                     background: 'rgba(23, 26, 31, 0.97)',
