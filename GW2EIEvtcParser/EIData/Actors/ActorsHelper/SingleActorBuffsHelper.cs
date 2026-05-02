@@ -675,6 +675,11 @@ partial class SingleActor
 
     private static void FuseConsecutiveNonZeroAndSetTo1(List<Segment> segments)
     {
+        if (segments.Count == 0)
+        {
+            return;
+        }
+
         Segment last = segments[0];
         if (last.Value > 0)
         {

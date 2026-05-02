@@ -179,7 +179,7 @@ public class Buff : IVersionable
         {
             operation.UpdateProgressWithCancellationCheck("Parsing: Adjusted capacity for " + Name + " from " + Capacity + " to " + buffInfoEvent.MaxStacks);
         }
-        if (buffInfoEvent.StackingType != StackType && buffInfoEvent.StackingType != BuffStackType.Unknown)
+        if (buffInfoEvent.StackingType != BuffStackType.Unknown && IsIncompatibleStackLogic(buffInfoEvent.StackingType))
         {
             var message = "Incoherent stack type for " + Name + ": is " + StackType + " but expected " + buffInfoEvent.StackingType + " with stacks " + buffInfoEvent.MaxStacks;
 #if DEBUG
