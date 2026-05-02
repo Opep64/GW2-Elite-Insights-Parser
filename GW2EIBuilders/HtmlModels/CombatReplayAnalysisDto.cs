@@ -5587,10 +5587,10 @@ internal static class CombatReplayAnalysisBuilder
         bool hasBarrierData)
     {
         double strengthPercent = ComputeWeightedScore(
-            (hasBarrierData ? NormalizeValue(aggregate.BarrierTotal, maximums.BarrierTotal) : 0.0, hasBarrierData ? 0.30 : 0.0),
-            (NormalizeValue(aggregate.AttributedNegatedDamageTotal, maximums.AttributedNegatedDamageTotal), maximums.AttributedNegatedDamageTotal > 0.0 ? 0.30 : 0.0),
-            (NormalizeValue(aggregate.PetMinionAbsorptionTotal, maximums.PetMinionAbsorptionTotal), maximums.PetMinionAbsorptionTotal > 0 ? 0.10 : 0.0),
-            (NormalizeValue(aggregate.DefensiveConditionPressure, maximums.DefensiveConditionPressure), maximums.DefensiveConditionPressure > 0.0 ? 0.20 : 0.0),
+            (hasBarrierData ? NormalizeValue(aggregate.BarrierTotal, maximums.BarrierTotal) : 0.0, hasBarrierData ? 0.25 : 0.0),
+            (NormalizeValue(aggregate.AttributedNegatedDamageTotal, maximums.AttributedNegatedDamageTotal), maximums.AttributedNegatedDamageTotal > 0.0 ? 0.25 : 0.0),
+            (NormalizeValue(aggregate.PetMinionAbsorptionTotal, maximums.PetMinionAbsorptionTotal), maximums.PetMinionAbsorptionTotal > 0 ? 0.25 : 0.0),
+            (NormalizeValue(aggregate.DefensiveConditionPressure, maximums.DefensiveConditionPressure), maximums.DefensiveConditionPressure > 0.0 ? 0.15 : 0.0),
             (NormalizeValue(aggregate.DefensiveSupportWindows, maximums.DefensiveSupportWindows), maximums.DefensiveSupportWindows > 0 ? 0.10 : 0.0));
         double sharePercent = ComputePreventionSharePercent(aggregate, totals, hasBarrierData);
         string barrierValue = hasBarrierData ? FormatWholeNumber(aggregate.BarrierTotal) : "Unavailable";
@@ -5617,7 +5617,7 @@ internal static class CombatReplayAnalysisBuilder
             BuildDetailSection("Prevention Metrics",
             [
                 BuildDetailEntry("Barrier", barrierValue, barrierSecondary),
-                BuildDetailEntry("Negated damage", FormatOneDecimal(aggregate.AttributedNegatedDamageTotal), "Estimated prevented damage from attributed Aegis, Blind, Distortion, Blur, and tracked invulnerability-style effects"),
+                BuildDetailEntry("Negated damage", FormatOneDecimal(aggregate.AttributedNegatedDamageTotal), "Estimated prevented damage from source-attributed Aegis, Blind, Distortion, Blur, and tracked invulnerability-style effects"),
                 BuildDetailEntry("Pet absorption", FormatWholeNumber(aggregate.PetMinionAbsorptionTotal), "Incoming damage taken by owned pets and minions"),
                 BuildDetailEntry("Defensive condition pressure", FormatWholeNumber((long)Math.Round(aggregate.DefensiveConditionPressure)), ""),
                 BuildDetailEntry("Prevention windows", BuildPluralizedLabel(aggregate.DefensiveSupportWindows, "prevention window", "prevention windows"), $"{aggregate.DefensiveSupportWindowsTotal} total")
@@ -6355,19 +6355,19 @@ internal static class CombatReplayAnalysisBuilder
         var weightedShares = new List<(double Share, double Weight)>();
         if (hasBarrierData && totals.BarrierTotal > 0)
         {
-            weightedShares.Add((aggregate.BarrierTotal * 100.0 / totals.BarrierTotal, 0.35));
+            weightedShares.Add((aggregate.BarrierTotal * 100.0 / totals.BarrierTotal, 0.25));
         }
         if (totals.AttributedNegatedDamageTotal > 0.0)
         {
-            weightedShares.Add((aggregate.AttributedNegatedDamageTotal * 100.0 / totals.AttributedNegatedDamageTotal, 0.30));
+            weightedShares.Add((aggregate.AttributedNegatedDamageTotal * 100.0 / totals.AttributedNegatedDamageTotal, 0.25));
         }
         if (totals.PetMinionAbsorptionTotal > 0)
         {
-            weightedShares.Add((aggregate.PetMinionAbsorptionTotal * 100.0 / totals.PetMinionAbsorptionTotal, 0.15));
+            weightedShares.Add((aggregate.PetMinionAbsorptionTotal * 100.0 / totals.PetMinionAbsorptionTotal, 0.25));
         }
         if (totals.DefensiveConditionPressure > 0.0)
         {
-            weightedShares.Add((aggregate.DefensiveConditionPressure * 100.0 / totals.DefensiveConditionPressure, 0.10));
+            weightedShares.Add((aggregate.DefensiveConditionPressure * 100.0 / totals.DefensiveConditionPressure, 0.15));
         }
         if (totals.DefensiveSupportWindows > 0)
         {
@@ -7459,11 +7459,13 @@ internal static class CombatReplayAnalysisBuilder
     {
         var providers = new List<(int ProviderId, string EffectName)>();
         var seenProviders = new HashSet<int>();
+        long attributionStart = Math.Max(log.LogData.LogStart, damageEvent.Time - 1);
+        long attributionEnd = Math.Min(log.LogData.LogEnd, damageEvent.Time + 1);
         if (damageEvent.IsBlind)
         {
             foreach (SingleActor squadPlayer in squadPlayers)
             {
-                if (damageEvent.CreditedFrom.GetBuffStatus(log, squadPlayer, Blind, Math.Max(log.LogData.LogStart, damageEvent.Time - 1), Math.Min(log.LogData.LogEnd, damageEvent.Time + 1)).Any(segment => segment.Value > 0)
+                if (damageEvent.CreditedFrom.GetBuffStatus(log, squadPlayer, Blind, attributionStart, attributionEnd).Any(segment => segment.Value > 0)
                     && seenProviders.Add(squadPlayer.UniqueID))
                 {
                     providers.Add((squadPlayer.UniqueID, "Blind"));
@@ -7474,14 +7476,7 @@ internal static class CombatReplayAnalysisBuilder
 
         if (damageEvent.IsBlocked)
         {
-            foreach (SingleActor squadPlayer in squadPlayers)
-            {
-                if (recipient.GetBuffStatus(log, squadPlayer, Aegis, Math.Max(log.LogData.LogStart, damageEvent.Time - 1), Math.Min(log.LogData.LogEnd, damageEvent.Time + 1)).Any(segment => segment.Value > 0)
-                    && seenProviders.Add(squadPlayer.UniqueID))
-                {
-                    providers.Add((squadPlayer.UniqueID, "Aegis"));
-                }
-            }
+            AddBuffSourceProviders(recipient, log, squadPlayers, [Aegis], "Aegis", attributionStart, attributionEnd, providers, seenProviders);
             return providers;
         }
 
@@ -7493,13 +7488,39 @@ internal static class CombatReplayAnalysisBuilder
         (string? effectName, string? _) = ClassifyNegatedHit(damageEvent, negatedEffectRanges, includeGenericAbsorbs: false);
         if (string.IsNullOrWhiteSpace(effectName)
             || string.Equals(effectName, "Unmatched absorb", StringComparison.OrdinalIgnoreCase)
-            || !seenProviders.Add(recipient.UniqueID))
+            || CombatReplayMitigationDefinitions.NegatedEffects.FirstOrDefault(
+                effect => string.Equals(effect.Name, effectName, StringComparison.OrdinalIgnoreCase)) is not { } trackedEffect)
         {
             return providers;
         }
 
-        providers.Add((recipient.UniqueID, effectName));
+        AddBuffSourceProviders(recipient, log, squadPlayers, trackedEffect.BuffIds, effectName, attributionStart, attributionEnd, providers, seenProviders);
         return providers;
+    }
+
+    private static void AddBuffSourceProviders(
+        SingleActor recipient,
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers,
+        IReadOnlyList<long> buffIds,
+        string effectName,
+        long start,
+        long end,
+        List<(int ProviderId, string EffectName)> providers,
+        HashSet<int> seenProviders)
+    {
+        foreach (SingleActor squadPlayer in squadPlayers)
+        {
+            foreach (long buffId in buffIds)
+            {
+                if (recipient.GetBuffStatus(log, squadPlayer, buffId, start, end).Any(segment => segment.Value > 0)
+                    && seenProviders.Add(squadPlayer.UniqueID))
+                {
+                    providers.Add((squadPlayer.UniqueID, effectName));
+                    break;
+                }
+            }
+        }
     }
 
     private static Dictionary<string, List<(long Start, long End)>> BuildNegatedEffectRanges(
