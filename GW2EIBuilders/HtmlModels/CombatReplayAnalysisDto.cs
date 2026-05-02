@@ -1289,6 +1289,7 @@ internal static class CombatReplayAnalysisBuilder
     private const double EnemyAnchorStableRadius = 520.0;
     private const double EnemyAnchorDistanceCap = 900.0;
     private const int EnemyAnchorMapCoordinateDigits = 3;
+    private const double PreventionConditionPressureDamageEquivalent = 10.0;
     private static readonly PositioningCriteria PositioningSettings = new(
         DesiredCommanderDistance: 240.0f,
         MingledCommanderDistance: 180.0f,
@@ -5649,7 +5650,9 @@ internal static class CombatReplayAnalysisBuilder
             [
                 BuildLaneMetric("barrierTotal", "Barrier", aggregate.BarrierTotal, "barrier"),
                 BuildLaneMetric("negatedDamageTotal", "Negated damage", aggregate.AttributedNegatedDamageTotal, "damage"),
-                BuildLaneMetric("petAbsorptionTotal", "Pet absorption", aggregate.PetMinionAbsorptionTotal, "damage")
+                BuildLaneMetric("petAbsorptionTotal", "Pet absorption", aggregate.PetMinionAbsorptionTotal, "damage"),
+                BuildLaneMetric("defensiveConditionPressure", "Defensive condition pressure", aggregate.DefensiveConditionPressure, "pressure"),
+                BuildLaneMetric("preventionValue", "Prevention value", ComputePreventionValue(aggregate, hasBarrierData), "damageEquivalent")
             ]);
     }
 
@@ -6403,6 +6406,20 @@ internal static class CombatReplayAnalysisBuilder
             magnitude += aggregate.DefensiveConditionPressure / 120.0;
         }
         return Math.Round(magnitude, 2);
+    }
+
+    private static double ComputePreventionValue(
+        CombatReplayPlayerEvaluationAggregate aggregate,
+        bool hasBarrierData)
+    {
+        double value = aggregate.AttributedNegatedDamageTotal
+            + aggregate.PetMinionAbsorptionTotal
+            + aggregate.DefensiveConditionPressure * PreventionConditionPressureDamageEquivalent;
+        if (hasBarrierData)
+        {
+            value += aggregate.BarrierTotal;
+        }
+        return Math.Round(value, 1);
     }
 
     private static CombatReplayPlayerEvaluationDetailSectionDto BuildDetailSection(
