@@ -136,10 +136,12 @@ internal class CombatReplayTeamAnalysisDto
     public int[][] TopDamageActorIds { get; set; } = [];
     public long[][] TopDamageValues { get; set; } = [];
     public int[] Strips { get; set; } = [];
+    public int[] Corrupts { get; set; } = [];
     public int[] StripPeakGap { get; set; } = [];
     public bool[] StripSynced { get; set; } = [];
     public int[][] TopStripActorIds { get; set; } = [];
     public int[][] TopStripValues { get; set; } = [];
+    public int[][] TopStripCorruptValues { get; set; } = [];
     public int[] TopTargetIds { get; set; } = [];
     public double[] TopTargetShare { get; set; } = [];
     public double[] TopThreeTargetShare { get; set; } = [];
@@ -156,6 +158,7 @@ internal class CombatReplayAnalysisBurstSummaryDto
     public long Time { get; set; }
     public long Damage { get; set; }
     public int Strips { get; set; }
+    public int Corrupts { get; set; }
     public int Downs { get; set; }
     public int DownsTotal { get; set; }
     public int Kills { get; set; }
@@ -169,6 +172,7 @@ internal class CombatReplayAnalysisAttackerTimelineDto
     public long[] Barrier { get; set; } = [];
     public int[] Cleanses { get; set; } = [];
     public int[] Strips { get; set; } = [];
+    public int[] Corrupts { get; set; } = [];
     public double[] TopTargetContribution { get; set; } = [];
     public int[] TargetsHit { get; set; } = [];
     public int[] NearbyTargets { get; set; } = [];
@@ -178,6 +182,7 @@ internal class CombatReplayAnalysisTargetTimelineDto
 {
     public long[] DamageTaken { get; set; } = [];
     public int[] StripsTaken { get; set; } = [];
+    public int[] CorruptsTaken { get; set; } = [];
     public int[] Attackers { get; set; } = [];
     public int[] NearbyAllies { get; set; } = [];
     public int[][] TopAttackerIds { get; set; } = [];
@@ -935,6 +940,7 @@ internal class CombatReplayPlayerFightImpactLaneDto
     public double DemandWeightPercent { get; set; }
     public double ImpactScore { get; set; }
     public string EvidenceLine { get; set; } = "";
+    public string ContextLine { get; set; } = "";
 }
 
 internal class CombatReplaySpecCapabilityDto
@@ -1107,6 +1113,7 @@ internal class CombatReplayPlayerEvaluationAggregate
     public double OffensiveConditionPressure { get; set; }
     public double ControlConditionPressure { get; set; }
     public int StripsTotal { get; set; }
+    public int StripCorruptsTotal { get; set; }
     public int StripDownContribution { get; set; }
     public double StripDownContributionTime { get; set; }
     public long HealingTotal { get; set; }
@@ -1283,6 +1290,7 @@ internal static class CombatReplayAnalysisBuilder
     private const int BucketSize = 1000;
     private const double MeaningfulContributionThreshold = 0.10;
     private const float RangeThreshold = 1200.0f;
+    private const long CorruptMatchWindow = 350;
     private const int EnemyAnchorMinimumEnemies = 5;
     private const int EnemyAnchorMinimumCoreEnemies = 4;
     private const double EnemyAnchorCoreShare = 0.55;
@@ -1342,6 +1350,21 @@ internal static class CombatReplayAnalysisBuilder
         Swiftness,
         Superspeed,
     ];
+    private static readonly IReadOnlyDictionary<long, long> CorruptConditionByBoonId = new Dictionary<long, long>
+    {
+        [Aegis] = Burning,
+        [Alacrity] = Chilled,
+        [Fury] = Blind,
+        [Might] = Weakness,
+        [Protection] = Vulnerability,
+        [Quickness] = Slow,
+        [Regeneration] = Poison,
+        [Resistance] = Chilled,
+        [Resolution] = Confusion,
+        [Stability] = Fear,
+        [Swiftness] = Crippled,
+        [Vigor] = Bleeding,
+    };
     private static readonly IReadOnlyList<long> DefensiveConditionBuffIds =
     [
         Weakness,
@@ -1389,7 +1412,7 @@ internal static class CombatReplayAnalysisBuilder
     private readonly record struct HealingRecord(long Time, int AttackerUniqueId, int Healing);
     private readonly record struct BarrierRecord(long Time, int AttackerUniqueId, int Barrier);
     private readonly record struct CleanseRecord(long Time, int AttackerUniqueId);
-    private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId);
+    private readonly record struct StripRecord(long Time, int TargetUniqueId, int AttackerUniqueId, bool IsCorrupt);
     private readonly record struct EvaluationWindow(long Start, long End);
     private readonly record struct FightDiagnosisSwing(string VictimSide, long Start, long End, int VictimDowns, int OpposingDowns, int VictimKills, int OpposingKills, double Score);
     private readonly record struct FightDiagnosisPositioningSnapshot(int Index, long Time, int Eligible, int InPosition, int TooFar, int LateralRisk, int Overextended, int EngagedEnemies, double InPositionRate, double TooFarRate, double LateralRiskRate, double OverextendedRate, double Score);
@@ -1625,10 +1648,12 @@ internal static class CombatReplayAnalysisBuilder
             TopDamageActorIds = new int[snapshotCount][],
             TopDamageValues = new long[snapshotCount][],
             Strips = new int[snapshotCount],
+            Corrupts = new int[snapshotCount],
             StripPeakGap = new int[snapshotCount],
             StripSynced = new bool[snapshotCount],
             TopStripActorIds = new int[snapshotCount][],
             TopStripValues = new int[snapshotCount][],
+            TopStripCorruptValues = new int[snapshotCount][],
             TopTargetIds = new int[snapshotCount],
             TopTargetShare = new double[snapshotCount],
             TopThreeTargetShare = new double[snapshotCount],
@@ -1645,6 +1670,7 @@ internal static class CombatReplayAnalysisBuilder
                     Barrier = new long[snapshotCount],
                     Cleanses = new int[snapshotCount],
                     Strips = new int[snapshotCount],
+                    Corrupts = new int[snapshotCount],
                     TopTargetContribution = new double[snapshotCount],
                     TargetsHit = new int[snapshotCount],
                     NearbyTargets = new int[snapshotCount],
@@ -1655,6 +1681,7 @@ internal static class CombatReplayAnalysisBuilder
                 {
                     DamageTaken = new long[snapshotCount],
                     StripsTaken = new int[snapshotCount],
+                    CorruptsTaken = new int[snapshotCount],
                     Attackers = new int[snapshotCount],
                     NearbyAllies = new int[snapshotCount],
                     TopAttackerIds = new int[snapshotCount][],
@@ -1793,9 +1820,12 @@ internal static class CombatReplayAnalysisBuilder
             }
 
             var stripByAttacker = new Dictionary<int, int>();
+            var corruptByAttacker = new Dictionary<int, int>();
             var stripByTarget = new Dictionary<int, int>();
+            var corruptByTarget = new Dictionary<int, int>();
             var stripBuckets = new int[3];
             var stripCount = 0;
+            var corruptCount = 0;
             var healingByAttacker = new Dictionary<int, long>();
             var barrierByAttacker = new Dictionary<int, long>();
             var cleanseByAttacker = new Dictionary<int, int>();
@@ -1822,6 +1852,12 @@ internal static class CombatReplayAnalysisBuilder
                 stripCount++;
                 stripByAttacker[strip.AttackerUniqueId] = stripByAttacker.GetValueOrDefault(strip.AttackerUniqueId) + 1;
                 stripByTarget[strip.TargetUniqueId] = stripByTarget.GetValueOrDefault(strip.TargetUniqueId) + 1;
+                if (strip.IsCorrupt)
+                {
+                    corruptCount++;
+                    corruptByAttacker[strip.AttackerUniqueId] = corruptByAttacker.GetValueOrDefault(strip.AttackerUniqueId) + 1;
+                    corruptByTarget[strip.TargetUniqueId] = corruptByTarget.GetValueOrDefault(strip.TargetUniqueId) + 1;
+                }
                 var bucketIndex = ComputeBucketIndex(strip.Time, windowStart);
                 stripBuckets[bucketIndex]++;
             }
@@ -1859,12 +1895,14 @@ internal static class CombatReplayAnalysisBuilder
             result.TopDamageActorIds[snapshotIndex] = [.. topDamageAttackers.Select(pair => pair.Key)];
             result.TopDamageValues[snapshotIndex] = [.. topDamageAttackers.Select(pair => pair.Value)];
             result.Strips[snapshotIndex] = stripCount;
+            result.Corrupts[snapshotIndex] = corruptCount;
             var topStripAttackers = stripByAttacker
                 .OrderByDescending(pair => pair.Value)
                 .Take(5)
                 .ToArray();
             result.TopStripActorIds[snapshotIndex] = [.. topStripAttackers.Select(pair => pair.Key)];
             result.TopStripValues[snapshotIndex] = [.. topStripAttackers.Select(pair => pair.Value)];
+            result.TopStripCorruptValues[snapshotIndex] = [.. topStripAttackers.Select(pair => corruptByAttacker.GetValueOrDefault(pair.Key))];
             result.TopTargetIds[snapshotIndex] = topTargetId;
             result.TopTargetShare[snapshotIndex] = totalDamage > 0 ? Math.Round(topTargetDamage * 100.0 / totalDamage, 1) : 0;
             result.TopThreeTargetShare[snapshotIndex] = totalDamage > 0 ? Math.Round(topThreeDamage * 100.0 / totalDamage, 1) : 0;
@@ -1890,6 +1928,7 @@ internal static class CombatReplayAnalysisBuilder
                 timeline.Barrier[snapshotIndex] = barrierByAttacker.GetValueOrDefault(attacker.UniqueID);
                 timeline.Cleanses[snapshotIndex] = cleanseByAttacker.GetValueOrDefault(attacker.UniqueID);
                 timeline.Strips[snapshotIndex] = stripByAttacker.GetValueOrDefault(attacker.UniqueID);
+                timeline.Corrupts[snapshotIndex] = corruptByAttacker.GetValueOrDefault(attacker.UniqueID);
                 timeline.TargetsHit[snapshotIndex] = attackerTargetsHit.TryGetValue(attacker.UniqueID, out var hitTargets) ? hitTargets.Count : 0;
 
                 if (topTargetId != 0 &&
@@ -1906,6 +1945,7 @@ internal static class CombatReplayAnalysisBuilder
                 var timeline = result.Targets[target.UniqueID];
                 timeline.DamageTaken[snapshotIndex] = damageByTarget.GetValueOrDefault(target.UniqueID);
                 timeline.StripsTaken[snapshotIndex] = stripByTarget.GetValueOrDefault(target.UniqueID);
+                timeline.CorruptsTaken[snapshotIndex] = corruptByTarget.GetValueOrDefault(target.UniqueID);
                 timeline.Attackers[snapshotIndex] = targetAttackers.TryGetValue(target.UniqueID, out var attackers) ? attackers.Count : 0;
 
                 if (damageByTargetByAttacker.TryGetValue(target.UniqueID, out var attackerDamage))
@@ -2706,6 +2746,7 @@ internal static class CombatReplayAnalysisBuilder
                 Time = times[bestIndex],
                 Damage = analysis.Damage[bestIndex],
                 Strips = analysis.Strips[bestIndex],
+                Corrupts = analysis.Corrupts[bestIndex],
                 Downs = analysis.Downs[bestIndex],
                 DownsTotal = analysis.DownsTotal[bestIndex],
                 Kills = analysis.Kills[bestIndex],
@@ -3638,7 +3679,7 @@ internal static class CombatReplayAnalysisBuilder
                 EndTime = burst.Time,
                 EndTimeLabel = FormatTime(burst.Time),
                 Tone = tone,
-                Summary = $"{FormatWholeNumber(burst.Damage)} damage, {burst.Downs} downs, {burst.Strips} strips",
+                Summary = $"{FormatWholeNumber(burst.Damage)} damage, {burst.Downs} downs, {FormatStripCountWithCorrupts(burst.Strips, burst.Corrupts)} strips",
                 Detail = $"{label} peak at {FormatTime(burst.Time)}.",
             };
         }
@@ -3670,7 +3711,7 @@ internal static class CombatReplayAnalysisBuilder
                 EndTime = times[bestIndex],
                 EndTimeLabel = FormatTime(times[bestIndex]),
                 Tone = tone,
-                Summary = $"{FormatWholeNumber(analysis.Damage[bestIndex])} damage, {analysis.Downs[bestIndex]} downs, {analysis.Strips[bestIndex]} strips",
+                Summary = $"{FormatWholeNumber(analysis.Damage[bestIndex])} damage, {analysis.Downs[bestIndex]} downs, {FormatStripCountWithCorrupts(analysis.Strips[bestIndex], analysis.Corrupts[bestIndex])} strips",
                 Detail = $"{label} peak at {FormatTime(times[bestIndex])}.",
             };
         }
@@ -3693,7 +3734,7 @@ internal static class CombatReplayAnalysisBuilder
                 EndTime = burst.Time,
                 EndTimeLabel = FormatTime(burst.Time),
                 Tone = tone,
-                Summary = $"{FormatWholeNumber(burst.Damage)} damage, {burst.Downs} downs, {burst.Strips} strips",
+                Summary = $"{FormatWholeNumber(burst.Damage)} damage, {burst.Downs} downs, {FormatStripCountWithCorrupts(burst.Strips, burst.Corrupts)} strips",
                 Detail = $"{label} peak at {FormatTime(burst.Time)}.",
             };
         }
@@ -3712,7 +3753,7 @@ internal static class CombatReplayAnalysisBuilder
             EndTime = times[bestIndex],
             EndTimeLabel = FormatTime(times[bestIndex]),
             Tone = tone,
-            Summary = $"{FormatWholeNumber(analysis.Damage[bestIndex])} damage, {analysis.Downs[bestIndex]} downs, {analysis.Strips[bestIndex]} strips",
+            Summary = $"{FormatWholeNumber(analysis.Damage[bestIndex])} damage, {analysis.Downs[bestIndex]} downs, {FormatStripCountWithCorrupts(analysis.Strips[bestIndex], analysis.Corrupts[bestIndex])} strips",
             Detail = $"{label} peak at {FormatTime(times[bestIndex])}.",
         };
     }
@@ -3769,6 +3810,7 @@ internal static class CombatReplayAnalysisBuilder
         Dictionary<int, PlayerAttributedNegationSummary> attributedNegationContributions = BuildPlayerAttributedNegationSummaries(log, squadPlayers);
         Dictionary<int, PlayerRecoveryContributionSummary> squadRecoveryContributions = BuildPlayerRecoveryContributionSummaries(
             [.. eventAnalysis.Recovered.Events.Where(evt => !evt.IsEnemy && evt.UsesSupportView)]);
+        Dictionary<AgentItem, int> corruptsByAttacker = CountBoonCorruptsByAttacker(log, 0, log.LogData.LogEnd, squadPlayers, hostileTargets);
         var aggregates = new List<CombatReplayPlayerEvaluationAggregate>(squadPlayers.Count);
         foreach (SingleActor player in squadPlayers)
         {
@@ -3789,6 +3831,7 @@ internal static class CombatReplayAnalysisBuilder
                 enemyKillContributions,
                 attributedNegationContributions,
                 squadRecoveryContributions,
+                corruptsByAttacker,
                 times));
         }
 
@@ -3825,6 +3868,7 @@ internal static class CombatReplayAnalysisBuilder
         IReadOnlyDictionary<int, PlayerEventContributionSummary> enemyKillContributions,
         IReadOnlyDictionary<int, PlayerAttributedNegationSummary> attributedNegationContributions,
         IReadOnlyDictionary<int, PlayerRecoveryContributionSummary> squadRecoveryContributions,
+        IReadOnlyDictionary<AgentItem, int> corruptsByAttacker,
         IReadOnlyList<long> times)
     {
         CombatReplayAnalysisAttackerTimelineDto? attackerTimeline = squadAnalysis.Attackers.GetValueOrDefault(player.UniqueID);
@@ -3891,6 +3935,7 @@ internal static class CombatReplayAnalysisBuilder
             OffensiveConditionPressure = Math.Round(offensiveConditionContribution.Values.Sum(), 1),
             ControlConditionPressure = Math.Round(controlConditionContribution.Values.Sum(), 1),
             StripsTotal = supportStats.BoonStripCount,
+            StripCorruptsTotal = corruptsByAttacker.GetValueOrDefault(player.EnglobingAgentItem),
             StripDownContribution = supportStats.BoonStripDownContribution,
             StripDownContributionTime = supportStats.BoonStripDownContributionTime,
             HealingTotal = wholeFightHealing,
@@ -4089,6 +4134,7 @@ internal static class CombatReplayAnalysisBuilder
             OffensiveConditionPressure = Math.Round(players.Sum(player => player.OffensiveConditionPressure), 1),
             ControlConditionPressure = Math.Round(players.Sum(player => player.ControlConditionPressure), 1),
             StripsTotal = players.Sum(player => player.StripsTotal),
+            StripCorruptsTotal = players.Sum(player => player.StripCorruptsTotal),
             StripDownContribution = players.Sum(player => player.StripDownContribution),
             StripDownContributionTime = Math.Round(players.Sum(player => player.StripDownContributionTime), 1),
             HealingTotal = players.Sum(player => player.HealingTotal),
@@ -4254,7 +4300,7 @@ internal static class CombatReplayAnalysisBuilder
             activeSharePercent,
             aggregate => GetSpecStripRawAmount(aggregate, totals),
             perPlayerMaximums.GetValueOrDefault("strip"),
-            $"{FormatWholeNumber(spec.Aggregate.StripsTotal)} strips and {FormatWholeNumber(spec.Aggregate.StripDownContribution)} down-linked strips show where {spec.Label} cracked enemy boon cover.");
+            $"{FormatStripCountWithCorrupts(spec.Aggregate.StripsTotal, spec.Aggregate.StripCorruptsTotal)} strips and {FormatWholeNumber(spec.Aggregate.StripDownContribution)} down-linked strips show where {spec.Label} cracked enemy boon cover.");
     }
 
     private static SpecLaneSnapshot BuildSpecControlLaneSnapshot(
@@ -5410,7 +5456,7 @@ internal static class CombatReplayAnalysisBuilder
         [
             BuildDetailSection("Strip Metrics",
             [
-                BuildDetailEntry("Timed strips", FormatWholeNumber(aggregate.StripsTotal), $"{FormatOneDecimal(aggregate.StripDownContributionTime)}s down-linked strip time"),
+                BuildDetailEntry("Timed strips", FormatStripCountWithCorrupts(aggregate.StripsTotal, aggregate.StripCorruptsTotal), $"{FormatOneDecimal(aggregate.StripDownContributionTime)}s down-linked strip time"),
                 BuildDetailEntry("Down-linked strips", FormatWholeNumber(aggregate.StripDownContribution), ""),
                 BuildDetailEntry("Strip windows", BuildPluralizedLabel(aggregate.ControlContributionWindows, "control window", "control windows"), $"{aggregate.ControlWindowsTotal} total")
             ])
@@ -5424,13 +5470,14 @@ internal static class CombatReplayAnalysisBuilder
             aggregate.ControlWindowsTotal,
             "strip windows",
             GetRateBand(strengthPercent),
-            $"{FormatWholeNumber(aggregate.StripsTotal)} strips and {FormatWholeNumber(aggregate.StripDownContribution)} down-linked strips cracked enemy boons in key exchanges.",
+            $"{FormatStripCountWithCorrupts(aggregate.StripsTotal, aggregate.StripCorruptsTotal)} strips and {FormatWholeNumber(aggregate.StripDownContribution)} down-linked strips cracked enemy boons in key exchanges.",
             true,
             "Strip Detail",
             "Strip highlights enemy boon removal, with extra weight on strips that fed downs.",
             detailSections,
             [
                 BuildLaneMetric("stripsTotal", "Strips", aggregate.StripsTotal, "count"),
+                BuildLaneMetric("stripCorruptsTotal", "Corrupts", aggregate.StripCorruptsTotal, "count"),
                 BuildLaneMetric("stripDownContribution", "Down-linked strips", aggregate.StripDownContribution, "count"),
                 BuildLaneMetric("stripDownContributionTime", "Down-linked strip time", aggregate.StripDownContributionTime, "seconds")
             ]);
@@ -5845,6 +5892,7 @@ internal static class CombatReplayAnalysisBuilder
                     DemandWeightPercent = Math.Round(demandWeightPercent, 1),
                     ImpactScore = Math.Round(impactScore, 1),
                     EvidenceLine = $"{demand.DemandLabel} demand: {demand.EvidenceLine}",
+                    ContextLine = BuildFightImpactLaneContext(lane),
                 };
             })
             .OrderByDescending(lane => lane.ImpactScore)
@@ -6002,6 +6050,18 @@ internal static class CombatReplayAnalysisBuilder
             return "No demand-adjusted contribution stood out in this fight.";
         }
         return $"Demand-adjusted value came through {string.Join(", ", topLanes)}.";
+    }
+
+    private static string BuildFightImpactLaneContext(PlayerLaneSnapshot lane)
+    {
+        if (lane.Key != "strip")
+        {
+            return "";
+        }
+
+        int strips = (int)Math.Round(lane.Metrics.FirstOrDefault(metric => metric.Key == "stripsTotal")?.Value ?? 0.0);
+        int corrupts = (int)Math.Round(lane.Metrics.FirstOrDefault(metric => metric.Key == "stripCorruptsTotal")?.Value ?? 0.0);
+        return $"{FormatStripCountWithCorrupts(strips, corrupts)} strips";
     }
 
     private static string GetFightImpactLabel(double score)
@@ -10924,6 +10984,11 @@ internal static class CombatReplayAnalysisBuilder
         return value.ToString("N0", CultureInfo.InvariantCulture);
     }
 
+    private static string FormatStripCountWithCorrupts(int strips, int corrupts)
+    {
+        return $"{FormatWholeNumber(strips)} ({FormatWholeNumber(corrupts)})";
+    }
+
     private static string FormatOneDecimal(double value)
     {
         return Math.Round(value, 1).ToString("0.0", CultureInfo.InvariantCulture);
@@ -11053,6 +11118,16 @@ internal static class CombatReplayAnalysisBuilder
         var result = new List<StripRecord>();
         foreach (var target in context.Targets)
         {
+            Dictionary<long, List<BuffApplyEvent>> corruptConditionAppliesById = CorruptConditionByBoonId.Values
+                .Distinct()
+                .ToDictionary(
+                    conditionId => conditionId,
+                    conditionId => log.CombatData
+                        .GetBuffApplyDataByIDByDst(conditionId, target.EnglobingAgentItem)
+                        .OfType<BuffApplyEvent>()
+                        .Where(applyEvent => !applyEvent.Initial && applyEvent.Time >= target.FirstAware && applyEvent.Time <= target.LastAware)
+                        .OrderBy(applyEvent => applyEvent.Time)
+                        .ToList());
             foreach (var stripEvent in log.CombatData.GetBuffRemoveAllDataByDst(target.EnglobingAgentItem))
             {
                 if (stripEvent.Time < target.FirstAware || stripEvent.Time > target.LastAware)
@@ -11067,11 +11142,103 @@ internal static class CombatReplayAnalysisBuilder
                 {
                     continue;
                 }
-                result.Add(new StripRecord(stripEvent.Time, target.UniqueID, attackerUniqueId));
+                result.Add(new StripRecord(
+                    stripEvent.Time,
+                    target.UniqueID,
+                    attackerUniqueId,
+                    IsCorruptStrip(stripEvent, corruptConditionAppliesById)));
             }
         }
         result.Sort((left, right) => left.Time.CompareTo(right.Time));
         return result;
+    }
+
+    internal static int CountBoonCorrupts(
+        ParsedEvtcLog log,
+        long start,
+        long end,
+        IReadOnlyList<SingleActor> attackers,
+        IReadOnlyList<SingleActor> targets)
+    {
+        return CountBoonCorruptsByAttacker(log, start, end, attackers, targets).Values.Sum();
+    }
+
+    internal static Dictionary<AgentItem, int> CountBoonCorruptsByAttacker(
+        ParsedEvtcLog log,
+        long start,
+        long end,
+        IReadOnlyList<SingleActor> attackers,
+        IReadOnlyList<SingleActor> targets)
+    {
+        if (attackers.Count == 0 || targets.Count == 0 || end < start)
+        {
+            return [];
+        }
+
+        var attackerAgents = attackers
+            .Select(actor => actor.EnglobingAgentItem)
+            .ToHashSet();
+        var corruptsByAttacker = new Dictionary<AgentItem, int>();
+        foreach (var target in targets)
+        {
+            long targetStart = Math.Max(start, target.FirstAware);
+            long targetEnd = Math.Min(end, target.LastAware);
+            if (targetEnd < targetStart)
+            {
+                continue;
+            }
+
+            Dictionary<long, List<BuffApplyEvent>> corruptConditionAppliesById = CorruptConditionByBoonId.Values
+                .Distinct()
+                .ToDictionary(
+                    conditionId => conditionId,
+                    conditionId => log.CombatData
+                        .GetBuffApplyDataByIDByDst(conditionId, target.EnglobingAgentItem)
+                        .OfType<BuffApplyEvent>()
+                        .Where(applyEvent => !applyEvent.Initial && applyEvent.Time >= targetStart && applyEvent.Time <= targetEnd)
+                        .OrderBy(applyEvent => applyEvent.Time)
+                        .ToList());
+
+            foreach (var stripEvent in log.CombatData.GetBuffRemoveAllDataByDst(target.EnglobingAgentItem))
+            {
+                if (stripEvent.Time < targetStart || stripEvent.Time > targetEnd)
+                {
+                    continue;
+                }
+                if (!CorruptConditionByBoonId.ContainsKey(stripEvent.BuffID) ||
+                    stripEvent.CreditedBy.IsUnknown ||
+                    !attackerAgents.Contains(stripEvent.CreditedBy))
+                {
+                    continue;
+                }
+                if (IsCorruptStrip(stripEvent, corruptConditionAppliesById))
+                {
+                    corruptsByAttacker[stripEvent.CreditedBy] = corruptsByAttacker.GetValueOrDefault(stripEvent.CreditedBy) + 1;
+                }
+            }
+        }
+
+        return corruptsByAttacker;
+    }
+
+    private static bool IsCorruptStrip(
+        BuffRemoveAllEvent stripEvent,
+        IReadOnlyDictionary<long, List<BuffApplyEvent>> corruptConditionAppliesById)
+    {
+        if (!CorruptConditionByBoonId.TryGetValue(stripEvent.BuffID, out long expectedConditionId) ||
+            !corruptConditionAppliesById.TryGetValue(expectedConditionId, out List<BuffApplyEvent>? conditionApplyEvents))
+        {
+            return false;
+        }
+
+        return conditionApplyEvents.Any(applyEvent =>
+            Math.Abs(applyEvent.Time - stripEvent.Time) <= CorruptMatchWindow &&
+            IsSameCreditedSource(stripEvent, applyEvent));
+    }
+
+    private static bool IsSameCreditedSource(BuffEvent left, BuffEvent right)
+    {
+        return !left.CreditedBy.IsUnknown && !right.CreditedBy.IsUnknown && left.CreditedBy == right.CreditedBy;
     }
 
     private static void PopulateRangeCounts(

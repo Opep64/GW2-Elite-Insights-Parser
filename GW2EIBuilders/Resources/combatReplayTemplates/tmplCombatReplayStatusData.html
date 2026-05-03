@@ -78,6 +78,9 @@
             formatCount: function (value) {
                 return Number(value || 0).toLocaleString();
             },
+            formatStripCount: function (strips, corrupts) {
+                return this.formatCount(strips) + " (" + this.formatCount(corrupts) + ")";
+            },
             formatPercent: function (value) {
                 return (Number(value || 0)).toFixed(1) + "%";
             },
@@ -690,7 +693,7 @@
                     <span class="combat-replay-wvw-analysis-burst-detail">{{formatCount(burst.damage)}} damage</span>
                     <span class="combat-replay-wvw-analysis-burst-detail">{{burst.downs}} ({{burst.downsTotal}}) downs</span>
                     <span class="combat-replay-wvw-analysis-burst-detail">{{burst.kills}} ({{burst.killsTotal}}) kills</span>
-                    <span class="combat-replay-wvw-analysis-burst-detail">{{burst.strips}} strips</span>
+                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatStripCount(burst.strips, burst.corrupts)}} strips</span>
                 </button>
             </div>
             <div class="combat-replay-wvw-analysis-card-title">{{teamLabel}} Now (last 3s)</div>
@@ -713,7 +716,7 @@
                 <div class="combat-replay-wvw-analysis-metric">
                     <div class="combat-replay-wvw-analysis-label">Strip to burst</div>
                     <div class="combat-replay-wvw-analysis-value">
-                        {{formatCount(strips)}} strips
+                        {{formatStripCount(strips, corrupts)}} strips
                         <span class="combat-replay-wvw-analysis-pill" :class="stripSynced ? 'combat-replay-wvw-analysis-pill-success' : 'combat-replay-wvw-analysis-pill-muted'">
                             {{stripSynced ? "synced" : "not synced"}}
                         </span>
@@ -723,7 +726,7 @@
                         <button v-for="(entry, index) in topStripEntries" :key="teamkey + '-top-strip-' + entry.uniqueId + '-' + index" type="button" class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button" @click="selectReplayActor(entry.uniqueId)">
                             <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
                             <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
-                            <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(entry.value)}} strips</span>
+                            <span class="combat-replay-wvw-analysis-top-actor-value">{{formatStripCount(entry.value, entry.corrupts)}} strips</span>
                         </button>
                     </div>
                 </div>
@@ -781,6 +784,9 @@
             strips: function () {
                 return this.getSeriesValue(this.currentTeam ? this.currentTeam.strips : null, this.snapshotIndex);
             },
+            corrupts: function () {
+                return this.getSeriesValue(this.currentTeam ? this.currentTeam.corrupts : null, this.snapshotIndex);
+            },
             topDamageEntries: function () {
                 if (!this.currentTeam) {
                     return [];
@@ -811,6 +817,7 @@
                 }
                 const actorIds = this.getSeriesArrayValue(this.currentTeam.topStripActorIds, this.snapshotIndex);
                 const values = this.getSeriesArrayValue(this.currentTeam.topStripValues, this.snapshotIndex);
+                const corruptValues = this.getSeriesArrayValue(this.currentTeam.topStripCorruptValues, this.snapshotIndex);
                 return actorIds.map((uniqueId, index) => {
                     const actor = this.getActorByUniqueId(uniqueId);
                     if (!actor) {
@@ -820,6 +827,7 @@
                         uniqueId: uniqueId,
                         name: actor.name,
                         value: values[index] || 0,
+                        corrupts: corruptValues[index] || 0,
                     };
                 }).filter(entry => entry != null);
             },
@@ -872,7 +880,7 @@
                     </div>
                     <div class="combat-replay-wvw-analysis-metric">
                         <div class="combat-replay-wvw-analysis-label">Outgoing boon strips</div>
-                        <div class="combat-replay-wvw-analysis-value">{{formatCount(attackerStrips)}}</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatStripCount(attackerStrips, attackerCorrupts)}}</div>
                     </div>
                     <div class="combat-replay-wvw-analysis-metric">
                         <div class="combat-replay-wvw-analysis-label">Current focus contribution</div>
@@ -903,7 +911,7 @@
                     </div>
                     <div class="combat-replay-wvw-analysis-metric">
                         <div class="combat-replay-wvw-analysis-label">Incoming boon strips</div>
-                        <div class="combat-replay-wvw-analysis-value">{{formatCount(targetStripsTaken)}}</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatStripCount(targetStripsTaken, targetCorruptsTaken)}}</div>
                     </div>
                     <div class="combat-replay-wvw-analysis-metric">
                         <div class="combat-replay-wvw-analysis-label">Attackers</div>
@@ -964,6 +972,9 @@
             attackerStrips: function () {
                 return this.selectedAttackerTimeline ? this.getSeriesValue(this.selectedAttackerTimeline.strips, this.snapshotIndex) : 0;
             },
+            attackerCorrupts: function () {
+                return this.selectedAttackerTimeline ? this.getSeriesValue(this.selectedAttackerTimeline.corrupts, this.snapshotIndex) : 0;
+            },
             attackerTopTargetContribution: function () {
                 return this.selectedAttackerTimeline ? this.getSeriesValue(this.selectedAttackerTimeline.topTargetContribution, this.snapshotIndex) : 0;
             },
@@ -978,6 +989,9 @@
             },
             targetStripsTaken: function () {
                 return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.stripsTaken, this.snapshotIndex) : 0;
+            },
+            targetCorruptsTaken: function () {
+                return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.corruptsTaken, this.snapshotIndex) : 0;
             },
             targetAttackers: function () {
                 return this.selectedTargetTimeline ? this.getSeriesValue(this.selectedTargetTimeline.attackers, this.snapshotIndex) : 0;
@@ -1046,7 +1060,7 @@
                         <ul class="combat-replay-overview-help-list">
                             <li><strong>Burst strength</strong>: total damage in the last 3 seconds, with the strong/normal/weak label based on same-fight percentiles</li>
                             <li><strong>Burst strength badge rules</strong>: <strong>weak</strong> is at or below the 25th percentile of 3-second damage windows in the same fight, <strong>strong</strong> is at or above the 75th percentile, and everything in between is <strong>normal</strong></li>
-                            <li><strong>Strip to burst</strong>: total boon strips in the same 3-second window plus whether strip and damage peaks align closely enough to count as synced</li>
+                            <li><strong>Strip to burst</strong>: total boon strips in the same 3-second window, with corrupts shown in parentheses, plus whether strip and damage peaks align closely enough to count as synced</li>
                             <li><strong>Strip to burst badge rules</strong>: <strong>synced</strong> requires strips in the current window, strip volume at or above the 75th percentile of 3-second strip windows in the same fight, and a peak gap of 1000 ms or less; otherwise it is <strong>not synced</strong></li>
                             <li><strong>Peak gap</strong>: the time distance between the peak strip bucket and peak damage bucket inside the current 3-second window</li>
                             <li><strong>Focus fire</strong>: how much damage is concentrated onto the top target and top 3 targets, plus how many attackers made meaningful top-target contributions</li>
@@ -4895,6 +4909,7 @@
                                     <span class="combat-replay-fight-demand-pill-label">{{lane.label}}</span>
                                     <span class="combat-replay-fight-demand-pill-value">{{formatAmount(lane.impactScore)}}/{{formatAmount(lane.demandWeightPercent)}} pts</span>
                                     <span class="combat-replay-fight-demand-pill-answer combat-replay-fight-demand-pill-answer-neutral">{{formatPercent(lane.strengthPercent)}} strength / {{lane.demandLabel}} demand</span>
+                                    <span v-if="lane.contextLine" class="combat-replay-fight-demand-pill-answer combat-replay-fight-demand-pill-answer-neutral">{{lane.contextLine}}</span>
                                 </div>
                             </div>
                         </div>
@@ -4977,7 +4992,7 @@
                         </div>
                         <div class="combat-replay-wvw-analysis-metric">
                             <div class="combat-replay-wvw-analysis-label">Boon strips</div>
-                            <div class="combat-replay-wvw-analysis-value">{{formatCount(playerStrips)}}</div>
+                            <div class="combat-replay-wvw-analysis-value">{{formatStripCount(playerStrips, playerCorrupts)}}</div>
                         </div>
                         <div class="combat-replay-wvw-analysis-metric">
                             <div class="combat-replay-wvw-analysis-label">Healing</div>
@@ -5325,6 +5340,9 @@
             },
             playerStrips: function () {
                 return this.selectedBurstTimeline ? this.getSeriesValue(this.selectedBurstTimeline.strips, this.snapshotIndex) : 0;
+            },
+            playerCorrupts: function () {
+                return this.selectedBurstTimeline ? this.getSeriesValue(this.selectedBurstTimeline.corrupts, this.snapshotIndex) : 0;
             },
             playerHealing: function () {
                 return this.selectedBurstTimeline ? this.getSeriesValue(this.selectedBurstTimeline.healing, this.snapshotIndex) : 0;

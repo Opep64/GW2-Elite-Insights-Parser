@@ -903,8 +903,11 @@ public sealed class WvWAnalystBuilder
             Damage = side.Damage,
             DamageTaken = side.DamageTaken,
             Strips = side.BoonStrips,
+            Corrupts = side.BoonCorrupts,
+            CorruptPercent = ComputePercent(side.BoonCorrupts, side.BoonStrips),
             ReceivedCrowdControl = side.ReceivedCrowdControl,
             StripsPerMinute = side.StripsPerMinute,
+            CorruptsPerMinute = side.CorruptsPerMinute,
             CleansesPerMinute = side.CleansesPerMinute,
         };
     }
@@ -1049,8 +1052,15 @@ public sealed class WvWAnalystBuilder
         CombatReplayAnalysisDto? combatReplayAnalysis,
         int commanderId)
     {
+        Dictionary<AgentItem, int> corruptsByAttacker = CombatReplayAnalysisBuilder.CountBoonCorruptsByAttacker(
+            log,
+            phase.Start,
+            phase.End,
+            squadPlayers,
+            hostilePlayerTargets);
+
         return squadPlayers
-            .Select(player => BuildPlayerSummary(log, phase, player, hostilePlayerTargets, combatReplayAnalysis, player.UniqueID == commanderId))
+            .Select(player => BuildPlayerSummary(log, phase, player, hostilePlayerTargets, combatReplayAnalysis, corruptsByAttacker, player.UniqueID == commanderId))
             .OrderByDescending(player => player.IsCommander)
             .ThenBy(player => player.Group)
             .ThenBy(player => player.Character, StringComparer.OrdinalIgnoreCase)
@@ -1063,6 +1073,7 @@ public sealed class WvWAnalystBuilder
         SingleActor player,
         IReadOnlyList<SingleActor> hostilePlayerTargets,
         CombatReplayAnalysisDto? combatReplayAnalysis,
+        IReadOnlyDictionary<AgentItem, int> corruptsByAttacker,
         bool isCommander)
     {
         SupportStatistics support = player.GetToAllySupportStats(log, phase.Start, phase.End);
@@ -1081,6 +1092,7 @@ public sealed class WvWAnalystBuilder
 
         CombatReplayPlayerEvaluationDto? evaluation = TryGetPlayerEvaluation(combatReplayAnalysis, player.UniqueID);
         CombatReplayPositioningPlayerTimelineDto? positioningTimeline = TryGetPositioningTimeline(combatReplayAnalysis, player.UniqueID);
+        int corrupts = corruptsByAttacker.GetValueOrDefault(player.EnglobingAgentItem);
 
         return new WvWAnalystPlayerSummaryDto
         {
@@ -1098,6 +1110,8 @@ public sealed class WvWAnalystBuilder
             Downs = downs,
             Kills = kills,
             Strips = support.BoonStripCount,
+            Corrupts = corrupts,
+            CorruptPercent = ComputePercent(corrupts, support.BoonStripCount),
             OutgoingCleanses = support.ConditionCleanseCount,
             Healing = log.CombatData.HasEXTHealing ? player.EXTHealing.GetOutgoingHealStats(null, log, phase.Start, phase.End).Healing : 0,
             Barrier = log.CombatData.HasEXTBarrier ? player.EXTBarrier.GetOutgoingBarrierStats(null, log, phase.Start, phase.End).Barrier : 0,
@@ -1142,6 +1156,12 @@ public sealed class WvWAnalystBuilder
     {
         double durationSeconds = Math.Max(phase.DurationInMS / 1000.0, 1.0);
         double durationMinutes = durationSeconds / 60.0;
+        Dictionary<AgentItem, int> corruptsByAttacker = CombatReplayAnalysisBuilder.CountBoonCorruptsByAttacker(
+            log,
+            phase.Start,
+            phase.End,
+            hostilePlayerTargets,
+            squadPlayers);
 
         return hostilePlayerTargets
             .Select(enemy =>
@@ -1155,6 +1175,7 @@ public sealed class WvWAnalystBuilder
 
                 SupportStatistics support = enemy.GetToAllySupportStats(log, phase.Start, phase.End);
                 int strips = support.BoonStripCount;
+                int corrupts = corruptsByAttacker.GetValueOrDefault(enemy.EnglobingAgentItem);
 
                 return new WvWAnalystEnemyPlayerSummaryDto
                 {
@@ -1167,7 +1188,10 @@ public sealed class WvWAnalystBuilder
                     Damage = damage,
                     Dps = Math.Round(damage / durationSeconds, 1),
                     Strips = strips,
+                    Corrupts = corrupts,
+                    CorruptPercent = ComputePercent(corrupts, strips),
                     StripsPerMinute = Math.Round(strips / durationMinutes, 1),
+                    CorruptsPerMinute = Math.Round(corrupts / durationMinutes, 1),
                 };
             })
             .OrderBy(enemy => BuildClassLabel(enemy.Profession, enemy.EliteSpec), StringComparer.OrdinalIgnoreCase)
@@ -1295,6 +1319,7 @@ public sealed class WvWAnalystBuilder
                 DemandWeightPercent = lane.DemandWeightPercent,
                 ImpactScore = lane.ImpactScore,
                 EvidenceLine = lane.EvidenceLine,
+                ContextLine = lane.ContextLine,
             })
             .ToArray();
     }
@@ -1531,6 +1556,7 @@ public sealed class WvWAnalystBuilder
             actorsById,
             teamAnalysis.TopStripActorIds,
             teamAnalysis.TopStripValues,
+            teamAnalysis.TopStripCorruptValues,
             snapshotIndex);
 
         return new WvWAnalystTopBurstDto
@@ -1539,6 +1565,8 @@ public sealed class WvWAnalystBuilder
             TimeLabel = FormatBurstTime(burst.Time),
             Damage = burst.Damage,
             Strips = burst.Strips,
+            Corrupts = burst.Corrupts,
+            CorruptPercent = ComputePercent(burst.Corrupts, burst.Strips),
             Downs = burst.Downs,
             Kills = burst.Kills,
             TopPressure = topPressureActors.FirstOrDefault() ?? new WvWAnalystTopBurstActorDto(),
@@ -1553,22 +1581,40 @@ public sealed class WvWAnalystBuilder
         return $"{(time / 1000.0).ToString("0.000", CultureInfo.InvariantCulture)}s";
     }
 
+    private static double ComputePercent(double numerator, double denominator)
+    {
+        return denominator <= 0.0
+            ? 0.0
+            : Math.Round(numerator * 100.0 / denominator, 1);
+    }
+
     private static IReadOnlyList<WvWAnalystTopBurstActorDto> BuildTopBurstActorSummaries<TValue>(
         IReadOnlyDictionary<int, SingleActor> actorsById,
         IReadOnlyList<int[]> actorIdsBySnapshot,
         IReadOnlyList<TValue[]> valuesBySnapshot,
         int snapshotIndex)
         where TValue : struct
+        => BuildTopBurstActorSummaries(actorsById, actorIdsBySnapshot, valuesBySnapshot, null, snapshotIndex);
+
+    private static IReadOnlyList<WvWAnalystTopBurstActorDto> BuildTopBurstActorSummaries<TValue>(
+        IReadOnlyDictionary<int, SingleActor> actorsById,
+        IReadOnlyList<int[]> actorIdsBySnapshot,
+        IReadOnlyList<TValue[]> valuesBySnapshot,
+        IReadOnlyList<int[]>? corruptValuesBySnapshot,
+        int snapshotIndex)
+        where TValue : struct
     {
         if (snapshotIndex < 0 ||
             snapshotIndex >= actorIdsBySnapshot.Count ||
-            snapshotIndex >= valuesBySnapshot.Count)
+            snapshotIndex >= valuesBySnapshot.Count ||
+            (corruptValuesBySnapshot is not null && snapshotIndex >= corruptValuesBySnapshot.Count))
         {
             return Array.Empty<WvWAnalystTopBurstActorDto>();
         }
 
         var actorIds = actorIdsBySnapshot[snapshotIndex];
         var values = valuesBySnapshot[snapshotIndex];
+        var corruptValues = corruptValuesBySnapshot?[snapshotIndex];
         if (actorIds is null || values is null || actorIds.Length == 0 || values.Length == 0)
         {
             return Array.Empty<WvWAnalystTopBurstActorDto>();
@@ -1579,12 +1625,16 @@ public sealed class WvWAnalystBuilder
         for (var index = 0; index < limit; index++)
         {
             var actorId = actorIds[index];
+            double amount = Convert.ToDouble(values[index], CultureInfo.InvariantCulture);
+            int corrupts = corruptValues is not null && index < corruptValues.Length ? corruptValues[index] : 0;
             if (!actorsById.TryGetValue(actorId, out var actor))
             {
                 result.Add(new WvWAnalystTopBurstActorDto
                 {
                     ActorId = actorId,
-                    Amount = Convert.ToDouble(values[index], CultureInfo.InvariantCulture),
+                    Amount = amount,
+                    Corrupts = corrupts,
+                    CorruptPercent = ComputePercent(corrupts, amount),
                 });
                 continue;
             }
@@ -1597,7 +1647,9 @@ public sealed class WvWAnalystBuilder
                 Profession = actor.BaseSpec.ToString(),
                 EliteSpec = actor.Spec.ToString(),
                 Icon = actor.GetIcon(),
-                Amount = Convert.ToDouble(values[index], CultureInfo.InvariantCulture),
+                Amount = amount,
+                Corrupts = corrupts,
+                CorruptPercent = ComputePercent(corrupts, amount),
             });
         }
 
@@ -2190,8 +2242,11 @@ internal sealed class WvWAnalystSideTotalsDto
     public long Damage { get; set; }
     public long DamageTaken { get; set; }
     public long Strips { get; set; }
+    public long Corrupts { get; set; }
+    public double CorruptPercent { get; set; }
     public int ReceivedCrowdControl { get; set; }
     public double StripsPerMinute { get; set; }
+    public double CorruptsPerMinute { get; set; }
     public double CleansesPerMinute { get; set; }
 }
 
@@ -2452,6 +2507,8 @@ internal sealed class WvWAnalystPlayerSummaryDto
     public int Downs { get; set; }
     public int Kills { get; set; }
     public int Strips { get; set; }
+    public int Corrupts { get; set; }
+    public double CorruptPercent { get; set; }
     public int OutgoingCleanses { get; set; }
     public long Healing { get; set; }
     public long Barrier { get; set; }
@@ -2498,7 +2555,10 @@ internal sealed class WvWAnalystEnemyPlayerSummaryDto
     public long Damage { get; set; }
     public double Dps { get; set; }
     public int Strips { get; set; }
+    public int Corrupts { get; set; }
+    public double CorruptPercent { get; set; }
     public double StripsPerMinute { get; set; }
+    public double CorruptsPerMinute { get; set; }
 }
 
 internal sealed class WvWAnalystPlayerRoleMixEntryDto
@@ -2541,6 +2601,7 @@ internal sealed class WvWAnalystPlayerFightImpactLaneDto
     public double DemandWeightPercent { get; set; }
     public double ImpactScore { get; set; }
     public string EvidenceLine { get; set; } = string.Empty;
+    public string ContextLine { get; set; } = string.Empty;
 }
 
 internal sealed class WvWAnalystThreatBoonSummaryDto
@@ -2561,6 +2622,8 @@ internal sealed class WvWAnalystTopBurstDto
     public string TimeLabel { get; set; } = string.Empty;
     public long Damage { get; set; }
     public int Strips { get; set; }
+    public int Corrupts { get; set; }
+    public double CorruptPercent { get; set; }
     public int Downs { get; set; }
     public int Kills { get; set; }
     public WvWAnalystTopBurstActorDto TopPressure { get; set; } = new();
@@ -2578,6 +2641,8 @@ internal sealed class WvWAnalystTopBurstActorDto
     public string EliteSpec { get; set; } = string.Empty;
     public string Icon { get; set; } = string.Empty;
     public double Amount { get; set; }
+    public int Corrupts { get; set; }
+    public double CorruptPercent { get; set; }
 }
 
 internal sealed class WvWAnalystPlayerThreatBoonSummaryDto

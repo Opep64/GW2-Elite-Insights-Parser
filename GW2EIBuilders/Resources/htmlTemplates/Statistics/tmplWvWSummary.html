@@ -813,7 +813,7 @@
                                 <img :src="player.icon" :alt="player.profession" class="icon"
                                     :data-original-title="player.profession">
                                 <span class="wvw-summary-top-player-name" :data-original-title="getSquadPlayerTooltip(player)">{{player.name}}</span>
-                                <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
+                                <span class="wvw-summary-top-player-damage">{{formatStripCount(player.amount, player.secondaryAmount)}}</span>
                             </button>
                             <div v-if="summary.topStripPlayers.length === 0" class="wvw-summary-side-panel-empty">
                                 No squad players were active for this phase.
@@ -847,7 +847,7 @@
                                 <img :src="player.icon" :alt="player.profession" class="icon"
                                     :data-original-title="player.profession">
                                 <span class="wvw-summary-top-player-name" :data-original-title="player.name">{{player.name}}</span>
-                                <span class="wvw-summary-top-player-damage">{{integerWithSpaces(player.amount)}}</span>
+                                <span class="wvw-summary-top-player-damage">{{formatStripCount(player.amount, player.secondaryAmount)}}</span>
                             </button>
                             <div v-if="summary.topEnemyStripPlayers.length === 0" class="wvw-summary-side-panel-empty">
                                 No enemy players were active for this phase.
@@ -1352,6 +1352,9 @@
                     ? this.integerWithSpaces(Math.round(value))
                     : this.round1(value).toString();
             },
+            formatStripCount: function(strips, corrupts) {
+                return this.integerWithSpaces(strips || 0) + " (" + this.integerWithSpaces(corrupts || 0) + ")";
+            },
             formatBoonGenerationValue: function(section, value) {
                 if (section.stacking) {
                     return Number.isInteger(value) ? this.integerWithSpaces(value) : this.round1(value).toString();
@@ -1377,6 +1380,9 @@
             },
             formatRowValue: function(value, row) {
                 if (row.equalValues) {
+                    return value;
+                }
+                if (typeof value === "string" && value.indexOf("(") >= 0) {
                     return value;
                 }
                 const parsed = parseFloat(value);
@@ -1827,8 +1833,8 @@
                 if (row.equalValues) {
                     return {};
                 }
-                const squadValue = parseFloat(row.squadValue);
-                const enemyValue = parseFloat(row.enemyValue);
+                const squadValue = parseFloat(String(row.squadValue).replace(/,/g, ""));
+                const enemyValue = parseFloat(String(row.enemyValue).replace(/,/g, ""));
                 if (isNaN(squadValue) || isNaN(enemyValue) || squadValue === enemyValue) {
                     return {};
                 }

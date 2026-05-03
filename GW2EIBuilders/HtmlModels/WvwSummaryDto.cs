@@ -151,6 +151,11 @@ internal class WvwSummaryDto
 
         var squad = BuildSide(log, phase, squadActors, hostileDamageTargets, hostilePlayerTargets, "Our Squad");
         var enemy = BuildSide(log, phase, hostilePlayerTargets, squadActors, squadActors, "Enemy Team");
+        squad.BoonCorrupts = CombatReplayAnalysisBuilder.CountBoonCorrupts(log, phase.Start, phase.End, squadActors, hostilePlayerTargets);
+        enemy.BoonCorrupts = CombatReplayAnalysisBuilder.CountBoonCorrupts(log, phase.Start, phase.End, hostilePlayerTargets, squadActors);
+        double durationInMinutes = durationInSeconds / 60.0;
+        squad.CorruptsPerMinute = Math.Round(squad.BoonCorrupts / durationInMinutes, 1);
+        enemy.CorruptsPerMinute = Math.Round(enemy.BoonCorrupts / durationInMinutes, 1);
         var squadDownState = BuildDownStateSide(log, phase, squadActors);
         var enemyDownState = BuildDownStateSide(log, phase, hostilePlayerTargets);
         GW2EIBuilders.WvWAnalystFightShapeDto fightShape = GW2EIBuilders.WvWAnalystBuilder.BuildFightShapeDiagnostics(
@@ -3162,7 +3167,7 @@ internal class WvwSummaryDto
             foreach (CombatReplayAnalysisBurstSummaryDto burst in BuildPhaseTopBursts(combatReplayAnalysis.Squad, combatReplayAnalysis.Times, phase.Start, phase.End).Take(3))
             {
                 string label = burst.Downs > 0 || burst.Kills > 0 ? "Bomb landed" : "Pressure spike";
-                string detail = $"Our Squad dealt {burst.Damage.ToString("N0", CultureInfo.InvariantCulture)} damage in 3s with {burst.Strips} strips, causing {burst.Downs} downs and {burst.Kills} kills.";
+                string detail = $"Our Squad dealt {burst.Damage.ToString("N0", CultureInfo.InvariantCulture)} damage in 3s with {FormatStripCountWithCorrupts(burst.Strips, burst.Corrupts)} strips, causing {burst.Downs} downs and {burst.Kills} kills.";
                 double score = burst.Damage / 2000.0 + burst.Strips * 0.5 + burst.Downs * 8 + burst.Kills * 10;
                 optionalCandidates.Add(new WvwSummaryMomentCandidate(burst.Time, 0, label, detail, "positive", "burst-positive", score));
             }
@@ -3173,7 +3178,7 @@ internal class WvwSummaryDto
             foreach (CombatReplayAnalysisBurstSummaryDto burst in BuildPhaseTopBursts(combatReplayAnalysis.Enemy, combatReplayAnalysis.Times, phase.Start, phase.End).Take(3))
             {
                 string label = burst.Downs > 0 || burst.Kills > 0 ? "Enemy bomb landed" : "Enemy pressure spike";
-                string detail = $"Enemy Team dealt {burst.Damage.ToString("N0", CultureInfo.InvariantCulture)} damage in 3s with {burst.Strips} strips, causing {burst.Downs} downs and {burst.Kills} kills.";
+                string detail = $"Enemy Team dealt {burst.Damage.ToString("N0", CultureInfo.InvariantCulture)} damage in 3s with {FormatStripCountWithCorrupts(burst.Strips, burst.Corrupts)} strips, causing {burst.Downs} downs and {burst.Kills} kills.";
                 double score = burst.Damage / 2000.0 + burst.Strips * 0.5 + burst.Downs * 8 + burst.Kills * 10;
                 optionalCandidates.Add(new WvwSummaryMomentCandidate(burst.Time, 0, label, detail, "negative", "burst-negative", score));
             }
@@ -3866,6 +3871,7 @@ internal class WvwSummaryDto
                 Time = times[bestIndex],
                 Damage = analysis.Damage[bestIndex],
                 Strips = analysis.Strips[bestIndex],
+                Corrupts = analysis.Corrupts[bestIndex],
                 Downs = analysis.Downs[bestIndex],
                 DownsTotal = analysis.DownsTotal[bestIndex],
                 Kills = analysis.Kills[bestIndex],
@@ -4174,6 +4180,16 @@ internal class WvwSummaryDto
         return value.ToString("0.0", CultureInfo.InvariantCulture);
     }
 
+    private static string FormatStripCountWithCorrupts(int strips, int corrupts)
+    {
+        return $"{strips.ToString("N0", CultureInfo.InvariantCulture)} ({corrupts.ToString("N0", CultureInfo.InvariantCulture)})";
+    }
+
+    private static string FormatStripCountWithCorrupts(double strips, double corrupts)
+    {
+        return $"{FormatDecimal(strips)} ({FormatDecimal(corrupts)})";
+    }
+
     private static string FormatSignedDecimal(double value, int decimals = 1)
     {
         string format = decimals <= 0 ? "0" : $"0.{new string('0', decimals)}";
@@ -4394,8 +4410,8 @@ internal class WvwSummaryDto
             new WvwSummaryMetricRowDto("Downs", squadDowns.ToString(), enemyDowns.ToString()),
             new WvwSummaryMetricRowDto("Kills", squadKills.ToString(), enemyKills.ToString()),
             new WvwSummaryMetricRowDto("Down to Kill %", squadDownKillConversionRate.ToString(CultureInfo.InvariantCulture), enemyDownKillConversionRate.ToString(CultureInfo.InvariantCulture), false, false, 1, true),
-            new WvwSummaryMetricRowDto("Boon Strips", squad.BoonStrips.ToString(), enemy.BoonStrips.ToString()),
-            new WvwSummaryMetricRowDto("Strips / Min", squad.StripsPerMinute.ToString(CultureInfo.InvariantCulture), enemy.StripsPerMinute.ToString(CultureInfo.InvariantCulture), false, false, 1),
+            new WvwSummaryMetricRowDto("Boon Strips", FormatStripCountWithCorrupts(squad.BoonStrips, squad.BoonCorrupts), FormatStripCountWithCorrupts(enemy.BoonStrips, enemy.BoonCorrupts)),
+            new WvwSummaryMetricRowDto("Strips / Min", FormatStripCountWithCorrupts(squad.StripsPerMinute, squad.CorruptsPerMinute), FormatStripCountWithCorrupts(enemy.StripsPerMinute, enemy.CorruptsPerMinute)),
             new WvwSummaryMetricRowDto("Cleanses", squad.Cleanses.ToString(), enemy.Cleanses.ToString()),
             new WvwSummaryMetricRowDto("Cleanses / Min", squad.CleansesPerMinute.ToString(CultureInfo.InvariantCulture), enemy.CleansesPerMinute.ToString(CultureInfo.InvariantCulture), false, false, 1),
             new WvwSummaryMetricRowDto("Rezzes", squad.Resurrects.ToString(), enemy.Resurrects.ToString()),
@@ -4680,10 +4696,17 @@ internal class WvwSummaryDto
 
     private static List<WvwSummaryTopPlayerDto> BuildTopStripPlayers(ParsedEvtcLog log, IReadOnlyList<SingleActor> squadActors, PhaseData phase)
     {
+        Dictionary<AgentItem, int> corruptsByAttacker = CombatReplayAnalysisBuilder.CountBoonCorruptsByAttacker(
+            log,
+            phase.Start,
+            phase.End,
+            squadActors,
+            GetHostilePlayerTargets(log, phase));
         return BuildTopPlayers(
             squadActors,
             actor => GetFriendlyPlayerIndex(log, actor),
-            actor => actor.GetToAllySupportStats(log, phase.Start, phase.End).BoonStripCount);
+            actor => actor.GetToAllySupportStats(log, phase.Start, phase.End).BoonStripCount,
+            actor => corruptsByAttacker.GetValueOrDefault(actor.EnglobingAgentItem));
     }
 
     private static List<WvwSummaryTopPlayerDto> BuildTopCleansePlayers(ParsedEvtcLog log, IReadOnlyList<SingleActor> squadActors, PhaseData phase)
@@ -4737,10 +4760,20 @@ internal class WvwSummaryDto
 
     private static List<WvwSummaryTopPlayerDto> BuildTopEnemyStripPlayers(ParsedEvtcLog log, IReadOnlyList<SingleActor> hostilePlayerTargets, PhaseData phase)
     {
+        Dictionary<AgentItem, int> corruptsByAttacker = CombatReplayAnalysisBuilder.CountBoonCorruptsByAttacker(
+            log,
+            phase.Start,
+            phase.End,
+            hostilePlayerTargets,
+            log.PlayerList
+                .Where(player => !player.IsFakeActor && IsActiveInPhase(player, phase))
+                .Cast<SingleActor>()
+                .ToList());
         return BuildTopPlayers(
             hostilePlayerTargets,
             actor => GetTargetIndex(log, actor),
-            actor => actor.GetToAllySupportStats(log, phase.Start, phase.End).BoonStripCount);
+            actor => actor.GetToAllySupportStats(log, phase.Start, phase.End).BoonStripCount,
+            actor => corruptsByAttacker.GetValueOrDefault(actor.EnglobingAgentItem));
     }
 
     private static List<WvwSummaryTopPlayerDto> BuildTopCrowdControlPlayers(
@@ -4826,7 +4859,11 @@ internal class WvwSummaryDto
             .ToList();
     }
 
-    private static List<WvwSummaryTopPlayerDto> BuildTopPlayers(IReadOnlyList<SingleActor> actors, Func<SingleActor, int> indexGetter, Func<SingleActor, long> valueGetter)
+    private static List<WvwSummaryTopPlayerDto> BuildTopPlayers(
+        IReadOnlyList<SingleActor> actors,
+        Func<SingleActor, int> indexGetter,
+        Func<SingleActor, long> valueGetter,
+        Func<SingleActor, long>? secondaryValueGetter = null)
     {
         var result = new List<WvwSummaryTopPlayerDto>(Math.Min(5, actors.Count));
         foreach (SingleActor actor in actors)
@@ -4845,6 +4882,7 @@ internal class WvwSummaryDto
                 Profession = actor.Spec.ToString(),
                 Icon = actor.GetIcon(),
                 Amount = valueGetter(actor),
+                SecondaryAmount = secondaryValueGetter?.Invoke(actor) ?? 0,
             });
         }
 
@@ -4918,12 +4956,14 @@ internal class WvwSummarySideDto
     public int Kills { get; set; }
     public double DownKillConversionRate { get; set; }
     public int BoonStrips { get; set; }
+    public int BoonCorrupts { get; set; }
     public int Cleanses { get; set; }
     public int Resurrects { get; set; }
     public long DamageTaken { get; set; }
     public int Deaths { get; set; }
     public int ReceivedCrowdControl { get; set; }
     public double StripsPerMinute { get; set; }
+    public double CorruptsPerMinute { get; set; }
     public double CleansesPerMinute { get; set; }
 }
 
@@ -5133,6 +5173,7 @@ internal class WvwSummaryTopPlayerDto
     public string Profession { get; set; } = "";
     public string Icon { get; set; } = "";
     public long Amount { get; set; }
+    public long SecondaryAmount { get; set; }
     public int EffectiveAmount { get; set; }
     public double TotalDuration { get; set; }
     public List<WvwSummarySkillDetailDto> SkillDetails { get; set; } = [];
