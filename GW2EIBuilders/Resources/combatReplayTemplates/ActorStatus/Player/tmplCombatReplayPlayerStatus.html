@@ -1,6 +1,6 @@
 <template>
     <div class="player-status" :class="{'player-status-compact': compact}" :style="playerStatusStyle" @click="select" :data-original-title="player.name + ' - ' + player.acc">
-        <h6 class="actor-shorten-cr text-center" :class="{'actor-shorten-cr-compact': compact}">
+        <h6 class="player-shorten-cr text-center" :class="{'actor-shorten-cr-compact': compact}">
             <img v-for="(marker, index) in activeMarkers()" :src="marker.imageUrl" :height="iconSize" :width="iconSize">
             <img :src="player.icon" :alt="player.profession" :height="iconSize" :width="iconSize">
             {{player.name}}

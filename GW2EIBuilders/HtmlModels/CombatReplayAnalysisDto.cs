@@ -11287,7 +11287,18 @@ internal static class CombatReplayAnalysisBuilder
 
     private static bool TryGetPosition(SingleActor actor, ParsedEvtcLog log, long time, out Vector3 position)
     {
-        return actor.TryGetCurrentInterpolatedPosition(log, time, out position) || actor.TryGetCurrentPosition(log, time, out position);
+        position = default;
+        if (actor.TryGetCurrentInterpolatedPosition(log, time, out Vector3? interpolatedPosition))
+        {
+            position = interpolatedPosition.Value;
+            return true;
+        }
+        if (actor.TryGetCurrentPosition(log, time, out Vector3? currentPosition))
+        {
+            position = currentPosition.Value;
+            return true;
+        }
+        return false;
     }
 
     private static int GetBuffStacksAtTime(SingleActor actor, ParsedEvtcLog log, long buffId, long time)

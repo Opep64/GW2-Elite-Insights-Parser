@@ -9,10 +9,6 @@ namespace GW2EIEvtcParser.ParsedData;
 
 partial class CombatData
 {
-    public IReadOnlyCollection<long> GetSkills()
-    {
-        return _skillIDs;
-    }
 
     internal static IReadOnlyList<T> GetValueOrEmpty<T>(Dictionary<AgentItem, List<T>> dict, AgentItem agent) where T : MetaDataEvent
     {
@@ -23,7 +19,7 @@ partial class CombatData
     {
         if (agent.IsEnglobedAgent)
         {
-            return dict.GetValueOrEmpty(agent.EnglobingAgentItem).Where(x => x.Time >= agent.FirstAware && x.Time <= agent.LastAware).ToList();
+            return dict.GetValueOrEmpty(agent.EnglobingAgentItem).Where(x => agent.InAwareTimes(x.Time)).ToList();
         }
         return dict.GetValueOrEmpty(agent);
     }
@@ -134,23 +130,18 @@ partial class CombatData
     }
     #endregion DATE
 
-    public IReadOnlyList<GuildEvent> GetGuildEvents(AgentItem src)
+    #region WvW
+    public WvWTeamsEvent? GetWvWTeamsEvent()
     {
-        return GetValueOrEmpty(_metaDataEvents.GuildEvents, src);
+        return _metaDataEvents.WvWTeamsEvent;
     }
+    public IReadOnlyList<WvWObjectiveStatusEvent> GetWvWObjectStatusEvents()
+    {
+        return _statusEvents.WvWObjectiveStatusEvents;
+    }
+    #endregion WvW
 
-    public PointOfViewEvent? GetPointOfViewEvent()
-    {
-        return _metaDataEvents.PointOfViewEvent;
-    }
-    public FractalScaleEvent? GetFractalScaleEvent()
-    {
-        return _metaDataEvents.FractalScaleEvent;
-    }
-    public LanguageEvent? GetLanguageEvent()
-    {
-        return _metaDataEvents.LanguageEvent;
-    }
+    #region MAP
     public IReadOnlyList<MapIDEvent> GetMapIDEvents()
     {
         return _metaDataEvents.MapIDEvents;
@@ -161,6 +152,31 @@ partial class CombatData
         return _metaDataEvents.MapChangeEvents;
     }
 
+    public IReadOnlyList<ShardEvent> GetShardEvents()
+    {
+        return _metaDataEvents.ShardEvents;
+    }
+    public FractalScaleEvent? GetFractalScaleEvent()
+    {
+        return _metaDataEvents.FractalScaleEvent;
+    }
+
+    #endregion MAP
+
+    public IReadOnlyList<GuildEvent> GetGuildEvents(AgentItem src)
+    {
+        return GetValueOrEmpty(_metaDataEvents.GuildEvents, src);
+    }
+
+    public PointOfViewEvent? GetPointOfViewEvent()
+    {
+        return _metaDataEvents.PointOfViewEvent;
+    }
+    public LanguageEvent? GetLanguageEvent()
+    {
+        return _metaDataEvents.LanguageEvent;
+    }
+
     public IReadOnlyList<RewardEvent> GetRewardEvents()
     {
         return _rewardEvents;
@@ -169,11 +185,6 @@ partial class CombatData
     public IReadOnlyList<ErrorEvent> GetErrorEvents()
     {
         return _metaDataEvents.ErrorEvents;
-    }
-
-    public IReadOnlyList<ShardEvent> GetShardEvents()
-    {
-        return _metaDataEvents.ShardEvents;
     }
 
     public IReadOnlyList<TickRateEvent> GetTickRateEvents()
@@ -236,7 +247,14 @@ partial class CombatData
     {
         if (TryGetMarkerEventsByGUID(marker, out var markers))
         {
-            markerEvents = markers.Where(effect => effect.Src.Is(agent)).ToList();
+            if (agent.IsEnglobedAgent)
+            {
+                markerEvents = markers.Where(marker => marker.Src.Is(agent) && agent.InAwareTimes(marker.Time)).ToList();
+            }
+            else
+            {
+                markerEvents = markers.Where(marker => marker.Src.Is(agent)).ToList();
+            }
             return true;
         }
         markerEvents = null;
@@ -244,7 +262,68 @@ partial class CombatData
     }
 
     #endregion MARKERS
-    
+
+    #region TRANSFORMATIONS
+
+    /// <summary>
+    /// Returns transformation events owned by agent
+    /// </summary>
+    /// <param name="agent"></param>
+    /// <returns></returns>
+    public IReadOnlyList<TransformationEvent> GetTransformationEvents(AgentItem agent)
+    {
+        return GetTimeValueOrEmpty(_statusEvents.TransformationEventsBySrc, agent);
+    }
+    /// <summary>
+    /// Returns transformation events of transformation marker ID
+    /// </summary>
+    /// <param name="transformationID">transformation ID</param>
+    /// <returns></returns>
+    public IReadOnlyList<TransformationEvent> GetTransformationEventsByTransformationID(long transformationID)
+    {
+        return _statusEvents.TransformationEventsByTransformationID.GetValueOrEmpty(transformationID);
+    }
+    /// <summary>
+    /// True if transformation events of given transformation GUID has been found
+    /// </summary>
+    /// <param name="transformation">transformation GUID</param>
+    /// <param name="transformationEvents">Found transformation events</param>
+    public bool TryGetTransformationEventsByGUID(GUID transformation, [NotNullWhen(true)] out IReadOnlyList<TransformationEvent>? transformationEvents)
+    {
+        var transformationGUIDEvent = GetTransformationGUIDEventByGUID(transformation);
+        transformationEvents = GetTransformationEventsByTransformationID(transformationGUIDEvent.TransformationID);
+        if (transformationEvents.Count > 0)
+        {
+            return true;
+        }
+        transformationEvents = null;
+        return false;
+    }
+    /// <summary>
+    /// True if transformation events of given transformation GUID has been found on given agent
+    /// </summary>
+    /// <param name="agent">transformation owner</param>
+    /// <param name="transformation">transformation GUID</param>
+    /// <param name="transformationEvents">Found transformation events</param>
+    public bool TryGetTransformationEventsBySrcWithGUID(AgentItem agent, GUID transformation, [NotNullWhen(true)] out IReadOnlyList<TransformationEvent>? transformationEvents)
+    {
+        if (TryGetTransformationEventsByGUID(transformation, out var transformations))
+        {
+            if (agent.IsEnglobedAgent)
+            {
+                transformationEvents = transformations.Where(transformation => transformation.Src.Is(agent) && agent.InAwareTimes(transformation.Time)).ToList();
+            } 
+            else
+            {
+                transformationEvents = transformations.Where(transformation => transformation.Src.Is(agent)).ToList();
+            }
+            return true;
+        }
+        transformationEvents = null;
+        return false;
+    }
+    #endregion TRANSFORMATIONS
+
     #region UPDATES
 
     public IReadOnlyList<BarrierUpdateEvent> GetBarrierUpdateEvents(AgentItem src)
@@ -397,6 +476,15 @@ partial class CombatData
         return GetTimeValueOrEmpty(_buffRemoveAllDataByDst, dst);
     }
 
+    public IReadOnlyList<BuffRemoveSingleEvent> GetBuffRemoveSingleDataByIDByDst(long buffID, AgentItem dst)
+    {
+        if (_buffRemoveSingleDataByIDByDst.TryGetValue(buffID, out var byDst))
+        {
+            return GetTimeValueOrEmpty(byDst, dst);
+        }
+        return [];
+    }
+
     /// <summary>
     /// Returns list of buff events applied on agent
     /// </summary>
@@ -489,9 +577,13 @@ partial class CombatData
         return GetTimeValueOrEmpty(_crowControlTakenData, dst);
     }
 
-    public IReadOnlyList<StunBreakEvent> GetStunBreakEvents(AgentItem src)
+    public IReadOnlyList<StunBreakEvent> GetStunBreakReceivedData(AgentItem dst)
     {
-        return GetTimeValueOrEmpty(_statusEvents.StunBreakEventsBySrc, src);
+        return GetTimeValueOrEmpty(_stunBreakReceivedData, dst);
+    }
+    public IReadOnlyList<StunBreakEvent> GetStunBreakData(AgentItem src)
+    {
+        return GetTimeValueOrEmpty(_stunBreakData, src);
     }
     #endregion CROWDCONTROL
     #region CAST
@@ -605,7 +697,7 @@ partial class CombatData
         List<EmoteEvent> result;
         if (agent.IsEnglobedAgent)
         {
-            result = emotes.Where(emote => emote.Caster.Is(agent) && emote.Time >= agent.FirstAware && emote.Time <= agent.LastAware).ToList();
+            result = emotes.Where(emote => emote.Caster.Is(agent) && agent.InAwareTimes(emote.Time)).ToList();
         }
         else
         {
@@ -620,7 +712,7 @@ partial class CombatData
         if (agent.IsEnglobedAgent)
         {
             var parentAgent = agent.EnglobingAgentItem;
-            result = emotes.Where(emote => parentAgent.IsMasterOf(emote.Caster) && emote.Time >= agent.FirstAware && emote.Time <= agent.LastAware).ToList();
+            result = emotes.Where(emote => parentAgent.IsMasterOf(emote.Caster) && agent.InAwareTimes(emote.Time)).ToList();
         }
         else
         {
@@ -746,7 +838,7 @@ partial class CombatData
         List<EffectEvent> result;
         if (agent.IsEnglobedAgent)
         {
-            result = effects.Where(effect => effect.Src.Is(agent) && effect.Time >= agent.FirstAware && effect.Time <= agent.LastAware).ToList();
+            result = effects.Where(effect => effect.Src.Is(agent) && agent.InAwareTimes(effect.Time)).ToList();
         }
         else
         {
@@ -761,7 +853,7 @@ partial class CombatData
         if (agent.IsEnglobedAgent)
         {
             var parentAgent = agent.EnglobingAgentItem;
-            result = effects.Where(effect => parentAgent.IsMasterOf(effect.Src) && effect.Time >= agent.FirstAware && effect.Time <= agent.LastAware).ToList();
+            result = effects.Where(effect => parentAgent.IsMasterOf(effect.Src) && agent.InAwareTimes(effect.Time)).ToList();
         }
         else
         {
@@ -775,7 +867,7 @@ partial class CombatData
         List<EffectEvent> result;
         if (agent.IsEnglobedAgent)
         {
-            result = effects.Where(effect => effect.Dst.Is(agent) && effect.Time >= agent.FirstAware && effect.Time <= agent.LastAware).ToList();
+            result = effects.Where(effect => effect.Dst.Is(agent) && agent.InAwareTimes(effect.Time)).ToList();
         }
         else
         {
@@ -1057,6 +1149,15 @@ partial class CombatData
     public EmoteGUIDEvent GetEmoteGUIDEventByEmoteID(long emoteID)
     {
         return _metaDataEvents.EmoteGUIDEventsByEmoteID.TryGetValue(emoteID, out var evt) ? evt : EmoteGUIDEvent.DummyEmoteGUID;
+    }
+    public TransformationGUIDEvent GetTransformationGUIDEventByGUID(GUID transformation)
+    {
+        return _metaDataEvents.TransformationGUIDEventsByGUID.TryGetValue(transformation, out var evt) ? evt : TransformationGUIDEvent.DummyTransformationGUID;
+    }
+
+    public TransformationGUIDEvent GetTransformationGUIDEventByTransformationID(long transformationID)
+    {
+        return _metaDataEvents.TransformationGUIDEventsByTransformationID.TryGetValue(transformationID, out var evt) ? evt : TransformationGUIDEvent.DummyTransformationGUID;
     }
 
     public MarkerGUIDEvent GetMarkerGUIDEventByGUID(GUID marker)

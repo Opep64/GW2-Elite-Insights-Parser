@@ -4221,7 +4221,17 @@ internal class WvwSummaryDto
         {
             return false;
         }
-        return actor.TryGetCurrentInterpolatedPosition(log, time, out position) || actor.TryGetCurrentPosition(log, time, out position);
+        if (actor.TryGetCurrentInterpolatedPosition(log, time, out Vector3? interpolatedPosition))
+        {
+            position = interpolatedPosition.Value;
+            return true;
+        }
+        if (actor.TryGetCurrentPosition(log, time, out Vector3? currentPosition))
+        {
+            position = currentPosition.Value;
+            return true;
+        }
+        return false;
     }
 
     private static bool AreGroupsEngaged(IReadOnlyList<Vector3> enemyPositions, IReadOnlyList<Vector3> squadPositions, float engageRange)

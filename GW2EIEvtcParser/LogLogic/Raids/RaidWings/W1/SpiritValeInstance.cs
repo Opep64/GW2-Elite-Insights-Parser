@@ -52,7 +52,7 @@ internal class SpiritValeInstance : SpiritVale
         {
             subLogic.GetCombatMapInternal(log, arenaDecorations);
         }
-        return crMap;
+        return CombatReplayMap.CreateSquareMapFrom(crMap);
     }
     internal override void CheckSuccess(CombatData combatData, AgentData agentData, LogData logData, IReadOnlyCollection<AgentItem> playerAgents, LogData.LogSuccessHandler successHandler)
     {
@@ -220,7 +220,8 @@ internal class SpiritValeInstance : SpiritVale
     protected override HashSet<int> IgnoreForAutoNumericalRenaming()
     {
         return [
-            (int)TargetID.ChargedSoul
+            (int)TargetID.ChargedSoul,
+            (int)TargetID.Cannon
         ];
     }
 
@@ -260,7 +261,7 @@ internal class SpiritValeInstance : SpiritVale
     internal override void EIEvtcParse(ulong gw2Build, EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData, IReadOnlyDictionary<uint, ExtensionHandler> extensions)
     {
         SpiritRace.FindEtherealBarriers(agentData, combatData);
-        Sabetha.FindCannonsAndHeavyBombs(agentData, combatData);
+        Sabetha.FindArenaGadgets(agentData, combatData);
         base.EIEvtcParse(gw2Build, evtcVersion, logData, agentData, combatData, extensions);
         SpiritRace.RenameEtherealBarriersAndOverrideID(Targets, agentData);
         Gorseval.RenameChargedSouls(Targets, combatData);

@@ -1,7 +1,7 @@
 ﻿<template>
     <div>
         <combat-replay-actor-buffs-stats-component v-if="!analysis && buffstoshow.length > 0" :time="time" :actorindex="targetindex" :enemy="true" :buffstoshow="buffstoshow"/>
-        <div class="d-flex mb-1 mt-1" :class="{'player-status-rotation-compact': analysis}">
+        <div class="d-flex mb-1 mt-1" :class="analysis ? 'player-status-rotation-compact' : 'flex-column'">
             <combat-replay-target-status-component :time="time" :targetindex="targetindex" :compact="analysis"/>
             <combat-replay-actor-rotation-component v-if="!analysis" :time="time" :actorindex="targetindex" :enemy="true"/>
         </div>

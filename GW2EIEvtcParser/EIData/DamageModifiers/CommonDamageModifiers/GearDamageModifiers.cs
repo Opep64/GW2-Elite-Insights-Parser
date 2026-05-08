@@ -63,8 +63,8 @@ internal static class GearDamageModifiers
         new BuffOnActorDamageModifier(Mod_RelicOfTheWeaver, RelicOfTheWeaver, "Relic of the Weaver", "10%", DamageSource.NoPets, 10.0, DamageType.Strike, DamageType.Strike, Source.Gear, ByPresence, ItemImages.RelicOfTheWeaver, DamageModifierMode.All),
         new BuffOnActorDamageModifier(Mod_RelicOfNourys, NouryssHungerDamageBuff, "Relic of Nourys", "25%", DamageSource.NoPets, 25.0, DamageType.StrikeAndCondition, DamageType.All, Source.Gear, ByPresence, ItemImages.RelicOfNourys, DamageModifierMode.PvE),
         new BuffOnActorDamageModifier(Mod_RelicOfNourys, NouryssHungerDamageBuff, "Relic of Nourys", "15%", DamageSource.NoPets, 15.0, DamageType.StrikeAndCondition, DamageType.All, Source.Gear, ByPresence, ItemImages.RelicOfNourys, DamageModifierMode.sPvPWvW),
-        new BuffOnActorDamageModifier(Mod_RelicOfTheClaw, RelicOfTheClaw, "Relic of the Claw", "7% after disabling a foe", DamageSource.NoPets, 7.0, DamageType.Strike, DamageType.All, Source.Gear, ByPresence, ItemImages.RelicOfTheClaw, DamageModifierMode.All),
-        new BuffOnActorDamageModifier(Mod_RelicOfMountBalrior, RelicOfMountBalrior, "Relic of Mount Balrior", "15%", DamageSource.NoPets, 15.0, DamageType.Strike, DamageType.All, Source.Gear, ByPresence, ItemImages.RelicOfMountBalrior, DamageModifierMode.All),
+        new BuffOnActorDamageModifier(Mod_RelicOfTheClaw, RelicOfTheClaw, "Relic of the Claw", "7% after disabling a foe", DamageSource.NoPets, 7.0, DamageType.Strike, DamageType.Strike, Source.Gear, ByPresence, ItemImages.RelicOfTheClaw, DamageModifierMode.All),
+        new BuffOnActorDamageModifier(Mod_RelicOfMountBalrior, RelicOfMountBalrior, "Relic of Mount Balrior", "15%", DamageSource.NoPets, 15.0, DamageType.Strike, DamageType.Strike, Source.Gear, ByPresence, ItemImages.RelicOfMountBalrior, DamageModifierMode.All),
         new BuffOnActorDamageModifier(Mod_RelicOfFire, FireAura, "Relic of Fire", "10% under fire aura", DamageSource.NoPets, 10.0, DamageType.Strike, DamageType.Strike, Source.Gear, ByPresence, ItemImages.RelicOfFire, DamageModifierMode.sPvPWvW)
             .WithBuilds(GW2Builds.March2025W8CMReleaseAndNewCoreRelics),
         new BuffOnActorDamageModifier(Mod_RelicOfFire, FireAura, "Relic of Fire", "7% under fire aura", DamageSource.NoPets, 7.0, DamageType.Strike, DamageType.Strike, Source.Gear, ByPresence, ItemImages.RelicOfFire, DamageModifierMode.PvE)
@@ -93,10 +93,7 @@ internal static class GearDamageModifiers
         new DamageLogDamageModifier(Mod_RuneOfTheStars, "Rune of the Stars", "-10% condition damamge", DamageSource.Incoming, -10.0, DamageType.Condition, DamageType.All, Source.Gear, ItemImages.SuperiorRuneOfTheStars, (x, log) => true, DamageModifierMode.All).WithBuilds(GW2Builds.November2018Rune, GW2Builds.SOTOReleaseAndBalance),
         new DamageLogDamageModifier(Mod_RuneOfMercy, "Rune of Mercy", "-20%", DamageSource.Incoming, -20.0, DamageType.StrikeAndCondition, DamageType.All, Source.Gear, ItemImages.SuperiorRuneOfMercy, (x, log) => log.CombatData.GetAnimatedCastData(Resurrect).Any(y => y.Caster.Is(x.To) && y.IntersectsActualCastWindow(x.Time, 0)), DamageModifierMode.All)
             .WithBuilds(GW2Builds.November2018Rune, GW2Builds.SOTOReleaseAndBalance),
-        new DamageLogDamageModifier(Mod_RuneOfTheScrapper, "Rune of the Scrapper", "-10% condition damamge", DamageSource.Incoming, -7.0, DamageType.StrikeAndCondition, DamageType.All, Source.Gear, ItemImages.SuperiorRuneOfTheScrapper, (x,log) =>
-                x.From.TryGetCurrentPosition(log, x.Time, out var currentPosition)
-                && x.To.TryGetCurrentPosition(log, x.Time, out var currentTargetPosition)
-                && (currentPosition - currentTargetPosition).Length() >= 600.0
+        new DamageLogDamageModifier(Mod_RuneOfTheScrapper, "Rune of the Scrapper", "-10% condition damamge", DamageSource.Incoming, -7.0, DamageType.StrikeAndCondition, DamageType.All, Source.Gear, ItemImages.SuperiorRuneOfTheScrapper, (x,log) => ProfHelper.TargetOutsideRangeChecker(x, log, 600)
             , DamageModifierMode.PvEWvW)
             .WithBuilds(GW2Builds.November2018Rune, GW2Builds.SOTOReleaseAndBalance),
         new BuffOnFoeDamageModifier(Mod_RuneOfPerplexity, Confusion, "Rune of Perplexity", "-10% from confused foes", DamageSource.Incoming, -10.0, DamageType.StrikeAndCondition, DamageType.All, Source.Gear, ByPresence, ItemImages.SuperiorRuneOfPerplexity, DamageModifierMode.All)

@@ -22,7 +22,7 @@ public static class AgentManipulationHelper
                 continue;
             }
             // redirect damage events
-            if (cbt.IsDamage(extensions))
+            if (cbt.IsDamageEvent(extensions))
             {
                 // only redirect incoming damage
                 if (cbt.DstMatchesAgent(src, extensions))
@@ -314,7 +314,11 @@ public static class AgentManipulationHelper
         var positionEvents = combatDataDict
                 .Where(x => x.IsStateChange == StateChange.Position)
                 .GroupBy(x => agentData.GetAgent(x.SrcAgent, x.Time))
+                .ToList();
+        var lastPositionEvents = positionEvents
                 .ToDictionary(x => x.Key, x => x.Select(x => MovementEvent.GetPoint3D(x)).LastOrDefault());
+        var firstPositionEvents = positionEvents
+                .ToDictionary(x => x.Key, x => x.Select(x => MovementEvent.GetPoint3D(x)).FirstOrDefault());
         var pov = combatDataDict.FirstOrDefault(x => x.IsStateChange == StateChange.PointOfView);
         AgentItem? povAgent = null;
         var povPositions = new List<ParametricPoint3D>();
@@ -363,6 +367,7 @@ public static class AgentManipulationHelper
             } 
             else
             {
+                long distanceThreshold = 4980; // 5000 - 20
                 foreach (var npcsByInstdID in npcsByInstIDs)
                 {
                     var agentToRegroup = new List<AgentItem>(5);
@@ -374,13 +379,30 @@ public static class AgentManipulationHelper
                         bool goNext = true;
                         if (curAgent.CouldBeEqual(previousAgent) && curStateTime == previousStateTime)
                         {
-                            if (positionEvents.TryGetValue(previousAgent, out var agentPosition))
+                            if (lastPositionEvents.TryGetValue(previousAgent, out var agentPosition))
                             {
                                 var nextPovPosition = povPositions.FirstOrNull((in ParametricPoint3D x) => x.Time > previousAgent.LastAware);
-                                if (nextPovPosition != null && (nextPovPosition.Value.XYZ - agentPosition).Length() > 5000)
+                                if (nextPovPosition != null)
                                 {
-                                    goNext = false;
-                                    agentToRegroup.Add(curAgent);
+                                    var length = (nextPovPosition.Value.XYZ - agentPosition).Length();
+                                    if (length > distanceThreshold)
+                                    {
+                                        goNext = false;
+                                        agentToRegroup.Add(curAgent);
+                                    }
+                                }
+                            }
+                            if (goNext && firstPositionEvents.TryGetValue(curAgent, out agentPosition))
+                            {
+                                var prevPovPosition = povPositions.LastOrNull((in ParametricPoint3D x) => x.Time < curAgent.FirstAware);
+                                if (prevPovPosition != null)
+                                {
+                                    var length = (prevPovPosition.Value.XYZ - agentPosition).Length();
+                                    if (length > distanceThreshold)
+                                    {
+                                        goNext = false;
+                                        agentToRegroup.Add(curAgent);
+                                    }
                                 }
                             }
                         }
@@ -409,35 +431,35 @@ public static class AgentManipulationHelper
             {
                 var teamChangeDict = combatItems.Where(x => x.IsStateChange == StateChange.TeamChange).GroupBy(x => x.SrcAgent).ToDictionary(x => x.Key, x => x.ToList());
                 IReadOnlyList<AgentItem> squadPlayers = agentData.GetAgentByType(AgentItem.AgentType.Player);
-                ulong greenTeam = ulong.MaxValue;
-                var greenTeams = new List<ulong>();
+                ulong squadTeam = ulong.MaxValue;
+                var squadTeams = new List<ulong>();
                 foreach (AgentItem a in squadPlayers)
                 {
                     if (teamChangeDict.TryGetValue(a.Agent, out var teamChangeList))
                     {
-                        greenTeams.AddRange(teamChangeList.Where(x => x.SrcMatchesAgent(a)).Select(TeamChangeEvent.GetTeamIDInto));
+                        squadTeams.AddRange(teamChangeList.Where(x => x.SrcMatchesAgent(a)).Select(TeamChangeEvent.GetTeamIDInto));
                         if (evtcVersion.Build > ArcDPSBuilds.TeamChangeOnDespawn)
                         {
-                            greenTeams.AddRange(teamChangeList.Where(x => x.SrcMatchesAgent(a)).Select(TeamChangeEvent.GetTeamIDComingFrom));
+                            squadTeams.AddRange(teamChangeList.Where(x => x.SrcMatchesAgent(a)).Select(TeamChangeEvent.GetTeamIDComingFrom));
                         }
                     }
                 }
-                greenTeams.RemoveAll(x => x == 0);
-                if (greenTeams.Count != 0)
+                squadTeams.RemoveAll(x => x == 0);
+                if (squadTeams.Count != 0)
                 {
-                    greenTeam = greenTeams.GroupBy(x => x).OrderByDescending(x => x.Count()).Select(x => x.Key).First();
-                }
-                foreach (AgentItem nonSquadPlayer in nonSquadPlayerAgents)
-                {
-                    if (teamChangeDict.TryGetValue(nonSquadPlayer.Agent, out var teamChangeList))
+                    squadTeam = squadTeams.GroupBy(x => x).OrderByDescending(x => x.Count()).Select(x => x.Key).First();
+                    foreach (AgentItem nonSquadPlayer in nonSquadPlayerAgents)
                     {
-                        var team = teamChangeList.Where(x => x.SrcMatchesAgent(nonSquadPlayer)).Select(TeamChangeEvent.GetTeamIDInto).ToList();
-                        if (evtcVersion.Build > ArcDPSBuilds.TeamChangeOnDespawn)
+                        if (teamChangeDict.TryGetValue(nonSquadPlayer.Agent, out var teamChangeList))
                         {
-                            team.AddRange(teamChangeList.Where(x => x.SrcMatchesAgent(nonSquadPlayer)).Select(TeamChangeEvent.GetTeamIDComingFrom));
+                            var team = teamChangeList.Where(x => x.SrcMatchesAgent(nonSquadPlayer)).Select(TeamChangeEvent.GetTeamIDInto).ToList();
+                            if (evtcVersion.Build > ArcDPSBuilds.TeamChangeOnDespawn)
+                            {
+                                team.AddRange(teamChangeList.Where(x => x.SrcMatchesAgent(nonSquadPlayer)).Select(TeamChangeEvent.GetTeamIDComingFrom));
+                            }
+                            team.RemoveAll(x => x == 0);
+                            nonSquadPlayer.OverrideIsNotInSquadFriendlyPlayer(team.Any(x => x == squadTeam));
                         }
-                        team.RemoveAll(x => x == 0);
-                        nonSquadPlayer.OverrideIsNotInSquadFriendlyPlayer(team.Any(x => x == greenTeam));
                     }
                 }
                 var nonSquadPlayersByInstids = nonSquadPlayerAgents.GroupBy(x => x.InstID).ToDictionary(x => x.Key, x => x.ToList());

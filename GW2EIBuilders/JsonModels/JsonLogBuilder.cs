@@ -234,7 +234,14 @@ internal static class JsonLogBuilder
                 {
                     presentFractalInstabilities.Add(buff.ID);
                 }
-                presentInstanceBuffs.Add([buff.ID, instanceBuff.Stack, log.LogData.GetPhases(log).IndexOf(instanceBuff.AttachedPhase)]);
+                if (instanceBuff.RemainingDuration > 0)
+                {
+                    presentInstanceBuffs.Add([buff.ID, instanceBuff.Stack, log.LogData.GetPhases(log).IndexOf(instanceBuff.AttachedPhase), instanceBuff.RemainingDuration]);
+                } 
+                else
+                {
+                    presentInstanceBuffs.Add([buff.ID, instanceBuff.Stack, log.LogData.GetPhases(log).IndexOf(instanceBuff.AttachedPhase)]);
+                }
             }
             jsonLog.PresentFractalInstabilities = presentFractalInstabilities;
             jsonLog.PresentInstanceBuffs = presentInstanceBuffs;
@@ -286,6 +293,15 @@ internal static class JsonLogBuilder
             }
             jsonLog.UsedExtensions = usedExtensions;
         }
+        if (log.CanCombatReplay)
+        {
+            jsonLog.CombatReplayMetaData = JsonCombatReplayMetaDataBuilder.BuildJsonCombatReplayMetaData(log, settings);
+        }
+        var wvwTeams = log.CombatData.GetWvWTeamsEvent();
+        if (wvwTeams != null)
+        {
+            jsonLog.WvWMapData = JsonWvWMapDataBuilder.BuildJsonWvWMapData(log, wvwTeams, teamMap);
+        }
         //
         jsonLog.PersonalBuffs = personalBuffs.ToDictionary(x => x.Key, x => (IReadOnlyCollection<long>)x.Value);
         jsonLog.PersonalDamageMods = personalDamageMods.ToDictionary(x => x.Key, x => (IReadOnlyCollection<long>)x.Value);
@@ -317,10 +333,6 @@ internal static class JsonLogBuilder
             jsonLog.TeamMap = teamDesc;
         }
         //
-        if (log.CanCombatReplay)
-        {
-            jsonLog.CombatReplayMetaData = JsonCombatReplayMetaDataBuilder.BuildJsonCombatReplayMetaData(log, settings);
-        }
         return jsonLog;
     }
 

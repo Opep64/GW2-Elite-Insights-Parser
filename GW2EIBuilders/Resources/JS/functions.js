@@ -33,7 +33,7 @@ function computeSliderGradient(color, fillColor, startPercent, endPercent) {
 const duckify = url => 'https://external-content.duckduckgo.com/iu/?u=' + encodeURIComponent(url);
 
 function _buildFallBackURL(url) {
-    if (replaceImgur && url.includes("imgur")) {
+    if (replaceImgur && url.startsWith("https://i.imgur.com")) {
         return duckify(url);
     }
     if (!url.includes("render") || apiRenderServiceOkay) {
@@ -729,7 +729,7 @@ function computeBuffData(buffData, data) {
                 text: [],
                 yaxis: boon.stacking ? 'y4' : 'y',
                 type: 'scatter',
-                visible: boonItem.visible ? null : 'legendonly',
+                visible: 'legendonly',
                 line: {
                     color: boonItem.color,
                     shape: 'hv'
@@ -910,7 +910,7 @@ function computeBuffData(buffData, data) {
                 y: [],
                 yaxis: boon.stacking ? 'stacking' : 'y' + (2 + ystart++),
                 type: 'scatter',
-                visible: boonItem.visible || !boon.stacking ? null : 'legendonly',
+                visible: 'legendonly',
                 line: {
                     color: boonItem.color,
                     shape: 'hv'
@@ -1186,4 +1186,21 @@ function getPhasesForSelectedEncounter(phases, encounters) {
         }
     }
     return phases;
+}
+
+function playerIsRunningHealingExtension(playerData) {
+    if (!logData.usedExtensions) {
+        return false;
+    }
+    for (var j = 0; j < logData.usedExtensions.length; j++) {
+        var usedExtension = logData.usedExtensions[j];
+        if (!usedExtension.includes("Healing Stats")) {
+            continue;
+        }
+        var playersRunning = logData.playersRunningExtensions[j];
+        if (playersRunning.includes(playerData.name)) {
+            return true;
+        }
+    }
+    return false;
 }

@@ -1,7 +1,7 @@
 <template>
     <div class="d-flex flex-column justify-content-center align-items-center">
         <div class="target-status" :class="{'target-status-compact': compact}" :style="targetStatusStyle" @click="select" :title="target.name + ' - ' + target.health + ' health'">
-            <h6 class="actor-shorten-cr text-center" :class="{'actor-shorten-cr-compact': compact}">
+            <h6 class="target-shorten-cr text-center" :class="{'actor-shorten-cr-compact': compact}">
                 <img v-if="!compact" v-for="(marker, index) in activeMarkers()" :src="marker.imageUrl" :height="markerIconSize" :width="markerIconSize">
                 <img :src="target.icon" :height="targetIconSize" :width="targetIconSize"/>
                 {{target.name}}
@@ -18,7 +18,7 @@
             <p v-if="!compact && hasBarrier" class="text-right cr-barrier-display cr-barrier-display-target">
                 {{(Math.round(100*getBarrierPercent(time))/100).toFixed(2)}} %
             </p>
-            <div v-if="hasBarrier" class="cr-barrier" :class="{'cr-barrier-compact': compact}" :style="{'background': getBarrierGradient(time, status)}"></div>
+            <div v-if="hasBarrier" class="cr-barrier" :class="compact ? 'cr-barrier-compact' : 'cr-barrier-target'" :style="{'background': getBarrierGradient(time, status)}"></div>
         </div>
         <div v-if="!compact && hasBreakbarPercent" class="cr-breakbar-display">
             <div class="cr-breakbar-bar" :style="{'background': getBreakbarGradient(time)}">

@@ -657,8 +657,17 @@ public sealed class WvWAnalystBuilder
             return false;
         }
 
-        return actor.TryGetCurrentInterpolatedPosition(log, time, out position) ||
-            actor.TryGetCurrentPosition(log, time, out position);
+        if (actor.TryGetCurrentInterpolatedPosition(log, time, out Vector3? interpolatedPosition))
+        {
+            position = interpolatedPosition.Value;
+            return true;
+        }
+        if (actor.TryGetCurrentPosition(log, time, out Vector3? currentPosition))
+        {
+            position = currentPosition.Value;
+            return true;
+        }
+        return false;
     }
 
     private static bool IsWithinFightShapeRange(Vector3 left, Vector3 right, float range)

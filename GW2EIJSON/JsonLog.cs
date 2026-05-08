@@ -296,7 +296,6 @@ public class JsonLog
     /// <summary>
     /// Region on which the PoV is located. \n
     /// Unknown if missing. \n
-    /// China is not currently tested.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Region;
@@ -487,7 +486,8 @@ public class JsonLog
     /// <seealso cref="BuffMap"/>
     public IReadOnlyList<long>? PresentFractalInstabilities;
     /// <summary>
-    /// List of present instance buffs, values are arrays of 3 elements, value[0] is buff id, value[1] is number of stacks, value[2] the index in <see cref="JsonLog.Phases"/> where the buffs are relevant. \n
+    /// List of present instance buffs, values are arrays of 3 elements, value[0] is buff id, value[1] is number of stacks, \n
+    /// value[2] the index in <see cref="JsonLog.Phases"/> where the buffs are relevant, value[3], if present, indicates remaining duration (Only relevant for down and out achievements). \n
     /// value[2] is mainly relevant in instance logs, it can either point towards a specific Encounter phase for encounter specific buffs or to the Instance phase for buffs covering the whole instance, for example fractal instabilities. \n
     /// In boss logs, value[2] will always be the "Full Fight" phase.
     /// </summary>
@@ -507,5 +507,13 @@ public class JsonLog
     /// Contains combat replay related meta data
     /// </summary>
     /// <seealso cref="JsonCombatReplayMetaData"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public JsonCombatReplayMetaData? CombatReplayMetaData;
+
+    /// <summary>
+    /// WvW map data, only relevant for WvW logs. \n
+    /// <see cref="JsonWvWMapData"/>>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonWvWMapData? WvWMapData;
 }

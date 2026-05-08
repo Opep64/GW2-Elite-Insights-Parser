@@ -1,11 +1,12 @@
-﻿using GW2EIEvtcParser.EIData;
+﻿using System.Numerics;
+using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.Exceptions;
 using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIEvtcParser.ParserHelpers;
 using static GW2EIEvtcParser.ArcDPSEnums;
-using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
+using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
@@ -62,28 +63,37 @@ internal class Sabetha : SpiritVale
         return crMap;
     }
 
-    internal static void FindCannonsAndHeavyBombs(AgentData agentData, List<CombatItem> combatData)
+    internal static void FindArenaGadgets(AgentData agentData, List<CombatItem> combatData)
     {
+        var maxHPUpdateEvents = combatData.Where(x => x.IsStateChange == StateChange.MaxHealthUpdate).ToList();
         // Cannons
-        var cannons = combatData.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 74700 && x.IsStateChange == StateChange.MaxHealthUpdate).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Where(x => x.Type == AgentItem.AgentType.Gadget);
+        var cannons = maxHPUpdateEvents.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 74700).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Where(x => x.Type == AgentItem.AgentType.Gadget);
         foreach (AgentItem cannon in cannons)
         {
             cannon.OverrideType(AgentItem.AgentType.NPC, agentData);
             cannon.OverrideID(TargetID.Cannon, agentData);
         }
-
+        var genericGadgetMaxHPUpdates = maxHPUpdateEvents.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 14940);
+        var genericGadgetMaxHPUpdatesAgents = genericGadgetMaxHPUpdates.Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).ToList();
         // Heavy Bombs
-        var heavyBombs = combatData.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 14940 && x.IsStateChange == StateChange.MaxHealthUpdate).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Where(x => x.Type == AgentItem.AgentType.Gadget && x.HitboxHeight == 300 && x.HitboxWidth == 2);
+        var heavyBombs = genericGadgetMaxHPUpdatesAgents.Where(x => x.Type == AgentItem.AgentType.Gadget && x.HitboxHeight == 300 && x.HitboxWidth == 2);
         foreach (AgentItem bomb in heavyBombs)
         {
             bomb.OverrideType(AgentItem.AgentType.NPC, agentData);
             bomb.OverrideID(TargetID.HeavyBomb, agentData);
         }
+        // Plateforms
+        var platforms = genericGadgetMaxHPUpdatesAgents.Where(x => x.Type == AgentItem.AgentType.Gadget && x.HitboxHeight == 300 && x.HitboxWidth == 3556);
+        foreach (AgentItem platform in platforms)
+        {
+            platform.OverrideType(AgentItem.AgentType.NPC, agentData);
+            platform.OverrideID(TargetID.SabethaPlatform, agentData);
+        }
     }
 
     internal override void EIEvtcParse(ulong gw2Build, EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData, IReadOnlyDictionary<uint, ExtensionHandler> extensions)
     {
-        FindCannonsAndHeavyBombs(agentData, combatData);
+        FindArenaGadgets(agentData, combatData);
         base.EIEvtcParse(gw2Build, evtcVersion, logData, agentData, combatData, extensions);
     }
 
@@ -156,6 +166,13 @@ internal class Sabetha : SpiritVale
         ];
     }
 
+    protected override HashSet<int> IgnoreForAutoNumericalRenaming()
+    {
+        return [
+            (int)TargetID.Cannon
+        ];
+    }
+
     internal override Dictionary<TargetID, int> GetTargetsSortIDs()
     {
         return new Dictionary<TargetID, int>()
@@ -180,6 +197,24 @@ internal class Sabetha : SpiritVale
         switch (target.ID)
         {
             case (int)TargetID.Sabetha:
+                var activePlateform = log.AgentData.GetNPCsByID(TargetID.SabethaPlatform).FirstOrDefault(x => target.InAwareTimes(x));
+                if (activePlateform != null)
+                {
+                    var activeEncounter = log.LogData.GetEncounterPhases(log, LogID).FirstOrDefault(x => x.Targets.ContainsKey(target));
+                    if (activeEncounter != null)
+                    {
+                        // Add the hp indicator
+                        var hpUpdates = log.CombatData.GetHealthUpdateEvents(activePlateform);
+                        for (var i = 0; i < hpUpdates.Count; i++)
+                        {
+                            var hpUpdate = hpUpdates[i];
+                            long hpUpdateStart = Math.Max(hpUpdate.Time, activeEncounter.Start);
+                            long hpUpdateEnd = Math.Min(i < hpUpdates.Count - 1 ? hpUpdates[i + 1].Time : activeEncounter.End, activeEncounter.End);
+                            replay.Decorations.Add(new TextDecoration((hpUpdateStart, hpUpdateEnd), "Plateform Health: " + string.Format("{0:0.00}", hpUpdate.HealthPercent) + "%",
+                                15, Colors.Red, 1.0, new ScreenSpaceConnector(new Vector2(100, 125))));
+                        }
+                    }
+                }
                 foreach (CastEvent cast in target.GetAnimatedCastEvents(log))
                 {
                     switch (cast.SkillID)
@@ -195,8 +230,8 @@ internal class Sabetha : SpiritVale
                             if (target.TryGetCurrentFacingDirection(log, cast.Time, out var facingFirestorm))
                             {
                                 var positionConnector = (AgentConnector)new AgentConnector(target).WithOffset(new(width / 2, 0, 0), true);
-                                replay.Decorations.Add(new RectangleDecoration(width, height, lifespan, Colors.Orange, 0.2, positionConnector).UsingRotationConnector(new AngleConnector(facingFirestorm)));
-                                replay.Decorations.Add(new RectangleDecoration(width, height, lifespanWall, Colors.Red, 0.5, positionConnector).UsingRotationConnector(new SpinningConnector(facingFirestorm, 360)));
+                                replay.Decorations.Add(new RectangleDecoration(width, height, lifespan, Colors.Orange, 0.2, positionConnector).UsingRotationConnector(new AngleConnector(facingFirestorm.Value)));
+                                replay.Decorations.Add(new RectangleDecoration(width, height, lifespanWall, Colors.Red, 0.5, positionConnector).UsingRotationConnector(new SpinningConnector(facingFirestorm.Value, 360)));
                             }
                             break;
                         default:
@@ -218,7 +253,7 @@ internal class Sabetha : SpiritVale
                             if (target.TryGetCurrentFacingDirection(log, cast.Time, out var facingBulletHail))
                             {
                                 var connector = new AgentConnector(target);
-                                var rotationConnector = new AngleConnector(facingBulletHail);
+                                var rotationConnector = new AngleConnector(facingBulletHail.Value);
                                 replay.Decorations.Add(new PieDecoration(radius, 28, firstCone, Colors.LightOrange, 0.2, connector).UsingRotationConnector(rotationConnector));
                                 replay.Decorations.Add(new PieDecoration(radius, 54, secondCone, Colors.LightOrange, 0.2, connector).UsingRotationConnector(rotationConnector));
                                 replay.Decorations.Add(new PieDecoration(radius, 81, thirdCone, Colors.LightOrange, 0.2, connector).UsingRotationConnector(rotationConnector));
@@ -257,7 +292,7 @@ internal class Sabetha : SpiritVale
                             lifespan = (cast.Time, cast.Time + castDuration);
                             if (target.TryGetCurrentFacingDirection(log, lifespan.start, out var facingFlameBlast))
                             {
-                                replay.Decorations.Add(new PieDecoration(600, 60, lifespan, Colors.Yellow, 0.5, new AgentConnector(target)).UsingRotationConnector(new AngleConnector(facingFlameBlast)));
+                                replay.Decorations.Add(new PieDecoration(600, 60, lifespan, Colors.Yellow, 0.5, new AgentConnector(target)).UsingRotationConnector(new AngleConnector(facingFlameBlast.Value)));
                             }
                             break;
                         default:
@@ -278,7 +313,7 @@ internal class Sabetha : SpiritVale
                     }
                     replay.Hidden.Add(new Segment(hideStart, target.LastAware));
                 }
-                var sabethaPhases = log.LogData.GetEncounterPhases(log).Where(x => x.ID == LogID).ToList();
+                var sabethaPhases = log.LogData.GetEncounterPhases(log, LogID);
                 replay.AddHideByEncounterPhases(sabethaPhases, log);
                 replay.Hidden.Sort((x, y) => x.Start.CompareTo(y.Start));
                 break;

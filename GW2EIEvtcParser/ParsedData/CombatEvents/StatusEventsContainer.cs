@@ -22,6 +22,9 @@ internal class StatusEventsContainer
 
     public readonly Dictionary<AgentItem, List<TeamChangeEvent>> TeamChangeEvents = [];
 
+    public readonly Dictionary<long, WvWObjectiveStatusEvent> WvWObjectiveStatusEventsByKey = [];
+    public readonly List<WvWObjectiveStatusEvent> WvWObjectiveStatusEvents = [];
+
     public readonly Dictionary<AgentItem, List<BreakbarStateEvent>> BreakbarStateEvents = [];
     public readonly Dictionary<AgentItem, List<BreakbarPercentEvent>> BreakbarPercentEvents = [];
 
@@ -39,14 +42,15 @@ internal class StatusEventsContainer
     public readonly Dictionary<AgentItem, List<MarkerEvent>> MarkerEventsBySrc = [];
     public readonly Dictionary<long, List<MarkerEvent>> MarkerEventsByID = [];
 
+    public readonly Dictionary<AgentItem, List<TransformationEvent>> TransformationEventsBySrc = [];
+    public readonly Dictionary<long, List<TransformationEvent>> TransformationEventsByTransformationID = [];
+
     public readonly Dictionary<SquadMarkerIndex, List<SquadMarkerEvent>> SquadMarkerEventsByIndex = [];
 
     public readonly Dictionary<AgentItem, List<Last90BeforeDownEvent>> Last90BeforeDownEventsBySrc = [];
     public readonly List<Last90BeforeDownEvent> Last90BeforeDownEvents = [];
 
     public readonly Dictionary<AgentItem, List<GliderEvent>> GliderEventsBySrc = [];
-
-    public readonly Dictionary<AgentItem, List<StunBreakEvent>> StunBreakEventsBySrc = [];
 
 
     public readonly List<MissileEvent> MissileEvents = [];

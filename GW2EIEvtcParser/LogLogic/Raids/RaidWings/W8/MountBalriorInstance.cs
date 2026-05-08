@@ -48,7 +48,7 @@ internal class MountBalriorInstance : MountBalrior
         {
             subLogic.GetCombatMapInternal(log, arenaDecorations);
         }
-        return crMap;
+        return CombatReplayMap.CreateSquareMapFrom(crMap);
     }
     internal override void CheckSuccess(CombatData combatData, AgentData agentData, LogData logData, IReadOnlyCollection<AgentItem> playerAgents, LogData.LogSuccessHandler successHandler)
     {
@@ -386,7 +386,8 @@ internal class MountBalriorInstance : MountBalrior
     {
         foreach (var ura in Targets.Where(x => x.IsSpecies(TargetID.Ura)))
         {
-            UraTheSteamshrieker.AdjustUraHP(ura, ura.GetHealth(combatData), UraTheSteamshrieker.GetHealedPhaseStartEvent(combatData, ura, logData.LogStart, logData.LogEnd) != null);
+            UraTheSteamshrieker.AdjustUraHP(ura, ura.GetHealth(combatData), 
+                UraTheSteamshrieker.GetHealedPhaseStartEvent(combatData, ura, logData.LogStart, logData.LogEnd) != null, combatData.GetGW2BuildEvent().Build);
         }
         return base.GetLogMode(combatData, agentData, logData);
     }
