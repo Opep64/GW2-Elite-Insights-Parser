@@ -12,6 +12,7 @@ namespace GW2EIBuilders;
 public sealed class WvWAnalystBuilder
 {
     private const float FightShapeMaxDistanceFromFight = 5000.0f;
+    private const long ArcDpsGenericKnockbackPullSkillId = 23295;
 
     private static readonly JsonSerializerOptions DefaultSerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions IndentedSerializerOptions = new(JsonSerializerDefaults.Web)
@@ -76,7 +77,7 @@ public sealed class WvWAnalystBuilder
         {
             Meta = new WvWAnalystMetaDto
             {
-                SchemaVersion = "1.21.0",
+                SchemaVersion = "1.23.0",
                 PayloadType = "wvw-analyst-fight",
                 DetailLevel = "summary+players+boons+lane-metrics+player-fight-impact+spec-fight-coverage+player-boons+provided-boons+top-bursts+enemy-player-performance+enemy-top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
@@ -1069,7 +1070,7 @@ public sealed class WvWAnalystBuilder
             hostilePlayerTargets);
 
         return squadPlayers
-            .Select(player => BuildPlayerSummary(log, phase, player, hostilePlayerTargets, combatReplayAnalysis, corruptsByAttacker, player.UniqueID == commanderId))
+            .Select(player => BuildPlayerSummary(log, phase, player, squadPlayers, hostilePlayerTargets, combatReplayAnalysis, corruptsByAttacker, player.UniqueID == commanderId))
             .OrderByDescending(player => player.IsCommander)
             .ThenBy(player => player.Group)
             .ThenBy(player => player.Character, StringComparer.OrdinalIgnoreCase)
@@ -1080,6 +1081,7 @@ public sealed class WvWAnalystBuilder
         ParsedEvtcLog log,
         PhaseData phase,
         SingleActor player,
+        IReadOnlyList<SingleActor> squadPlayers,
         IReadOnlyList<SingleActor> hostilePlayerTargets,
         CombatReplayAnalysisDto? combatReplayAnalysis,
         IReadOnlyDictionary<AgentItem, int> corruptsByAttacker,
@@ -1088,20 +1090,27 @@ public sealed class WvWAnalystBuilder
         SupportStatistics support = player.GetToAllySupportStats(log, phase.Start, phase.End);
         DefenseAllStatistics defense = player.GetDefenseStats(log, phase.Start, phase.End);
         long damage = 0;
+        long damageToDownedTargets = 0;
         int downs = 0;
         int kills = 0;
+        int downContribution = 0;
         foreach (SingleActor target in hostilePlayerTargets)
         {
             DamageStatistics damageStats = player.GetDamageStats(target, log, phase.Start, phase.End);
             damage += damageStats.Damage;
             OffensiveStatistics offensive = player.GetOffensiveStats(target, log, phase.Start, phase.End);
+            damageToDownedTargets += offensive.AgainstDownedDamage;
             downs += offensive.DownedCount;
             kills += offensive.KilledCount;
+            downContribution += offensive.DownContribution;
         }
 
         CombatReplayPlayerEvaluationDto? evaluation = TryGetPlayerEvaluation(combatReplayAnalysis, player.UniqueID);
         CombatReplayPositioningPlayerTimelineDto? positioningTimeline = TryGetPositioningTimeline(combatReplayAnalysis, player.UniqueID);
         int corrupts = corruptsByAttacker.GetValueOrDefault(player.EnglobingAgentItem);
+        var outgoingHealing = log.CombatData.HasEXTHealing
+            ? player.EXTHealing.GetOutgoingHealStats(null, log, phase.Start, phase.End)
+            : null;
 
         return new WvWAnalystPlayerSummaryDto
         {
@@ -1116,18 +1125,26 @@ public sealed class WvWAnalystBuilder
             ActiveSeconds = Math.Round(player.GetActiveDuration(log, phase.Start, phase.End) / 1000.0, 1),
             CombatSeconds = Math.Round(player.GetTimeSpentInCombat(log, phase.Start, phase.End) / 1000.0, 1),
             Damage = damage,
+            DamageToDownedTargets = damageToDownedTargets,
             Downs = downs,
             Kills = kills,
+            DownContribution = downContribution,
             Strips = support.BoonStripCount,
             Corrupts = corrupts,
             CorruptPercent = ComputePercent(corrupts, support.BoonStripCount),
             OutgoingCleanses = support.ConditionCleanseCount,
-            Healing = log.CombatData.HasEXTHealing ? player.EXTHealing.GetOutgoingHealStats(null, log, phase.Start, phase.End).Healing : 0,
+            Healing = outgoingHealing?.Healing ?? 0,
+            DownedHealing = outgoingHealing?.DownedHealing ?? 0,
             Barrier = log.CombatData.HasEXTBarrier ? player.EXTBarrier.GetOutgoingBarrierStats(null, log, phase.Start, phase.End).Barrier : 0,
             Resurrects = support.ResurrectCount,
+            IllusionOfLifeRezzes = CountIllusionOfLifeRezzes(log, phase, player, squadPlayers),
             Deaths = defense.DeadCount,
             Recoveries = BuildPlayerRecoveryCount(log, player, phase),
             DamageTaken = defense.DamageTaken,
+            PetDamageAbsorbed = (long)Math.Round(GetPlayerLaneMetricValue(evaluation, "petAbsorptionTotal")),
+            DamageReflectedOnEnemy = GetPlayerReflectDamageOnEnemy(combatReplayAnalysis, player.UniqueID),
+            MysticRebukeDamage = ComputeMysticRebukeDamage(log, phase, player, hostilePlayerTargets),
+            Pulls = CountPulls(log, phase, player, hostilePlayerTargets),
             ReceivedCrowdControl = defense.ReceivedCrowdControl,
             HasPositioningData = positioningTimeline is not null && CountEligibleSamples(positioningTimeline) > 0,
             PositioningSamples = CountEligibleSamples(positioningTimeline),
@@ -1880,6 +1897,103 @@ public sealed class WvWAnalystBuilder
         return "Unresolved";
     }
 
+    private static double GetPlayerLaneMetricValue(CombatReplayPlayerEvaluationDto? evaluation, string metricKey)
+    {
+        return evaluation?.Lanes?
+            .SelectMany(lane => lane.Metrics ?? [])
+            .FirstOrDefault(metric => string.Equals(metric.Key, metricKey, StringComparison.OrdinalIgnoreCase))
+            ?.Value ?? 0.0;
+    }
+
+    private static double GetPlayerReflectDamageOnEnemy(CombatReplayAnalysisDto? combatReplayAnalysis, int playerId)
+    {
+        return combatReplayAnalysis?.Defense?.Reflects?.SquadToEnemy?.TopAttributedActors?
+            .Where(actor => actor.ActorId == playerId)
+            .Sum(actor => actor.Amount) ?? 0.0;
+    }
+
+    private static long ComputeMysticRebukeDamage(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        SingleActor player,
+        IReadOnlyList<SingleActor> hostilePlayerTargets)
+    {
+        long total = 0;
+        foreach (SingleActor target in hostilePlayerTargets)
+        {
+            foreach (HealthDamageEvent damageEvent in player.GetDamageEvents(target, log, phase.Start, phase.End))
+            {
+                if (damageEvent.HasHit &&
+                    damageEvent.HealthDamage > 0 &&
+                    damageEvent.Skill.Name.Contains("Mystic Rebuke", StringComparison.OrdinalIgnoreCase))
+                {
+                    total += damageEvent.HealthDamage;
+                }
+            }
+        }
+        return total;
+    }
+
+    private static int CountPulls(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        SingleActor player,
+        IReadOnlyList<SingleActor> hostilePlayerTargets)
+    {
+        return log.CombatData.GetCrowdControlData(ArcDpsGenericKnockbackPullSkillId)
+            .Count(evt =>
+                evt.Time >= phase.Start &&
+                evt.Time <= phase.End &&
+                IsAttributedToPlayer(evt.CreditedFrom, evt.From, player) &&
+                hostilePlayerTargets.Any(target => evt.To.Is(target.AgentItem) || evt.To.Is(target.EnglobingAgentItem)));
+    }
+
+    private static int CountIllusionOfLifeRezzes(
+        ParsedEvtcLog log,
+        PhaseData phase,
+        SingleActor player,
+        IReadOnlyList<SingleActor> squadPlayers)
+    {
+        int count = 0;
+        foreach (SingleActor recoveredPlayer in squadPlayers.Where(candidate => candidate.UniqueID != player.UniqueID))
+        {
+            foreach (DownEvent downEvent in log.CombatData.GetDownEvents(recoveredPlayer.AgentItem))
+            {
+                if (downEvent.Time < phase.Start || downEvent.Time > phase.End)
+                {
+                    continue;
+                }
+
+                AliveEvent? nextAlive = log.CombatData.GetAliveEvents(recoveredPlayer.AgentItem).FirstOrDefault(evt => evt.Time >= downEvent.Time);
+                DeadEvent? nextDead = log.CombatData.GetDeadEvents(recoveredPlayer.AgentItem).FirstOrDefault(evt => evt.Time >= downEvent.Time);
+                if (nextAlive is null || (nextDead is not null && nextDead.Time <= nextAlive.Time))
+                {
+                    continue;
+                }
+
+                if (log.CombatData.GetBuffApplyDataByIDByDst(SkillIDs.IllusionOfLifeBuff, recoveredPlayer.AgentItem)
+                    .Any(buffApply =>
+                        buffApply.Time >= downEvent.Time &&
+                        buffApply.Time <= nextAlive.Time &&
+                        IsAttributedToPlayer(buffApply.CreditedBy, buffApply.By, player)))
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
+    private static bool IsAttributedToPlayer(AgentItem creditedBy, AgentItem source, SingleActor player)
+    {
+        AgentItem provider = !creditedBy.IsUnknown ? creditedBy : source.GetFinalMaster();
+        return provider.Is(player.AgentItem) ||
+            provider.Is(player.EnglobingAgentItem) ||
+            source.Is(player.AgentItem) ||
+            source.Is(player.EnglobingAgentItem);
+    }
+
     private static WvWAnalystExecutionPillarDto BuildExecutionPillar(WvwSummaryExecutionPillarDto pillar)
     {
         return new WvWAnalystExecutionPillarDto
@@ -2513,18 +2627,26 @@ internal sealed class WvWAnalystPlayerSummaryDto
     public double ActiveSeconds { get; set; }
     public double CombatSeconds { get; set; }
     public long Damage { get; set; }
+    public long DamageToDownedTargets { get; set; }
     public int Downs { get; set; }
     public int Kills { get; set; }
+    public int DownContribution { get; set; }
     public int Strips { get; set; }
     public int Corrupts { get; set; }
     public double CorruptPercent { get; set; }
     public int OutgoingCleanses { get; set; }
     public long Healing { get; set; }
+    public long DownedHealing { get; set; }
     public long Barrier { get; set; }
     public int Resurrects { get; set; }
+    public int IllusionOfLifeRezzes { get; set; }
     public int Deaths { get; set; }
     public int Recoveries { get; set; }
     public long DamageTaken { get; set; }
+    public long PetDamageAbsorbed { get; set; }
+    public double DamageReflectedOnEnemy { get; set; }
+    public long MysticRebukeDamage { get; set; }
+    public int Pulls { get; set; }
     public int ReceivedCrowdControl { get; set; }
     public bool HasPositioningData { get; set; }
     public int PositioningSamples { get; set; }
