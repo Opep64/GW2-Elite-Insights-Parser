@@ -74,6 +74,10 @@
                 return animator.getActiveActorMarkers(this.player.uniqueID);
             },
             select() {
+                if (this.compact && animator.focusActorAtScale) {
+                    animator.focusActorAtScale(this.player.uniqueID, 179.7);
+                    return;
+                }
                 animator.selectActor(this.player.uniqueID);
             }
         },

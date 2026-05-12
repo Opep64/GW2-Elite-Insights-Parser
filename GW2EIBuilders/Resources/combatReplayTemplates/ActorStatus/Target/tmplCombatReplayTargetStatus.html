@@ -53,6 +53,10 @@
                 return null;
             },
             select() {
+                if (this.compact && animator.focusActorAtScale) {
+                    animator.focusActorAtScale(this.target.uniqueID, 179.7);
+                    return;
+                }
                 animator.selectActor(this.target.uniqueID);
             },
             activeMarkers: function() {

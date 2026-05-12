@@ -785,7 +785,17 @@ class Animator {
         this._setSelectedActor(actorId, "external");
         this._reselectIfEnglobed();
         const selectedActor = this.selectedActor;
-        const pos = selectedActor ? selectedActor.getPosition() : null;
+        let pos = selectedActor ? selectedActor.getPosition() : null;
+        if (pos === null) {
+            const focusTime = this._getNearestActorPositionTime(selectedActor);
+            if (focusTime !== null) {
+                this.reactiveDataStatus.time = focusTime;
+                if (typeof this.updateTextInput === "function") {
+                    this.updateTextInput();
+                }
+                pos = selectedActor._getPosition(focusTime);
+            }
+        }
         if (pos === null) {
             if (this.animation === null) {
                 animateCanvas(noUpdateTime);
@@ -801,7 +811,9 @@ class Animator {
         this.lastY = canvas.height / 2;
         this.mouseDown = null;
         this.dragged = false;
-        this.coneControl.enabled = true;
+        if (this.selectedExtraDecorations && this.selectedExtraDecorations.coneControl) {
+            this.selectedExtraDecorations.coneControl.enabled = true;
+        }
 
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.scale(resolutionMultiplier, resolutionMultiplier);
@@ -818,6 +830,51 @@ class Animator {
         if (this.animation === null) {
             animateCanvas(noUpdateTime);
         }
+    }
+
+    _getNearestActorPositionTime(actor) {
+        if (!actor || typeof actor._getPosition !== "function") {
+            return null;
+        }
+        const currentTime = this.reactiveDataStatus.time;
+        const range = this.reactiveDataStatus.range || {};
+        const minTime = Number.isFinite(range.min) ? range.min : 0;
+        const maxTime = Number.isFinite(range.max) ? range.max : (this.times.length > 0 ? this.times[this.times.length - 1] : minTime);
+        const startTime = actor.start !== -1 ? Math.max(actor.start, minTime) : minTime;
+        const endTime = actor.end >= 0 ? Math.min(actor.end, maxTime) : maxTime;
+        const preferredTimes = [];
+        if (currentTime < startTime) {
+            preferredTimes.push(startTime);
+        } else if (currentTime > endTime) {
+            preferredTimes.push(endTime);
+        }
+        preferredTimes.push(currentTime, startTime, endTime);
+        for (let i = 0; i < preferredTimes.length; i++) {
+            const time = preferredTimes[i];
+            if (time < minTime || time > maxTime) {
+                continue;
+            }
+            if (actor._getPosition(time) !== null) {
+                return time;
+            }
+        }
+        let nearestTime = null;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < this.times.length; i++) {
+            const time = this.times[i];
+            if (time < startTime || time > endTime) {
+                continue;
+            }
+            if (actor._getPosition(time) === null) {
+                continue;
+            }
+            const distance = Math.abs(time - currentTime);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestTime = time;
+            }
+        }
+        return nearestTime;
     }
     
     _reselectIfEnglobed() {     
