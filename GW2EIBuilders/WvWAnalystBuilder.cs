@@ -77,9 +77,9 @@ public sealed class WvWAnalystBuilder
         {
             Meta = new WvWAnalystMetaDto
             {
-                SchemaVersion = "1.23.0",
+                SchemaVersion = "1.24.0",
                 PayloadType = "wvw-analyst-fight",
-                DetailLevel = "summary+players+boons+lane-metrics+player-fight-impact+spec-fight-coverage+player-boons+provided-boons+top-bursts+enemy-player-performance+enemy-top-bursts+defense-saves+mitigation-summary+negated-hits+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context",
+                DetailLevel = "summary+players+boons+lane-metrics+player-fight-impact+spec-fight-coverage+player-boons+provided-boons+top-bursts+enemy-player-performance+enemy-top-bursts+defense-saves+mitigation-summary+negated-hits+shield-of-courage+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
                 ParserVersion = parserVersion.ToString(),
             },
@@ -1432,6 +1432,7 @@ public sealed class WvWAnalystBuilder
             TotalIncomingHealing = savedPlayers.TotalIncomingHealing,
             BarrierOvercap = BuildBarrierOvercapSummary(defense.BarrierOvercap),
             Reflects = BuildReflectSummary(defense.Reflects),
+            ShieldOfCourage = BuildShieldOfCourageSummary(defense.ShieldOfCourage),
             NegatedHitSummaries = defense.NegatedHitSummaries
                 .Select(summary => new WvWAnalystNegatedHitSummaryDto
                 {
@@ -1449,6 +1450,24 @@ public sealed class WvWAnalystBuilder
                         .ToArray(),
                 })
                 .ToArray(),
+        };
+    }
+
+    private static WvWAnalystShieldOfCourageSummaryDto? BuildShieldOfCourageSummary(CombatReplayDefenseShieldOfCourageDto? summary)
+    {
+        if (summary is null || !summary.Available)
+        {
+            return null;
+        }
+
+        return new WvWAnalystShieldOfCourageSummaryDto
+        {
+            Available = summary.Available,
+            BlockedAttackCount = summary.BlockedAttackCount,
+            EstimatedBlockedDamage = summary.EstimatedBlockedDamage,
+            FallbackEstimateCount = summary.FallbackEstimateCount,
+            MaxCoveredPlayers = summary.MaxCoveredPlayers,
+            MaxCoveredPlayersTimeLabel = summary.MaxCoveredPlayersTimeLabel,
         };
     }
 
@@ -2544,7 +2563,18 @@ internal sealed class WvWAnalystMitigationSummaryDto
     public double TotalIncomingHealing { get; set; }
     public WvWAnalystBarrierOvercapSummaryDto? BarrierOvercap { get; set; }
     public WvWAnalystReflectSummaryDto? Reflects { get; set; }
+    public WvWAnalystShieldOfCourageSummaryDto? ShieldOfCourage { get; set; }
     public IReadOnlyList<WvWAnalystNegatedHitSummaryDto> NegatedHitSummaries { get; set; } = Array.Empty<WvWAnalystNegatedHitSummaryDto>();
+}
+
+internal sealed class WvWAnalystShieldOfCourageSummaryDto
+{
+    public bool Available { get; set; }
+    public int BlockedAttackCount { get; set; }
+    public double EstimatedBlockedDamage { get; set; }
+    public int FallbackEstimateCount { get; set; }
+    public int MaxCoveredPlayers { get; set; }
+    public string MaxCoveredPlayersTimeLabel { get; set; } = string.Empty;
 }
 
 internal sealed class WvWAnalystBarrierOvercapSummaryDto

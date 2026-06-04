@@ -4060,9 +4060,15 @@
                             class="combat-replay-wvw-analysis-metric">
                             <div class="combat-replay-wvw-analysis-label">{{summary.label}}</div>
                             <div class="combat-replay-wvw-analysis-value">{{formatAmount(summary.estimatedPreventedDamage)}}</div>
-                            <div class="combat-replay-wvw-analysis-detail">{{formatCount(summary.negatedHitCount)}} negated hits</div>
+                            <div class="combat-replay-wvw-analysis-detail">
+                                <span v-if="summary.key === 'shieldOfCourage'">{{formatCount(defenseAnalysis.shieldOfCourage ? defenseAnalysis.shieldOfCourage.blockedAttackCount : summary.negatedHitCount)}} blocked attacks</span>
+                                <span v-else>{{formatCount(summary.negatedHitCount)}} negated hits</span>
+                            </div>
+                            <div v-if="summary.key === 'shieldOfCourage' && defenseAnalysis.shieldOfCourage" class="combat-replay-wvw-analysis-detail">
+                                Max covered: {{formatCount(defenseAnalysis.shieldOfCourage.maxCoveredPlayers)}} players<span v-if="defenseAnalysis.shieldOfCourage.maxCoveredPlayersTimeLabel"> at {{defenseAnalysis.shieldOfCourage.maxCoveredPlayersTimeLabel}}</span>
+                            </div>
                             <div class="combat-replay-wvw-analysis-detail">{{formatCount(summary.fallbackEstimateCount)}} fallback estimates at 50 each</div>
-                            <div v-if="summary.contributingEffects && summary.contributingEffects.length > 0" class="combat-replay-wvw-analysis-detail">
+                            <div v-if="summary.key !== 'shieldOfCourage' && summary.contributingEffects && summary.contributingEffects.length > 0" class="combat-replay-wvw-analysis-detail">
                                 Effects: {{summary.contributingEffects.map(effect => effect.name + ' (' + formatCount(effect.count) + ')').join(', ')}}
                             </div>
                             <button

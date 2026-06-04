@@ -255,9 +255,20 @@ internal class CombatReplayDefenseAnalysisDto
     public CombatReplayDefenseSavedPlayersSummaryDto SavedPlayersSummary { get; set; } = new();
     public CombatReplayDefenseBarrierOvercapDto BarrierOvercap { get; set; } = new();
     public CombatReplayDefenseReflectAnalysisDto Reflects { get; set; } = new();
+    public CombatReplayDefenseShieldOfCourageDto ShieldOfCourage { get; set; } = new();
     public List<CombatReplayEventActorSummaryDto> TopBarrierProviders { get; set; } = [];
     public List<CombatReplayEventActorSummaryDto> TopPetMinionAbsorbers { get; set; } = [];
     public List<CombatReplayDefenseNegatedHitSummaryDto> NegatedHitSummaries { get; set; } = [];
+}
+
+internal class CombatReplayDefenseShieldOfCourageDto
+{
+    public bool Available { get; set; }
+    public int BlockedAttackCount { get; set; }
+    public double EstimatedBlockedDamage { get; set; }
+    public int FallbackEstimateCount { get; set; }
+    public int MaxCoveredPlayers { get; set; }
+    public string MaxCoveredPlayersTimeLabel { get; set; } = "";
 }
 
 internal class CombatReplayDefenseReflectAnalysisDto
@@ -588,6 +599,7 @@ internal static class CombatReplayMitigationDefinitions
 
     public static readonly IReadOnlyList<TrackedNegatedMitigationEffect> NegatedEffects =
     [
+        new() { Name = "Shield of Courage", BuffIds = [ShieldOfCourageActive], Trigger = NegatedHitTrigger.Blocked, SummaryKey = "shieldOfCourage", SummaryLabel = "Shield of Courage Blocks" },
         new() { Name = "Aegis", BuffIds = [Aegis], Trigger = NegatedHitTrigger.Blocked, SummaryKey = "aegis", SummaryLabel = "Aegis Blocks" },
         new() { Name = "Distortion", BuffIds = [DistortionBuff], Trigger = NegatedHitTrigger.Absorbed, SummaryKey = "distortion", SummaryLabel = "Distortion Negations" },
         new() { Name = "Blur", BuffIds = [Blur], Trigger = NegatedHitTrigger.Absorbed, SummaryKey = "blur", SummaryLabel = "Blur Negations" },
@@ -5665,7 +5677,7 @@ internal static class CombatReplayAnalysisBuilder
             BuildDetailSection("Prevention Metrics",
             [
                 BuildDetailEntry("Barrier", barrierValue, barrierSecondary),
-                BuildDetailEntry("Negated damage", FormatOneDecimal(aggregate.AttributedNegatedDamageTotal), "Estimated prevented damage from source-attributed Aegis, Blind, Distortion, Blur, and tracked invulnerability-style effects"),
+                BuildDetailEntry("Negated damage", FormatOneDecimal(aggregate.AttributedNegatedDamageTotal), "Estimated prevented damage from source-attributed Shield of Courage, Aegis, Blind, Distortion, Blur, and tracked invulnerability-style effects"),
                 BuildDetailEntry("Pet absorption", FormatWholeNumber(aggregate.PetMinionAbsorptionTotal), "Incoming damage taken by owned pets and minions"),
                 BuildDetailEntry("Defensive condition pressure", FormatWholeNumber((long)Math.Round(aggregate.DefensiveConditionPressure)), ""),
                 BuildDetailEntry("Prevention windows", BuildPluralizedLabel(aggregate.DefensiveSupportWindows, "prevention window", "prevention windows"), $"{aggregate.DefensiveSupportWindowsTotal} total")
@@ -6586,6 +6598,7 @@ internal static class CombatReplayAnalysisBuilder
         summary.TopPetMinionAbsorbers = BuildTopActorSummaries(topPetMinionAbsorberContributions);
         summary.NegatedHitSummaries = BuildNegatedHitSummaries(log, squadPlayers);
         summary.Reflects = BuildReflectAnalysis(log, squadPlayers, hostileTargets);
+        summary.ShieldOfCourage = BuildShieldOfCourageAnalysis(log, squadPlayers);
 
         if (!log.CombatData.HasEXTBarrier)
         {
@@ -7553,6 +7566,13 @@ internal static class CombatReplayAnalysisBuilder
 
         if (damageEvent.IsBlocked)
         {
+            (string? blockedEffectName, string? _) = ClassifyNegatedHit(damageEvent, negatedEffectRanges, includeGenericAbsorbs: false);
+            if (string.Equals(blockedEffectName, "Shield of Courage", StringComparison.OrdinalIgnoreCase))
+            {
+                AddBuffSourceProviders(recipient, log, squadPlayers, [ShieldOfCourageActive], "Shield of Courage", attributionStart, attributionEnd, providers, seenProviders);
+                return providers;
+            }
+
             AddBuffSourceProviders(recipient, log, squadPlayers, [Aegis], "Aegis", attributionStart, attributionEnd, providers, seenProviders);
             return providers;
         }
@@ -7667,6 +7687,98 @@ internal static class CombatReplayAnalysisBuilder
 
         usedFallback = true;
         return 50.0;
+    }
+
+    private static CombatReplayDefenseShieldOfCourageDto BuildShieldOfCourageAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> squadPlayers)
+    {
+        var result = new CombatReplayDefenseShieldOfCourageDto();
+        long start = log.LogData.LogStart;
+        long end = log.LogData.LogEnd;
+        var shieldRangesByPlayer = squadPlayers
+            .Select(player => (Player: player, Ranges: GetMergedBuffPresenceRanges(player, log, [ShieldOfCourageActive], start, end)))
+            .Where(entry => entry.Ranges.Count > 0)
+            .ToArray();
+        if (shieldRangesByPlayer.Length == 0)
+        {
+            return result;
+        }
+
+        result.Available = true;
+        (result.MaxCoveredPlayers, long maxCoveredTime) = GetMaxConcurrentBuffCoverage(shieldRangesByPlayer.Select(entry => entry.Ranges));
+        result.MaxCoveredPlayersTimeLabel = maxCoveredTime > 0 ? FormatTime(maxCoveredTime) : "";
+
+        var landedDamageLookup = BuildLandedDamageEstimateLookup(log, squadPlayers);
+        double estimatedDamage = 0.0;
+        int blockedHits = 0;
+        int fallbackEstimates = 0;
+        foreach (var entry in shieldRangesByPlayer)
+        {
+            foreach (HealthDamageEvent damageEvent in entry.Player.GetDamageTakenEvents(null, log, start, end))
+            {
+                if (!damageEvent.IsBlocked || !HasMitigationBuffNearTime(entry.Ranges, damageEvent.Time))
+                {
+                    continue;
+                }
+
+                blockedHits++;
+                estimatedDamage += EstimateNegatedDamage(damageEvent, landedDamageLookup, out bool usedFallback);
+                if (usedFallback)
+                {
+                    fallbackEstimates++;
+                }
+            }
+        }
+
+        result.BlockedAttackCount = blockedHits;
+        result.EstimatedBlockedDamage = Math.Round(estimatedDamage, 1);
+        result.FallbackEstimateCount = fallbackEstimates;
+        return result;
+    }
+
+    private static (int Count, long Time) GetMaxConcurrentBuffCoverage(IEnumerable<IReadOnlyList<(long Start, long End)>> rangesByActor)
+    {
+        var events = new List<(long Time, int Delta)>();
+        foreach (IReadOnlyList<(long Start, long End)> ranges in rangesByActor)
+        {
+            foreach ((long rangeStart, long rangeEnd) in ranges)
+            {
+                if (rangeEnd <= rangeStart)
+                {
+                    continue;
+                }
+
+                events.Add((rangeStart, 1));
+                events.Add((rangeEnd, -1));
+            }
+        }
+
+        if (events.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        events.Sort((left, right) =>
+        {
+            int timeComparison = left.Time.CompareTo(right.Time);
+            return timeComparison != 0 ? timeComparison : left.Delta.CompareTo(right.Delta);
+        });
+
+        int current = 0;
+        int max = 0;
+        long maxTime = 0;
+        foreach ((long time, int delta) in events)
+        {
+            current += delta;
+            if (current > max)
+            {
+                max = current;
+                maxTime = time;
+            }
+        }
+
+        return (max, maxTime);
     }
 
     private static bool HasMitigationBuffNearTime(
