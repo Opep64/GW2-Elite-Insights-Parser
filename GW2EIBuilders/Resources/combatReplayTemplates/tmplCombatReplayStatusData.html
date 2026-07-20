@@ -3744,7 +3744,7 @@
                 </div>
                 <div class="combat-replay-wvw-analysis-card-title" style="margin-top: 0;">Incoming Conditions</div>
                 <div class="combat-replay-wvw-analysis-detail text-center mb-2">
-                    Enemy-attributed condition pressure on our squad across the full detailed WvW fight.
+                    Enemy-attributed conditions on our squad across the full detailed WvW fight.
                 </div>
                 <div class="combat-replay-wvw-analysis-grid" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));">
                     <div class="combat-replay-wvw-analysis-metric">
@@ -3803,19 +3803,19 @@
                 </div>
                 <div class="col-xl-7">
                     <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
-                        <div v-if="selectedCondition" class="d-flex flex-column" style="min-height: 0;">
+                        <div v-if="selectedCondition" class="d-flex flex-column" style="height: 100%; min-height: 0;">
                             <div class="combat-replay-wvw-analysis-card-title">
                                 <img v-if="selectedCondition.icon" :src="selectedCondition.icon" :alt="selectedCondition.name" class="combat-replay-threat-boon-icon">
                                 {{selectedCondition.name}}
                             </div>
                             <div class="combat-replay-wvw-analysis-grid mb-2" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
                                 <div class="combat-replay-wvw-analysis-metric">
-                                    <div class="combat-replay-wvw-analysis-label">Avg Squad Pressure</div>
+                                    <div class="combat-replay-wvw-analysis-label">{{conditionAverageTitle(selectedCondition)}}</div>
                                     <div class="combat-replay-wvw-analysis-value">{{formatPressure(selectedCondition, selectedCondition.averagePressure)}}</div>
                                     <div class="combat-replay-wvw-analysis-detail">{{pressureAverageLabel(selectedCondition)}}</div>
                                 </div>
                                 <div class="combat-replay-wvw-analysis-metric">
-                                    <div class="combat-replay-wvw-analysis-label">Total Player Pressure</div>
+                                    <div class="combat-replay-wvw-analysis-label">{{conditionTotalTitle(selectedCondition)}}</div>
                                     <div class="combat-replay-wvw-analysis-value">{{formatPressure(selectedCondition, selectedCondition.totalPressure)}}</div>
                                     <div class="combat-replay-wvw-analysis-detail">{{pressureTotalLabel(selectedCondition)}}</div>
                                 </div>
@@ -3830,10 +3830,10 @@
                                     <div class="combat-replay-wvw-analysis-detail">Health damage from this condition</div>
                                 </div>
                             </div>
-                            <div class="row" style="min-height: 0; overflow: hidden;">
-                                <div class="col-xl-6 mb-3 mb-xl-0 d-flex flex-column" style="min-height: 0;">
-                                    <div class="combat-replay-wvw-analysis-label mb-1">Enemy Sources</div>
-                                    <div v-if="selectedCondition.sources && selectedCondition.sources.length > 0" class="combat-replay-wvw-analysis-top-actors" style="overflow-y: auto; padding-right: 0.25rem;">
+                            <div class="row" style="flex: 1 1 auto; height: calc(62vh - 13.5rem); max-height: calc(62vh - 13.5rem); min-height: 13rem; overflow: hidden;">
+                                <div class="col-xl-6 mb-3 mb-xl-0 d-flex flex-column" style="height: 100%; min-height: 0;">
+                                    <div class="combat-replay-wvw-analysis-label mb-1">Enemy Sources ({{formatCount(selectedCondition.sources.length)}})</div>
+                                    <div v-if="selectedCondition.sources && selectedCondition.sources.length > 0" class="combat-replay-wvw-analysis-top-actors" style="flex: 1 1 auto; min-height: 0; overflow-y: scroll; padding-right: 0.35rem;">
                                         <button
                                             v-for="(source, index) in selectedCondition.sources"
                                             :key="'incoming-condition-source-' + selectedCondition.buffId + '-' + source.actorId"
@@ -3846,12 +3846,12 @@
                                                 <img v-if="source.icon" :src="source.icon" alt="" class="combat-replay-threat-boon-icon">
                                                 <span class="combat-replay-wvw-analysis-top-actor-name">{{source.name}}</span>
                                             </span>
-                                            <span class="combat-replay-wvw-analysis-top-actor-value">{{formatPressure(selectedCondition, source.pressure)}}</span>
+                                            <span class="combat-replay-wvw-analysis-top-actor-value">{{formatPercent(source.percent)}} share</span>
                                             <span :style="barOuterStyle">
                                                 <span :style="barInnerStyle(source.pressure, maxSourcePressure)"></span>
                                             </span>
                                             <span class="combat-replay-wvw-analysis-detail" style="margin-top: 0; text-align: right;">
-                                                {{formatPercent(source.percent)}} | {{formatCount(source.applyCount)}} applies | {{formatCount(source.relatedActorCount)}} players
+                                                {{formatConditionMagnitude(selectedCondition, source.pressure)}} | {{formatCount(source.applyCount)}} applies | {{formatCount(source.relatedActorCount)}} players
                                             </span>
                                             <span v-if="source.conditionDamage > 0" class="combat-replay-wvw-analysis-detail" style="grid-column: 1 / -1; margin-top: 0;">
                                                 {{formatAmount(source.conditionDamage)}} condition damage
@@ -3860,9 +3860,9 @@
                                     </div>
                                     <div v-else class="combat-replay-wvw-analysis-helper">No hostile sources were attributed for this condition.</div>
                                 </div>
-                                <div class="col-xl-6 d-flex flex-column" style="min-height: 0;">
-                                    <div class="combat-replay-wvw-analysis-label mb-1">Squad Recipients</div>
-                                    <div v-if="selectedCondition.recipients && selectedCondition.recipients.length > 0" class="combat-replay-wvw-analysis-top-actors" style="overflow-y: auto; padding-right: 0.25rem;">
+                                <div class="col-xl-6 d-flex flex-column" style="height: 100%; min-height: 0;">
+                                    <div class="combat-replay-wvw-analysis-label mb-1">Squad Recipients ({{formatCount(selectedCondition.recipients.length)}})</div>
+                                    <div v-if="selectedCondition.recipients && selectedCondition.recipients.length > 0" class="combat-replay-wvw-analysis-top-actors" style="flex: 1 1 auto; min-height: 0; overflow-y: scroll; padding-right: 0.35rem;">
                                         <button
                                             v-for="(recipient, index) in selectedCondition.recipients"
                                             :key="'incoming-condition-recipient-' + selectedCondition.buffId + '-' + recipient.actorId"
@@ -3875,12 +3875,12 @@
                                                 <img v-if="recipient.icon" :src="recipient.icon" alt="" class="combat-replay-threat-boon-icon">
                                                 <span class="combat-replay-wvw-analysis-top-actor-name">{{recipient.name}}</span>
                                             </span>
-                                            <span class="combat-replay-wvw-analysis-top-actor-value">{{formatPressure(selectedCondition, recipient.pressure)}}</span>
+                                            <span class="combat-replay-wvw-analysis-top-actor-value">{{formatPercent(recipient.percent)}} share</span>
                                             <span :style="barOuterStyle">
                                                 <span :style="barInnerStyle(recipient.pressure, maxRecipientPressure)"></span>
                                             </span>
                                             <span class="combat-replay-wvw-analysis-detail" style="margin-top: 0; text-align: right;">
-                                                {{formatCount(recipient.relatedActorCount)}} sources | {{formatCount(recipient.applyCount)}} applies
+                                                {{formatConditionMagnitude(selectedCondition, recipient.pressure)}} | {{formatCount(recipient.relatedActorCount)}} sources | {{formatCount(recipient.applyCount)}} applies
                                             </span>
                                             <span v-if="recipient.conditionDamage > 0" class="combat-replay-wvw-analysis-detail" style="grid-column: 1 / -1; margin-top: 0;">
                                                 {{formatAmount(recipient.conditionDamage)}} condition damage
@@ -3911,9 +3911,9 @@
                     <div class="combat-replay-overview-help-section">
                         <div class="combat-replay-overview-help-heading">Pressure</div>
                         <ul class="combat-replay-overview-help-list">
-                            <li><strong>Duration conditions</strong>: pressure is generated uptime. Average squad pressure is the average uptime across squad players.</li>
-                            <li><strong>Stack conditions</strong>: pressure is generated stack pressure. Average squad pressure is the average generated stack pressure across squad players.</li>
-                            <li><strong>Total player pressure</strong>: sums the selected condition across all affected squad players, so duration-condition totals can exceed 100%.</li>
+                            <li><strong>Duration conditions</strong>: player-uptime points are summed uptime across squad players. One player at 60% uptime and ten players at 6% uptime both equal 60 player-uptime points.</li>
+                            <li><strong>Stack conditions</strong>: stack-pressure is generated stack pressure. Average squad stack pressure is the average generated stack pressure across squad players.</li>
+                            <li><strong>Total player uptime</strong>: sums the selected condition across all affected squad players, so duration-condition totals can exceed 100%.</li>
                         </ul>
                     </div>
                     <div class="combat-replay-overview-help-section">
@@ -4011,6 +4011,18 @@
                 return condition && condition.stackBased
                     ? amount.toFixed(1)
                     : this.formatPercent(amount);
+            },
+            formatConditionMagnitude: function (condition, value) {
+                const amount = Number(value || 0);
+                return condition && condition.stackBased
+                    ? amount.toFixed(1) + " stack-pressure"
+                    : amount.toFixed(1) + " player-uptime pts";
+            },
+            conditionAverageTitle: function (condition) {
+                return condition && condition.stackBased ? "Avg Squad Stack Pressure" : "Avg Squad Uptime";
+            },
+            conditionTotalTitle: function (condition) {
+                return condition && condition.stackBased ? "Total Stack Pressure" : "Total Player Uptime";
             },
             pressureAverageLabel: function (condition) {
                 return condition && condition.stackBased ? "avg stack pressure" : "avg uptime";

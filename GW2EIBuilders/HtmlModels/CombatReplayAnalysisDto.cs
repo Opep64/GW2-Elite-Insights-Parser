@@ -1362,8 +1362,6 @@ internal static class CombatReplayAnalysisBuilder
     private const double EnemyAnchorDistanceCap = 900.0;
     private const int EnemyAnchorMapCoordinateDigits = 3;
     private const double PreventionConditionPressureDamageEquivalent = 10.0;
-    private const int IncomingConditionTopSourceLimit = 8;
-    private const int IncomingConditionRecipientLimit = 12;
     private static readonly PositioningCriteria PositioningSettings = new(
         DesiredCommanderDistance: 240.0f,
         MingledCommanderDistance: 180.0f,
@@ -6953,15 +6951,14 @@ internal static class CombatReplayAnalysisBuilder
             ApplyCount = accumulator.ApplyCount,
             ExtensionCount = accumulator.ExtensionCount,
             ConditionDamage = accumulator.ConditionDamage,
-            Sources = BuildIncomingConditionActorDtos(accumulator.Sources.Values, totalPressure, IncomingConditionTopSourceLimit),
-            Recipients = BuildIncomingConditionActorDtos(accumulator.Recipients.Values, totalPressure, IncomingConditionRecipientLimit),
+            Sources = BuildIncomingConditionActorDtos(accumulator.Sources.Values, totalPressure),
+            Recipients = BuildIncomingConditionActorDtos(accumulator.Recipients.Values, totalPressure),
         };
     }
 
     private static List<CombatReplayIncomingConditionActorDto> BuildIncomingConditionActorDtos(
         IEnumerable<IncomingConditionActorAccumulator> accumulators,
-        double totalPressure,
-        int limit)
+        double totalPressure)
     {
         return [.. accumulators
             .Where(accumulator => accumulator.Pressure > 0.0 || accumulator.ApplyCount > 0 || accumulator.ExtensionCount > 0 || accumulator.ConditionDamage > 0)
@@ -6969,7 +6966,6 @@ internal static class CombatReplayAnalysisBuilder
             .ThenByDescending(accumulator => accumulator.ConditionDamage)
             .ThenByDescending(accumulator => accumulator.ApplyCount)
             .ThenBy(accumulator => accumulator.Actor.Character, StringComparer.OrdinalIgnoreCase)
-            .Take(limit)
             .Select(accumulator => new CombatReplayIncomingConditionActorDto
             {
                 ActorId = accumulator.Actor.UniqueID,
