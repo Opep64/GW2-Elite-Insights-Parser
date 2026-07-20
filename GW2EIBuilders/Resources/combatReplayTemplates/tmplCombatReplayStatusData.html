@@ -128,6 +128,9 @@
             getDefenseAnalysis: function () {
                 return this.crAnalysis && this.crAnalysis.defense ? this.crAnalysis.defense : null;
             },
+            getIncomingConditionAnalysis: function () {
+                return this.crAnalysis && this.crAnalysis.incomingConditions ? this.crAnalysis.incomingConditions : null;
+            },
             formatAmount: function (value) {
                 return Number(value || 0).toLocaleString(undefined, {
                     minimumFractionDigits: 0,
@@ -497,6 +500,9 @@
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: overviewMode === 5}" @click="overviewMode = 5">Defense</a>
                 </li>
+                <li v-if="hasIncomingConditions" class="nav-item">
+                    <a class="nav-link" :class="{active: overviewMode === 8}" @click="overviewMode = 8">Conditions</a>
+                </li>
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: overviewMode === 6}" @click="overviewMode = 6">Player</a>
                 </li>
@@ -516,6 +522,7 @@
                 <combat-replay-defense-component v-else-if="hasanalysis && overviewMode === 5" :time="time" :selectedactorid="selectedactorid"></combat-replay-defense-component>
                 <combat-replay-player-analysis-component v-else-if="hasanalysis && overviewMode === 6" :time="time" :selectedactorid="selectedactorid"></combat-replay-player-analysis-component>
                 <combat-replay-fight-diagnosis-component v-else-if="hasanalysis && overviewMode === 7" :time="time" :selectedactorid="selectedactorid"></combat-replay-fight-diagnosis-component>
+                <combat-replay-incoming-conditions-component v-else-if="hasanalysis && overviewMode === 8" :time="time" :selectedactorid="selectedactorid"></combat-replay-incoming-conditions-component>
             </keep-alive>
             <div v-if="showOverviewHelp" class="wvw-summary-modal-backdrop" @click.self="showOverviewHelp = false">
                 <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay compact card help">
@@ -583,6 +590,9 @@
             },
             hasDiagnosis: function () {
                 return !!(crData && crData.analysis && crData.analysis.diagnosis && crData.analysis.diagnosis.available);
+            },
+            hasIncomingConditions: function () {
+                return !!(crData && crData.analysis && crData.analysis.incomingConditions && crData.analysis.incomingConditions.available);
             },
         },
         mounted: function () {
@@ -3713,6 +3723,300 @@
                 return details
                     .map(detail => detail.name + " " + this.formatAmount(detail.amount))
                     .join(", ");
+            },
+        },
+    });
+
+    Vue.component("combat-replay-incoming-conditions-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time", "selectedactorid"],
+        data: function () {
+            return {
+                selectedConditionId: null,
+                showIncomingConditionsHelp: false,
+            };
+        },
+        template: `
+        <div class="combat-replay-wvw-analysis-panel">
+            <div v-if="incomingConditionAnalysis && incomingConditionAnalysis.available" class="combat-replay-wvw-analysis-card" style="position: relative;">
+                <div class="combat-replay-overview-help-row" style="position: absolute; top: 0.65rem; right: 0.75rem; margin-bottom: 0;">
+                    <button type="button" class="combat-replay-overview-help-button" title="Incoming conditions help" aria-label="Show incoming conditions help" @click="showIncomingConditionsHelp = true">?</button>
+                </div>
+                <div class="combat-replay-wvw-analysis-card-title" style="margin-top: 0;">Incoming Conditions</div>
+                <div class="combat-replay-wvw-analysis-detail text-center mb-2">
+                    Enemy-attributed condition pressure on our squad across the full detailed WvW fight.
+                </div>
+                <div class="combat-replay-wvw-analysis-grid" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));">
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Tracked Conditions</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(incomingConditionAnalysis.conditionCount)}}</div>
+                        <div class="combat-replay-wvw-analysis-detail">Conditions with hostile source attribution</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Applications</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(incomingConditionAnalysis.totalApplyCount)}}</div>
+                        <div class="combat-replay-wvw-analysis-detail">{{formatCount(incomingConditionAnalysis.totalExtensionCount)}} extension events</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Condition Damage</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatAmount(incomingConditionAnalysis.totalConditionDamage)}}</div>
+                        <div class="combat-replay-wvw-analysis-detail">Damaging-condition health damage on squad players</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Actors Evaluated</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(incomingConditionAnalysis.squadPlayerCount)}} vs {{formatCount(incomingConditionAnalysis.enemyPlayerCount)}}</div>
+                        <div class="combat-replay-wvw-analysis-detail">Squad recipients and hostile player sources</div>
+                    </div>
+                </div>
+            </div>
+            <div v-if="incomingConditionAnalysis && incomingConditionAnalysis.available" class="row">
+                <div class="col-xl-5 mb-3 mb-xl-0">
+                    <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
+                        <div class="combat-replay-wvw-analysis-card-title">Condition Distribution</div>
+                        <div class="combat-replay-wvw-analysis-detail text-center mb-2">
+                            Select a condition to inspect enemy sources and affected squad players.
+                        </div>
+                        <div class="combat-replay-wvw-analysis-top-actors" style="overflow-y: auto; padding-right: 0.25rem;">
+                            <button
+                                v-for="condition in conditions"
+                                :key="'incoming-condition-' + condition.buffId"
+                                type="button"
+                                class="combat-replay-wvw-analysis-burst-entry"
+                                :style="conditionButtonStyle(condition)"
+                                @click="selectCondition(condition)">
+                                <span style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.45rem; align-items: center; width: 100%;">
+                                    <span style="display: flex; align-items: center; gap: 0.45rem; min-width: 0;">
+                                        <img v-if="condition.icon" :src="condition.icon" :alt="condition.name" class="combat-replay-threat-boon-icon">
+                                        <span class="combat-replay-wvw-analysis-top-actor-name">{{condition.name}}</span>
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-top-actor-value">{{formatPressure(condition, condition.averagePressure)}} {{pressureAverageLabel(condition)}}</span>
+                                    <span :style="barOuterStyle">
+                                        <span :style="barInnerStyle(condition.totalPressure, maxConditionPressure)"></span>
+                                    </span>
+                                    <span class="combat-replay-wvw-analysis-detail" style="margin-top: 0; text-align: right;">
+                                        {{formatCount(condition.affectedPlayers)}} players | {{formatCount(condition.sourceCount)}} sources | {{formatCount(condition.applyCount)}} applies
+                                    </span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-7">
+                    <div class="combat-replay-wvw-analysis-card d-flex flex-column" style="height: 62vh; min-height: 420px; max-height: 62vh; overflow: hidden;">
+                        <div v-if="selectedCondition" class="d-flex flex-column" style="min-height: 0;">
+                            <div class="combat-replay-wvw-analysis-card-title">
+                                <img v-if="selectedCondition.icon" :src="selectedCondition.icon" :alt="selectedCondition.name" class="combat-replay-threat-boon-icon">
+                                {{selectedCondition.name}}
+                            </div>
+                            <div class="combat-replay-wvw-analysis-grid mb-2" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Avg Squad Pressure</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatPressure(selectedCondition, selectedCondition.averagePressure)}}</div>
+                                    <div class="combat-replay-wvw-analysis-detail">{{pressureAverageLabel(selectedCondition)}}</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Total Player Pressure</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatPressure(selectedCondition, selectedCondition.totalPressure)}}</div>
+                                    <div class="combat-replay-wvw-analysis-detail">{{pressureTotalLabel(selectedCondition)}}</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Applications</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatCount(selectedCondition.applyCount)}}</div>
+                                    <div class="combat-replay-wvw-analysis-detail">{{formatCount(selectedCondition.extensionCount)}} extensions</div>
+                                </div>
+                                <div class="combat-replay-wvw-analysis-metric">
+                                    <div class="combat-replay-wvw-analysis-label">Condition Damage</div>
+                                    <div class="combat-replay-wvw-analysis-value">{{formatAmount(selectedCondition.conditionDamage)}}</div>
+                                    <div class="combat-replay-wvw-analysis-detail">Health damage from this condition</div>
+                                </div>
+                            </div>
+                            <div class="row" style="min-height: 0; overflow: hidden;">
+                                <div class="col-xl-6 mb-3 mb-xl-0 d-flex flex-column" style="min-height: 0;">
+                                    <div class="combat-replay-wvw-analysis-label mb-1">Enemy Sources</div>
+                                    <div v-if="selectedCondition.sources && selectedCondition.sources.length > 0" class="combat-replay-wvw-analysis-top-actors" style="overflow-y: auto; padding-right: 0.25rem;">
+                                        <button
+                                            v-for="(source, index) in selectedCondition.sources"
+                                            :key="'incoming-condition-source-' + selectedCondition.buffId + '-' + source.actorId"
+                                            type="button"
+                                            class="combat-replay-wvw-analysis-burst-entry combat-replay-wvw-analysis-top-actor-button"
+                                            style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.6rem; align-items: center;"
+                                            @click.stop="focusActor(source.actorId)">
+                                            <span style="display: flex; align-items: center; gap: 0.4rem; min-width: 0;">
+                                                <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                                                <img v-if="source.icon" :src="source.icon" alt="" class="combat-replay-threat-boon-icon">
+                                                <span class="combat-replay-wvw-analysis-top-actor-name">{{source.name}}</span>
+                                            </span>
+                                            <span class="combat-replay-wvw-analysis-top-actor-value">{{formatPressure(selectedCondition, source.pressure)}}</span>
+                                            <span :style="barOuterStyle">
+                                                <span :style="barInnerStyle(source.pressure, maxSourcePressure)"></span>
+                                            </span>
+                                            <span class="combat-replay-wvw-analysis-detail" style="margin-top: 0; text-align: right;">
+                                                {{formatPercent(source.percent)}} | {{formatCount(source.applyCount)}} applies | {{formatCount(source.relatedActorCount)}} players
+                                            </span>
+                                            <span v-if="source.conditionDamage > 0" class="combat-replay-wvw-analysis-detail" style="grid-column: 1 / -1; margin-top: 0;">
+                                                {{formatAmount(source.conditionDamage)}} condition damage
+                                            </span>
+                                        </button>
+                                    </div>
+                                    <div v-else class="combat-replay-wvw-analysis-helper">No hostile sources were attributed for this condition.</div>
+                                </div>
+                                <div class="col-xl-6 d-flex flex-column" style="min-height: 0;">
+                                    <div class="combat-replay-wvw-analysis-label mb-1">Squad Recipients</div>
+                                    <div v-if="selectedCondition.recipients && selectedCondition.recipients.length > 0" class="combat-replay-wvw-analysis-top-actors" style="overflow-y: auto; padding-right: 0.25rem;">
+                                        <button
+                                            v-for="(recipient, index) in selectedCondition.recipients"
+                                            :key="'incoming-condition-recipient-' + selectedCondition.buffId + '-' + recipient.actorId"
+                                            type="button"
+                                            class="combat-replay-wvw-analysis-burst-entry combat-replay-wvw-analysis-top-actor-button"
+                                            style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.6rem; align-items: center;"
+                                            @click.stop="focusActor(recipient.actorId)">
+                                            <span style="display: flex; align-items: center; gap: 0.4rem; min-width: 0;">
+                                                <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
+                                                <img v-if="recipient.icon" :src="recipient.icon" alt="" class="combat-replay-threat-boon-icon">
+                                                <span class="combat-replay-wvw-analysis-top-actor-name">{{recipient.name}}</span>
+                                            </span>
+                                            <span class="combat-replay-wvw-analysis-top-actor-value">{{formatPressure(selectedCondition, recipient.pressure)}}</span>
+                                            <span :style="barOuterStyle">
+                                                <span :style="barInnerStyle(recipient.pressure, maxRecipientPressure)"></span>
+                                            </span>
+                                            <span class="combat-replay-wvw-analysis-detail" style="margin-top: 0; text-align: right;">
+                                                {{formatCount(recipient.relatedActorCount)}} sources | {{formatCount(recipient.applyCount)}} applies
+                                            </span>
+                                            <span v-if="recipient.conditionDamage > 0" class="combat-replay-wvw-analysis-detail" style="grid-column: 1 / -1; margin-top: 0;">
+                                                {{formatAmount(recipient.conditionDamage)}} condition damage
+                                            </span>
+                                        </button>
+                                    </div>
+                                    <div v-else class="combat-replay-wvw-analysis-helper">No squad recipients were attributed for this condition.</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="combat-replay-wvw-analysis-helper">
+                            Select a condition to inspect its sources.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div v-if="!incomingConditionAnalysis || !incomingConditionAnalysis.available" class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">Incoming Conditions</div>
+                <div class="combat-replay-wvw-analysis-helper">No hostile condition attribution was generated for this detailed WvW replay.</div>
+            </div>
+            <div v-if="showIncomingConditionsHelp" class="wvw-summary-modal-backdrop" @click.self="showIncomingConditionsHelp = false">
+                <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Incoming conditions help">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close incoming conditions help" @click="showIncomingConditionsHelp = false">&times;</button>
+                    <div class="wvw-summary-modal-title">Incoming Conditions Help</div>
+                    <div class="wvw-summary-modal-subtitle">
+                        This tab uses detailed WvW EI data to summarize conditions applied to squad players by hostile player actors.
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Pressure</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Duration conditions</strong>: pressure is generated uptime. Average squad pressure is the average uptime across squad players.</li>
+                            <li><strong>Stack conditions</strong>: pressure is generated stack pressure. Average squad pressure is the average generated stack pressure across squad players.</li>
+                            <li><strong>Total player pressure</strong>: sums the selected condition across all affected squad players, so duration-condition totals can exceed 100%.</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Frequency and sources</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Applications</strong>: counted from condition apply events credited to hostile players. Initial log-state applications are ignored.</li>
+                            <li><strong>Extensions</strong>: counted separately when EI records a condition extension event.</li>
+                            <li><strong>Enemy Sources</strong>: hostile players credited as condition sources. Names remain EI anonymized labels.</li>
+                            <li><strong>Condition Damage</strong>: health damage ticks for damaging conditions, credited back to hostile sources when available.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `,
+        computed: {
+            incomingConditionAnalysis: function () {
+                return this.getIncomingConditionAnalysis();
+            },
+            conditions: function () {
+                return this.incomingConditionAnalysis && this.incomingConditionAnalysis.conditions
+                    ? this.incomingConditionAnalysis.conditions
+                    : [];
+            },
+            selectedCondition: function () {
+                if (this.conditions.length === 0) {
+                    return null;
+                }
+                if (this.selectedConditionId != null) {
+                    const selected = this.conditions.find(condition => String(condition.buffId) === String(this.selectedConditionId));
+                    if (selected) {
+                        return selected;
+                    }
+                }
+                return this.conditions[0];
+            },
+            maxConditionPressure: function () {
+                return this.conditions.reduce((maxValue, condition) => Math.max(maxValue, Number(condition.totalPressure || 0)), 0);
+            },
+            maxSourcePressure: function () {
+                return this.selectedCondition && this.selectedCondition.sources
+                    ? this.selectedCondition.sources.reduce((maxValue, source) => Math.max(maxValue, Number(source.pressure || 0)), 0)
+                    : 0;
+            },
+            maxRecipientPressure: function () {
+                return this.selectedCondition && this.selectedCondition.recipients
+                    ? this.selectedCondition.recipients.reduce((maxValue, recipient) => Math.max(maxValue, Number(recipient.pressure || 0)), 0)
+                    : 0;
+            },
+            barOuterStyle: function () {
+                return {
+                    display: "block",
+                    width: "100%",
+                    height: "0.35rem",
+                    gridColumn: "1 / -1",
+                    borderRadius: "999px",
+                    overflow: "hidden",
+                    background: "rgba(255, 255, 255, 0.08)",
+                };
+            },
+        },
+        methods: {
+            selectCondition: function (condition) {
+                this.selectedConditionId = condition ? condition.buffId : null;
+            },
+            focusActor: function (actorId) {
+                if (actorId == null) {
+                    return;
+                }
+                this.selectReplayActor(actorId);
+            },
+            isConditionSelected: function (condition) {
+                return !!(this.selectedCondition && condition && String(this.selectedCondition.buffId) === String(condition.buffId));
+            },
+            conditionButtonStyle: function (condition) {
+                const selected = this.isConditionSelected(condition);
+                return {
+                    borderColor: selected ? "rgba(127, 216, 170, 0.75)" : "rgba(124, 130, 136, 0.35)",
+                    background: selected ? "rgba(127, 216, 170, 0.12)" : "rgba(0, 0, 0, 0.12)",
+                };
+            },
+            barInnerStyle: function (value, maxValue) {
+                const max = Number(maxValue || 0);
+                const percent = max > 0 ? Math.max(2, Math.min(100, (Number(value || 0) * 100.0) / max)) : 0;
+                return {
+                    display: "block",
+                    width: percent.toFixed(1) + "%",
+                    height: "100%",
+                    borderRadius: "999px",
+                    background: "linear-gradient(90deg, rgba(127, 216, 170, 0.95), rgba(138, 200, 255, 0.9))",
+                };
+            },
+            formatPressure: function (condition, value) {
+                const amount = Number(value || 0);
+                return condition && condition.stackBased
+                    ? amount.toFixed(1)
+                    : this.formatPercent(amount);
+            },
+            pressureAverageLabel: function (condition) {
+                return condition && condition.stackBased ? "avg stack pressure" : "avg uptime";
+            },
+            pressureTotalLabel: function (condition) {
+                return condition && condition.stackBased ? "total stack pressure" : "total player uptime";
             },
         },
     });
