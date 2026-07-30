@@ -693,7 +693,7 @@
         <div>
             <div class="combat-replay-wvw-analysis-card-title">Team Pressure Comparison</div>
             <div class="combat-replay-wvw-analysis-detail text-center mb-2">
-                Three-second rolling damage uses the left scale; boon strips use the right scale. Click the graph to jump the replay.
+                Three-second rolling damage uses the left scale; boon strips use the right scale. Event lanes show downs and kills credited to each side. Click the graph to jump the replay.
             </div>
             <div class="combat-replay-wvw-analysis-grid mb-2" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
                 <div class="combat-replay-wvw-analysis-metric">
@@ -716,7 +716,7 @@
             <div v-if="chartUnavailable" class="combat-replay-wvw-analysis-helper">
                 The comparison graph could not be initialized.
             </div>
-            <div v-else ref="chart" style="width: 100%; height: 460px;"></div>
+            <div v-else ref="chart" style="width: 100%; height: 540px;"></div>
         </div>
         `,
         data: function () {
@@ -731,6 +731,9 @@
             },
             enemyAnalysis: function () {
                 return this.getTeamAnalysis("enemy");
+            },
+            eventAnalysis: function () {
+                return this.getEventAnalysis();
             },
             squadDamageNow: function () {
                 return this.getSeriesValue(this.squadAnalysis ? this.squadAnalysis.damage : null, this.snapshotIndex);
@@ -789,6 +792,12 @@
                 const textColor = computedStyle && computedStyle.color ? computedStyle.color : "#c9d1d9";
                 const squadColor = "#56d6c9";
                 const enemyColor = "#ff7272";
+                const downEvents = this.eventAnalysis && this.eventAnalysis.downs && this.eventAnalysis.downs.events
+                    ? this.eventAnalysis.downs.events
+                    : [];
+                const killEvents = this.eventAnalysis && this.eventAnalysis.kills && this.eventAnalysis.kills.events
+                    ? this.eventAnalysis.kills.events
+                    : [];
                 const traces = [
                     {
                         type: "bar",
@@ -828,10 +837,14 @@
                         line: { color: enemyColor, width: 2.5 },
                         hovertemplate: "Enemy damage<br>%{x:.1f}s: %{y:,.0f}<extra></extra>",
                     },
+                    this.buildEventTrace(downEvents, true, "down", squadColor),
+                    this.buildEventTrace(downEvents, false, "down", enemyColor),
+                    this.buildEventTrace(killEvents, true, "kill", squadColor),
+                    this.buildEventTrace(killEvents, false, "kill", enemyColor),
                 ];
                 const layout = {
-                    height: 460,
-                    margin: { t: 42, r: 72, b: 50, l: 78 },
+                    height: 540,
+                    margin: { t: 76, r: 72, b: 58, l: 108 },
                     paper_bgcolor: "rgba(0,0,0,0)",
                     plot_bgcolor: "rgba(0,0,0,0)",
                     font: { color: textColor },
@@ -842,10 +855,11 @@
                         orientation: "h",
                         x: 0.5,
                         xanchor: "center",
-                        y: 1.12,
+                        y: 1.16,
                     },
                     xaxis: {
                         title: "Fight Time",
+                        anchor: "y3",
                         ticksuffix: "s",
                         color: textColor,
                         gridcolor: "rgba(160, 170, 180, 0.16)",
@@ -853,6 +867,7 @@
                     },
                     yaxis: {
                         title: "Damage (last 3s)",
+                        domain: [0.24, 1],
                         color: textColor,
                         gridcolor: "rgba(160, 170, 180, 0.16)",
                         rangemode: "tozero",
@@ -868,6 +883,17 @@
                         tickformat: ",d",
                         showgrid: false,
                         zeroline: false,
+                    },
+                    yaxis3: {
+                        domain: [0, 0.13],
+                        range: [-0.55, 1.55],
+                        tickmode: "array",
+                        tickvals: [1, 0],
+                        ticktext: ["Squad events", "Enemy events"],
+                        color: textColor,
+                        showgrid: false,
+                        zeroline: false,
+                        fixedrange: true,
                     },
                     shapes: [this.replayCursorShape()],
                 };
@@ -892,6 +918,40 @@
                 } else {
                     bindChartClick();
                 }
+            },
+            buildEventTrace: function (events, isSquadEvent, eventType, color) {
+                const matchingEvents = (events || []).filter(event => Boolean(event && event.isEnemy) === isSquadEvent);
+                const sideLabel = isSquadEvent ? "Squad" : "Enemy";
+                const eventLabel = eventType === "kill" ? "Kill" : "Down";
+                return {
+                    type: "scatter",
+                    mode: "markers",
+                    name: sideLabel + " " + eventLabel,
+                    x: matchingEvents.map(event => Number(event.time || 0) / 1000.0),
+                    y: matchingEvents.map(() => isSquadEvent ? 1 : 0),
+                    yaxis: "y3",
+                    customdata: matchingEvents.map(event => [
+                        event.actorName || "Unknown player",
+                        event.timeLabel || this.formatTime(event.time),
+                        event.outcomeDurationLabel || "",
+                    ]),
+                    marker: {
+                        color: color,
+                        size: eventType === "kill" ? 13 : 12,
+                        symbol: eventType === "kill" ? "diamond" : "circle-open",
+                        line: {
+                            color: color,
+                            width: eventType === "kill" ? 1 : 2.5,
+                        },
+                    },
+                    hovertemplate:
+                        "<b>" + sideLabel + " " + eventLabel + "</b><br>" +
+                        "%{customdata[1]}<br>" +
+                        "Victim: %{customdata[0]}" +
+                        (eventType === "kill" ? "<br>Down-to-kill: %{customdata[2]}" : "") +
+                        "<extra></extra>",
+                    cliponaxis: false,
+                };
             },
             replayCursorShape: function () {
                 const replaySeconds = Number(this.time || 0) / 1000.0;
@@ -1341,6 +1401,8 @@
                         <ul class="combat-replay-overview-help-list">
                             <li>Damage lines use the left axis and boon-strip bars use the right axis so both scales remain readable</li>
                             <li>Teal represents the squad and red represents the enemy team</li>
+                            <li>The two event lanes use hollow circles for downs and solid diamonds for kills credited to each side</li>
+                            <li>Hover an event marker to see its timestamp and victim; legend entries can hide individual series</li>
                             <li>The dotted yellow line tracks the current combat replay time</li>
                             <li>Click anywhere on a plotted series to jump the replay to that timestamp</li>
                         </ul>
