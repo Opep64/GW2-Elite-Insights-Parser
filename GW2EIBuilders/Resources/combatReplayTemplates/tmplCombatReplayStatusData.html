@@ -573,6 +573,60 @@
                 </div>
             </div>
 
+            <div v-if="activeAnalysis.effectAudits && activeAnalysis.effectAudits.length > 0"
+                 class="combat-replay-wvw-analysis-card combat-replay-outcome-driver-audit-card">
+                <div class="combat-replay-outcome-driver-audit-header">
+                    <div>
+                        <div class="combat-replay-wvw-analysis-card-title">All Conditions/CCs</div>
+                        <div class="combat-replay-wvw-analysis-detail">
+                            Every named effect evaluated for this outcome, including effects that did not qualify for the ranked list.
+                        </div>
+                    </div>
+                    <button type="button"
+                            class="combat-replay-outcome-driver-audit-toggle"
+                            :aria-expanded="showEffectAudit ? 'true' : 'false'"
+                            @click="showEffectAudit = !showEffectAudit">
+                        {{showEffectAudit ? "Hide all effects" : "Show all " + formatCount(activeAnalysis.effectAudits.length)}}
+                    </button>
+                </div>
+                <div v-if="showEffectAudit" class="combat-replay-outcome-driver-audit-scroll">
+                    <table class="combat-replay-outcome-driver-audit-table">
+                        <thead>
+                            <tr>
+                                <th>Effect</th>
+                                <th>Type</th>
+                                <th>Outcome avg</th>
+                                <th>Baseline avg</th>
+                                <th>Lift</th>
+                                <th>Coverage</th>
+                                <th>Confidence</th>
+                                <th>Ranking result</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="entry in activeAnalysis.effectAudits" :key="entry.key">
+                                <td class="combat-replay-outcome-driver-audit-effect">{{entry.label}}</td>
+                                <td>{{entry.type}}</td>
+                                <td>{{formatEffectAverage(entry.eventMean)}}</td>
+                                <td>{{formatEffectAverage(entry.controlMean)}}</td>
+                                <td>{{entry.liftLabel}}</td>
+                                <td>{{entry.coverageLabel}}</td>
+                                <td>
+                                    <span class="combat-replay-wvw-analysis-pill" :class="confidencePillClass(entry.confidenceLabel)">
+                                        {{entry.confidenceLabel}}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="combat-replay-wvw-analysis-pill" :class="effectAuditStatusClass(entry.status)">
+                                        {{entry.status}}
+                                    </span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="combat-replay-wvw-analysis-card">
                 <div class="combat-replay-wvw-analysis-card-title">Important Data Limits</div>
                 <div class="combat-replay-outcome-driver-limit-grid">
@@ -598,6 +652,7 @@
                             <li>The score combines percentile lift with how consistently the signal was elevated</li>
                             <li>Kill conversion compares enemy deaths with enemy downs that recovered; squad recovery compares successful recoveries with squad downs that ended in death</li>
                             <li>If a fight has no failed comparison outcomes, those modes fall back to direct coverage and say so explicitly</li>
+                            <li>The All Conditions/CCs table shows every evaluated named effect and explains whether it ranked, missed the top-five cutoff, stayed at or below baseline, or lacked outcome evidence</li>
                             <li>A high score describes this fight only; it is not proof that the signal caused the outcome</li>
                         </ul>
                     </div>
@@ -608,6 +663,7 @@
                             <li><strong>Supporting</strong> combines observed signals into a plausible timing relationship</li>
                             <li><strong>Unavailable</strong> is shown as a limit and never treated as zero</li>
                             <li>Enemy condition entries describe applications or recorded damage, not exact current stacks or remaining duration</li>
+                            <li>Vulnerability bonus damage is a supporting estimate reconstructed from recorded damage and source-attributed Vulnerability stacks</li>
                         </ul>
                     </div>
                 </div>
@@ -619,6 +675,7 @@
                 outcomeKey: "enemy-downs",
                 selectedDriverKey: null,
                 showHelp: false,
+                showEffectAudit: false,
             };
         },
         computed: {
@@ -658,6 +715,7 @@
         watch: {
             outcomeKey: function () {
                 this.selectedDriverKey = null;
+                this.showEffectAudit = false;
             },
         },
         methods: {
@@ -681,11 +739,15 @@
                     times,
                     conditionAnalysis && conditionAnalysis.conditionTimeline ? conditionAnalysis.conditionTimeline : [],
                     "applyCount");
+                const vulnerabilityBonusSeries = this.buildRollingBucketSeries(
+                    times,
+                    conditionAnalysis && conditionAnalysis.conditionTimeline ? conditionAnalysis.conditionTimeline : [],
+                    "vulnerabilityBonusDamage");
                 const crowdControlSeries = this.buildRollingBucketSeries(
                     times,
                     crowdControlAnalysis && crowdControlAnalysis.timeline ? crowdControlAnalysis.timeline : [],
                     "effectiveCount");
-                const specificConditionDrivers = this.buildSpecificTimelineDrivers({
+                const specificConditionAnalysis = this.buildSpecificTimelineDrivers({
                     times: times,
                     timeline: conditionAnalysis && conditionAnalysis.conditionTimeline ? conditionAnalysis.conditionTimeline : [],
                     entriesKey: "applications",
@@ -693,6 +755,7 @@
                     nameKey: "name",
                     valueKey: "applyCount",
                     category: "Specific Condition",
+                    auditType: "Condition",
                     keyPrefix: "specific-condition",
                     valueLabel: "condition applications",
                     singularValueLabel: "condition application",
@@ -701,7 +764,7 @@
                     controlIndices: controlIndices,
                     detail: "Attributed applications of this condition in the final three seconds. This does not reconstruct exact active stacks, cleanses, or remaining duration.",
                 });
-                const specificCrowdControlDrivers = this.buildSpecificTimelineDrivers({
+                const specificCrowdControlAnalysis = this.buildSpecificTimelineDrivers({
                     times: times,
                     timeline: crowdControlAnalysis && crowdControlAnalysis.timeline ? crowdControlAnalysis.timeline : [],
                     entriesKey: "effects",
@@ -709,6 +772,7 @@
                     nameKey: "name",
                     valueKey: "effectiveCount",
                     category: "Specific CC",
+                    auditType: "CC",
                     keyPrefix: "specific-cc",
                     valueLabel: "effective events",
                     singularValueLabel: "effective event",
@@ -716,6 +780,30 @@
                     eventIndices: eventIndices,
                     controlIndices: controlIndices,
                     detail: "Directly recorded effective hard-control events in the final three seconds. Exact Stability state is not inferred.",
+                });
+                const vulnerabilityImpactDriver = this.buildSeriesDriver({
+                    key: "vulnerability-impact",
+                    label: "Vulnerability bonus damage",
+                    category: "Condition Impact",
+                    series: vulnerabilityBonusSeries,
+                    eventIndices: eventIndices,
+                    controlIndices: controlIndices,
+                    events: events,
+                    format: "count",
+                    valueLabel: "estimated bonus damage",
+                    observability: "Supporting",
+                    detail: "Estimated recorded damage enabled by source-attributed Vulnerability stacks in the final three seconds. This reverses the Vulnerability modifier from observed damage and does not claim perfect enemy-state visibility.",
+                });
+                const vulnerabilityImpactAudit = this.buildEffectAuditEntry({
+                    key: "vulnerability-impact",
+                    label: "Vulnerability bonus damage",
+                    type: "Condition impact",
+                    series: vulnerabilityBonusSeries,
+                    eventIndices: eventIndices,
+                    controlIndices: controlIndices,
+                    observability: "Supporting",
+                    driver: vulnerabilityImpactDriver,
+                    eligibleStatus: "Ranked",
                 });
                 const stripSeries = times.map((_, index) =>
                     Number(team.strips && team.strips[index] || 0) + Number(team.corrupts && team.corrupts[index] || 0));
@@ -784,6 +872,7 @@
                         observability: "Observed",
                         detail: "Recorded effective hard-control events in the final three seconds before the down.",
                     }),
+                    vulnerabilityImpactDriver,
                     this.buildSeriesDriver({
                         key: "focus-fire",
                         label: "Target focus",
@@ -846,8 +935,8 @@
                         observability: "Supporting",
                         detail: "Effective hard CC and upper-quartile burst damage appeared in the same final three-second window.",
                     }),
-                    ...specificConditionDrivers,
-                    ...specificCrowdControlDrivers,
+                    ...specificConditionAnalysis.drivers,
+                    ...specificCrowdControlAnalysis.drivers,
                 ].filter(driver => driver != null && driver.score > 0)
                     .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label));
 
@@ -863,6 +952,12 @@
                     comparisonLabel: `${this.formatCount(events.length)} independent engagement windows \u00b7 ${this.formatCount(controlIndices.length)} matched pressure samples`,
                     rankingDescription: "Evidence score combines engagement-window lift and consistency against ordinary pressure in this fight.",
                     drivers: drivers,
+                    effectAudits: [
+                        vulnerabilityImpactAudit,
+                        ...specificConditionAnalysis.audits,
+                        ...specificCrowdControlAnalysis.audits,
+                    ].filter(entry => entry != null)
+                        .sort(this.compareEffectAudits),
                     caveats: this.buildDriverCaveats(againstEnemy),
                 };
             },
@@ -1085,7 +1180,7 @@
                         }
                     });
                 });
-                return Array.from(effects.values()).map(effect => {
+                const analyses = Array.from(effects.values()).map(effect => {
                     const series = this.buildRollingEffectSeries(
                         config.times,
                         config.timeline,
@@ -1095,7 +1190,7 @@
                         config.nameKey,
                         effect.name,
                         config.valueKey);
-                    return this.buildSeriesDriver({
+                    const driver = this.buildSeriesDriver({
                         key: `${config.keyPrefix}-${effect.key}`,
                         label: effect.name,
                         category: config.category,
@@ -1109,9 +1204,87 @@
                         observability: "Observed",
                         detail: config.detail,
                     });
-                }).filter(driver => driver != null && driver.score > 0)
+                    return {
+                        effect: effect,
+                        series: series,
+                        driver: driver,
+                    };
+                });
+                const drivers = analyses.map(analysis => analysis.driver)
+                    .filter(driver => driver != null && driver.score > 0)
                     .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label))
                     .slice(0, 5);
+                const rankedKeys = new Set(drivers.map(driver => driver.key));
+                const audits = analyses.map(analysis => this.buildEffectAuditEntry({
+                    key: `${config.keyPrefix}-${analysis.effect.key}`,
+                    label: analysis.effect.name,
+                    type: config.auditType,
+                    series: analysis.series,
+                    eventIndices: config.eventIndices,
+                    controlIndices: config.controlIndices,
+                    observability: "Observed",
+                    driver: analysis.driver,
+                    eligibleStatus: analysis.driver
+                        ? (rankedKeys.has(analysis.driver.key) ? "Ranked" : "Below top-five cutoff")
+                        : null,
+                })).sort(this.compareEffectAudits);
+                return {
+                    drivers: drivers,
+                    audits: audits,
+                };
+            },
+            buildEffectAuditEntry: function (config) {
+                const eventValues = (config.eventIndices || []).map(index => Number(config.series[index] || 0));
+                const controlValues = (config.controlIndices || []).map(index => Number(config.series[index] || 0));
+                const eventMean = this.average(eventValues);
+                const controlMean = this.average(controlValues);
+                const coverage = eventValues.length > 0
+                    ? eventValues.filter(value => value > 0).length * 100.0 / eventValues.length
+                    : 0.0;
+                let status = config.eligibleStatus || "Insufficient evidence";
+                if (!eventValues.some(value => value > 0)) {
+                    status = "No outcome evidence";
+                } else if (controlValues.length === 0) {
+                    status = "No baseline";
+                } else if (eventMean <= controlMean) {
+                    status = "At or below baseline";
+                }
+                const liftLabel = controlMean > 0
+                    ? `${this.signedNumber((eventMean - controlMean) * 100.0 / controlMean, 0)}%`
+                    : eventMean > 0
+                        ? "Above zero baseline"
+                        : "\u2014";
+                return {
+                    key: config.key,
+                    label: config.label,
+                    type: config.type,
+                    eventMean: eventMean,
+                    controlMean: controlMean,
+                    liftLabel: liftLabel,
+                    coverageLabel: `${Math.round(coverage)}%`,
+                    confidenceLabel: this.driverConfidence(
+                        eventValues.length,
+                        controlValues.length,
+                        config.observability || "Observed"),
+                    score: config.driver ? config.driver.score : 0,
+                    status: status,
+                };
+            },
+            compareEffectAudits: function (left, right) {
+                const statusOrder = {
+                    "Ranked": 0,
+                    "Below top-five cutoff": 1,
+                    "At or below baseline": 2,
+                    "No baseline": 3,
+                    "No outcome evidence": 4,
+                    "Insufficient evidence": 5,
+                };
+                const leftOrder = statusOrder[left.status] === undefined ? 9 : statusOrder[left.status];
+                const rightOrder = statusOrder[right.status] === undefined ? 9 : statusOrder[right.status];
+                return leftOrder - rightOrder
+                    || Number(right.score || 0) - Number(left.score || 0)
+                    || left.type.localeCompare(right.type)
+                    || left.label.localeCompare(right.label);
             },
             buildRollingEffectSeries: function (times, timeline, entriesKey, idKey, effectKey, nameKey, effectName, valueKey) {
                 return (times || []).map(time => {
@@ -1199,7 +1372,7 @@
                         : controlMean > 0
                             ? `${this.signedNumber((eventMean - controlMean) * 100.0 / controlMean, 0)}% vs ordinary windows`
                             : config.valueLabel
-                                ? `${this.formatCount(eventValues.reduce((sum, value) => sum + value, 0))} ${config.valueLabel} across ${eventValues.filter(value => value > 0).length} of ${eventValues.length} windows; ordinary baseline near zero`
+                                ? `${this.formatCount(eventValues.reduce((sum, value) => sum + value, 0))} ${eventValues.reduce((sum, value) => sum + value, 0) === 1 && config.singularValueLabel ? config.singularValueLabel : config.valueLabel} across ${eventValues.filter(value => value > 0).length} of ${eventValues.length} windows; ordinary baseline near zero`
                                 : `${this.formatDriverValue(eventMean, config.format)} average; ordinary baseline near zero`;
                 const evidence = config.events.map((event, index) => ({
                     time: Number(event.time || 0),
@@ -1441,6 +1614,12 @@
                     maximumFractionDigits: 1,
                 });
             },
+            formatEffectAverage: function (value) {
+                return Number(value || 0).toLocaleString(undefined, {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                });
+            },
             confidenceForSampleCount: function (eventCount, controlCount) {
                 if (eventCount >= 10 && (controlCount === 0 || controlCount >= 30)) {
                     return "High";
@@ -1474,6 +1653,15 @@
                     return "combat-replay-wvw-analysis-pill-success";
                 }
                 if (observability === "Supporting") {
+                    return "combat-replay-wvw-analysis-pill-normal";
+                }
+                return "combat-replay-wvw-analysis-pill-muted";
+            },
+            effectAuditStatusClass: function (status) {
+                if (status === "Ranked") {
+                    return "combat-replay-wvw-analysis-pill-success";
+                }
+                if (status === "Below top-five cutoff") {
                     return "combat-replay-wvw-analysis-pill-normal";
                 }
                 return "combat-replay-wvw-analysis-pill-muted";

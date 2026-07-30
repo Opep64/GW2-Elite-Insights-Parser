@@ -964,6 +964,87 @@ h6.actor-shorten-cr-compact {
     min-width: 0;
 }
 
+.combat-replay-outcome-driver-audit-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.combat-replay-outcome-driver-audit-header .combat-replay-wvw-analysis-card-title {
+    margin-bottom: 0.2rem;
+    text-align: left;
+}
+
+.combat-replay-outcome-driver-audit-toggle {
+    flex: 0 0 auto;
+    border: 1px solid rgba(86, 214, 201, 0.55);
+    border-radius: 0.28rem;
+    padding: 0.35rem 0.58rem;
+    background: rgba(86, 214, 201, 0.08);
+    color: inherit;
+    font-size: 0.76rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.combat-replay-outcome-driver-audit-toggle:hover {
+    background: rgba(86, 214, 201, 0.15);
+}
+
+.combat-replay-outcome-driver-audit-scroll {
+    max-height: 28rem;
+    margin-top: 0.65rem;
+    overflow: auto;
+    border: 1px solid rgba(124, 130, 136, 0.32);
+    border-radius: 0.3rem;
+}
+
+.combat-replay-outcome-driver-audit-table {
+    width: 100%;
+    min-width: 880px;
+    border-collapse: collapse;
+    font-size: 0.76rem;
+}
+
+.combat-replay-outcome-driver-audit-table th,
+.combat-replay-outcome-driver-audit-table td {
+    border-bottom: 1px solid rgba(124, 130, 136, 0.22);
+    padding: 0.46rem 0.5rem;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.combat-replay-outcome-driver-audit-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgba(124, 130, 136, 0.25);
+    backdrop-filter: blur(10px);
+    font-size: 0.7rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.combat-replay-outcome-driver-audit-table th:first-child,
+.combat-replay-outcome-driver-audit-table th:nth-child(2),
+.combat-replay-outcome-driver-audit-table td:first-child,
+.combat-replay-outcome-driver-audit-table td:nth-child(2) {
+    text-align: left;
+}
+
+.combat-replay-outcome-driver-audit-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.combat-replay-outcome-driver-audit-table tbody tr:hover {
+    background: rgba(86, 214, 201, 0.055);
+}
+
+.combat-replay-outcome-driver-audit-effect {
+    font-weight: 700;
+}
+
 @media (max-width: 900px) {
     .combat-replay-outcome-driver-layout {
         grid-template-columns: minmax(0, 1fr);
@@ -971,6 +1052,10 @@ h6.actor-shorten-cr-compact {
 
     .combat-replay-outcome-driver-evidence-card {
         min-height: 0;
+    }
+
+    .combat-replay-outcome-driver-audit-header {
+        flex-direction: column;
     }
 }
 

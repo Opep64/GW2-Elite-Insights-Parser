@@ -279,6 +279,7 @@ internal class CombatReplayIncomingConditionAnalysisDto
     public int TotalApplyCount { get; set; }
     public int TotalExtensionCount { get; set; }
     public long TotalConditionDamage { get; set; }
+    public double TotalVulnerabilityBonusDamage { get; set; }
     public int TotalEventCount { get; set; }
     public int TotalEffectiveCount { get; set; }
     public double TotalDuration { get; set; }
@@ -292,6 +293,7 @@ internal class CombatReplayConditionTimelineBucketDto
     public long Time { get; set; }
     public int ApplyCount { get; set; }
     public int ExtensionCount { get; set; }
+    public double VulnerabilityBonusDamage { get; set; }
     public string TopConditionName { get; set; } = "";
     public string TopSourceName { get; set; } = "";
     public List<CombatReplayConditionTimelineEntryDto> Applications { get; set; } = [];
@@ -1709,6 +1711,7 @@ internal static class CombatReplayAnalysisBuilder
         public long Time { get; } = time;
         public int ApplyCount { get; private set; }
         public int ExtensionCount { get; private set; }
+        public double VulnerabilityBonusDamage { get; private set; }
         public Dictionary<long, (Buff Condition, int ApplyCount, int ExtensionCount)> Conditions { get; } = [];
         public Dictionary<int, (SingleActor Actor, int Count)> Sources { get; } = [];
 
@@ -1740,6 +1743,11 @@ internal static class CombatReplayAnalysisBuilder
             {
                 Sources[source.UniqueID] = (source, 1);
             }
+        }
+
+        public void AddVulnerabilityBonus(double amount)
+        {
+            VulnerabilityBonusDamage += amount;
         }
     }
     private sealed class CrowdControlTimelineBucketAccumulator(long time)
@@ -6994,6 +7002,48 @@ internal static class CombatReplayAnalysisBuilder
                 }
             }
 
+            foreach (HealthDamageEvent damageEvent in recipient.GetHitDamageTakenEvents(
+                null,
+                log,
+                start,
+                end,
+                ParserHelper.DamageType.StrikeAndCondition))
+            {
+                if (damageEvent.HealthDamage <= 0 || damageEvent.IsLifeLeech)
+                {
+                    continue;
+                }
+
+                double totalVulnerabilityStacks = Math.Max(
+                    0.0,
+                    recipient.GetBuffStatus(log, Vulnerability, damageEvent.Time).Value);
+                if (totalVulnerabilityStacks <= 0.0)
+                {
+                    continue;
+                }
+
+                double attributedVulnerabilityStacks = Math.Min(
+                    totalVulnerabilityStacks,
+                    sourcePlayers.Sum(source => Math.Max(
+                        0.0,
+                        recipient.GetBuffStatus(log, source, Vulnerability, damageEvent.Time).Value)));
+                if (attributedVulnerabilityStacks <= 0.0)
+                {
+                    continue;
+                }
+
+                double vulnerabilityBonus = damageEvent.HealthDamage
+                    * attributedVulnerabilityStacks
+                    / (100.0 + totalVulnerabilityStacks);
+                long bucketTime = Math.Max(0, damageEvent.Time / BucketSize * BucketSize);
+                if (!timelineBuckets.TryGetValue(bucketTime, out ConditionTimelineBucketAccumulator? timelineBucket))
+                {
+                    timelineBucket = new ConditionTimelineBucketAccumulator(bucketTime);
+                    timelineBuckets[bucketTime] = timelineBucket;
+                }
+                timelineBucket.AddVulnerabilityBonus(vulnerabilityBonus);
+            }
+
             foreach (HealthDamageEvent damageEvent in recipient.GetDamageTakenEvents(null, log, start, end))
             {
                 if (!damageEvent.HasHit ||
@@ -7030,6 +7080,9 @@ internal static class CombatReplayAnalysisBuilder
         result.TotalApplyCount = conditionDtos.Sum(condition => condition.ApplyCount);
         result.TotalExtensionCount = conditionDtos.Sum(condition => condition.ExtensionCount);
         result.TotalConditionDamage = conditionDtos.Sum(condition => condition.ConditionDamage);
+        result.TotalVulnerabilityBonusDamage = Math.Round(
+            timelineBuckets.Values.Sum(bucket => bucket.VulnerabilityBonusDamage),
+            1);
         result.ConditionTimeline = [.. timelineBuckets.Values
             .OrderBy(bucket => bucket.Time)
             .Select(BuildConditionTimelineBucketDto)];
@@ -7052,6 +7105,7 @@ internal static class CombatReplayAnalysisBuilder
             Time = accumulator.Time,
             ApplyCount = accumulator.ApplyCount,
             ExtensionCount = accumulator.ExtensionCount,
+            VulnerabilityBonusDamage = Math.Round(accumulator.VulnerabilityBonusDamage, 1),
             TopConditionName = topCondition.Condition?.Name ?? "",
             TopSourceName = topSource.Actor?.Character ?? "",
             Applications = [.. accumulator.Conditions.Values
