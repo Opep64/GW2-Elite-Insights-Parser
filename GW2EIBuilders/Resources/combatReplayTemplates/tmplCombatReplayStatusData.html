@@ -692,8 +692,18 @@
         template: `
         <div>
             <div class="combat-replay-wvw-analysis-card-title">Team Pressure Comparison</div>
+            <ul class="nav nav-pills d-flex flex-row justify-content-center mb-2 scale85">
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: comparisonMode === 'strips'}" @click="comparisonMode = 'strips'">Strips</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: comparisonMode === 'cc'}" @click="comparisonMode = 'cc'">Crowd Control</a>
+                </li>
+            </ul>
             <div class="combat-replay-wvw-analysis-detail text-center mb-2">
-                Three-second rolling damage uses the left scale; boon strips use the right scale. Event lanes show downs and kills credited to each side. Click the graph to jump the replay.
+                <template v-if="comparisonMode === 'cc'">Three-second rolling damage uses the left scale; one-second hard-CC events use the right scale.</template>
+                <template v-else>Three-second rolling damage uses the left scale; boon strips use the right scale.</template>
+                Event lanes show downs and kills credited to each side. Click the graph to jump the replay.
             </div>
             <div class="combat-replay-wvw-analysis-grid mb-2" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
                 <div class="combat-replay-wvw-analysis-metric">
@@ -705,12 +715,18 @@
                     <div class="combat-replay-wvw-analysis-value">{{formatCount(enemyDamageNow)}}</div>
                 </div>
                 <div class="combat-replay-wvw-analysis-metric">
-                    <div class="combat-replay-wvw-analysis-label">Squad Strips</div>
-                    <div class="combat-replay-wvw-analysis-value">{{formatStripCount(squadStripsNow, squadCorruptsNow)}}</div>
+                    <div class="combat-replay-wvw-analysis-label">{{comparisonMode === "cc" ? "Squad Hard CC" : "Squad Strips"}}</div>
+                    <div class="combat-replay-wvw-analysis-value">
+                        <template v-if="comparisonMode === 'cc'">{{formatCrowdControlBucket(squadCrowdControlNow)}}</template>
+                        <template v-else>{{formatStripCount(squadStripsNow, squadCorruptsNow)}}</template>
+                    </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-metric">
-                    <div class="combat-replay-wvw-analysis-label">Enemy Strips</div>
-                    <div class="combat-replay-wvw-analysis-value">{{formatStripCount(enemyStripsNow, enemyCorruptsNow)}}</div>
+                    <div class="combat-replay-wvw-analysis-label">{{comparisonMode === "cc" ? "Enemy Hard CC" : "Enemy Strips"}}</div>
+                    <div class="combat-replay-wvw-analysis-value">
+                        <template v-if="comparisonMode === 'cc'">{{formatCrowdControlBucket(enemyCrowdControlNow)}}</template>
+                        <template v-else>{{formatStripCount(enemyStripsNow, enemyCorruptsNow)}}</template>
+                    </div>
                 </div>
             </div>
             <div v-if="chartUnavailable" class="combat-replay-wvw-analysis-helper">
@@ -723,6 +739,7 @@
             return {
                 chartUnavailable: false,
                 cursorUpdateTimer: null,
+                comparisonMode: "strips",
             };
         },
         computed: {
@@ -753,6 +770,22 @@
             enemyCorruptsNow: function () {
                 return this.getSeriesValue(this.enemyAnalysis ? this.enemyAnalysis.corrupts : null, this.snapshotIndex);
             },
+            squadCrowdControlTimeline: function () {
+                return this.crAnalysis && this.crAnalysis.squadCrowdControl && this.crAnalysis.squadCrowdControl.timeline
+                    ? this.crAnalysis.squadCrowdControl.timeline
+                    : [];
+            },
+            enemyCrowdControlTimeline: function () {
+                return this.crAnalysis && this.crAnalysis.enemyCrowdControl && this.crAnalysis.enemyCrowdControl.timeline
+                    ? this.crAnalysis.enemyCrowdControl.timeline
+                    : [];
+            },
+            squadCrowdControlNow: function () {
+                return this.getCrowdControlBucketAtTime(this.squadCrowdControlTimeline, this.time);
+            },
+            enemyCrowdControlNow: function () {
+                return this.getCrowdControlBucketAtTime(this.enemyCrowdControlTimeline, this.time);
+            },
         },
         mounted: function () {
             this.$nextTick(this.renderChart);
@@ -776,6 +809,9 @@
             time: function () {
                 this.scheduleReplayCursorUpdate();
             },
+            comparisonMode: function () {
+                this.$nextTick(this.renderChart);
+            },
         },
         methods: {
             renderChart: function () {
@@ -798,27 +834,37 @@
                 const killEvents = this.eventAnalysis && this.eventAnalysis.kills && this.eventAnalysis.kills.events
                     ? this.eventAnalysis.kills.events
                     : [];
-                const traces = [
-                    {
-                        type: "bar",
-                        name: "Squad Strips",
-                        x: times,
-                        y: this.squadAnalysis.strips || [],
-                        yaxis: "y2",
-                        marker: { color: squadColor },
-                        opacity: 0.34,
-                        hovertemplate: "Squad strips<br>%{x:.1f}s: %{y:,.0f}<extra></extra>",
-                    },
-                    {
-                        type: "bar",
-                        name: "Enemy Strips",
-                        x: times,
-                        y: this.enemyAnalysis.strips || [],
-                        yaxis: "y2",
-                        marker: { color: enemyColor },
-                        opacity: 0.34,
-                        hovertemplate: "Enemy strips<br>%{x:.1f}s: %{y:,.0f}<extra></extra>",
-                    },
+                const traces = [];
+                if (this.comparisonMode === "cc") {
+                    traces.push(
+                        this.buildCrowdControlBarTrace(this.squadCrowdControlTimeline, true, squadColor),
+                        this.buildCrowdControlBarTrace(this.enemyCrowdControlTimeline, false, enemyColor)
+                    );
+                } else {
+                    traces.push(
+                        {
+                            type: "bar",
+                            name: "Squad Strips",
+                            x: times,
+                            y: this.squadAnalysis.strips || [],
+                            yaxis: "y2",
+                            marker: { color: squadColor },
+                            opacity: 0.34,
+                            hovertemplate: "Squad strips<br>%{x:.1f}s: %{y:,.0f}<extra></extra>",
+                        },
+                        {
+                            type: "bar",
+                            name: "Enemy Strips",
+                            x: times,
+                            y: this.enemyAnalysis.strips || [],
+                            yaxis: "y2",
+                            marker: { color: enemyColor },
+                            opacity: 0.34,
+                            hovertemplate: "Enemy strips<br>%{x:.1f}s: %{y:,.0f}<extra></extra>",
+                        }
+                    );
+                }
+                traces.push(
                     {
                         type: "scatter",
                         mode: "lines",
@@ -840,8 +886,8 @@
                     this.buildEventTrace(downEvents, true, "down", squadColor),
                     this.buildEventTrace(downEvents, false, "down", enemyColor),
                     this.buildEventTrace(killEvents, true, "kill", squadColor),
-                    this.buildEventTrace(killEvents, false, "kill", enemyColor),
-                ];
+                    this.buildEventTrace(killEvents, false, "kill", enemyColor)
+                );
                 const layout = {
                     height: 540,
                     margin: { t: 76, r: 72, b: 58, l: 108 },
@@ -875,7 +921,7 @@
                         zeroline: false,
                     },
                     yaxis2: {
-                        title: "Boon Strips (last 3s)",
+                        title: this.comparisonMode === "cc" ? "Hard CC Events (1s)" : "Boon Strips (last 3s)",
                         color: textColor,
                         overlaying: "y",
                         side: "right",
@@ -918,6 +964,61 @@
                 } else {
                     bindChartClick();
                 }
+            },
+            getCrowdControlBucketAtTime: function (timeline, time) {
+                const bucketTime = Math.max(0, Math.floor(Number(time || 0) / 1000.0) * 1000);
+                return (timeline || []).find(bucket => Number(bucket && bucket.time || 0) === bucketTime) || null;
+            },
+            formatCrowdControlBucket: function (bucket) {
+                return this.formatCount(bucket && bucket.eventCount || 0) +
+                    " (" + this.formatCount(bucket && bucket.effectiveCount || 0) + " effective)";
+            },
+            buildCrowdControlBarTrace: function (timeline, isSquadEvent, color) {
+                const sideLabel = isSquadEvent ? "Squad" : "Enemy";
+                const bucketsBySecond = new Map();
+                (timeline || []).forEach(bucket => {
+                    const second = Math.max(0, Math.floor(Number(bucket && bucket.time || 0) / 1000.0));
+                    bucketsBySecond.set(second, bucket);
+                });
+                const fightEnd = this.crAnalysis && this.crAnalysis.times && this.crAnalysis.times.length > 0
+                    ? Number(this.crAnalysis.times[this.crAnalysis.times.length - 1] || 0)
+                    : 0;
+                const bucketCount = Math.max(1, Math.ceil(fightEnd / 1000.0));
+                const x = [];
+                const y = [];
+                const customdata = [];
+                for (let second = 0; second < bucketCount; second++) {
+                    const bucket = bucketsBySecond.get(second) || null;
+                    const eventCount = Number(bucket && bucket.eventCount || 0);
+                    x.push(second + 0.5);
+                    y.push(eventCount > 0 ? eventCount : null);
+                    customdata.push([
+                        eventCount,
+                        Number(bucket && bucket.effectiveCount || 0),
+                        Number(bucket && bucket.totalDuration || 0),
+                        bucket && bucket.topSkillName ? bucket.topSkillName : "None",
+                        bucket && bucket.topSourceName ? bucket.topSourceName : "None",
+                        second.toFixed(0) + ".0\u2013" + (second + 1).toFixed(0) + ".0s",
+                    ]);
+                }
+                return {
+                    type: "bar",
+                    name: sideLabel + " Hard CC",
+                    x: x,
+                    y: y,
+                    yaxis: "y2",
+                    customdata: customdata,
+                    marker: { color: color },
+                    opacity: 0.38,
+                    hovertemplate:
+                        "<b>" + sideLabel + " hard CC</b><br>" +
+                        "%{customdata[5]}<br>" +
+                        "%{customdata[0]} events \u00b7 %{customdata[1]} effective<br>" +
+                        "%{customdata[2]:.1f}s recorded duration<br>" +
+                        "Top skill: %{customdata[3]}<br>" +
+                        "Top source: %{customdata[4]}" +
+                        "<extra></extra>",
+                };
             },
             buildEventTrace: function (events, isSquadEvent, eventType, color) {
                 const matchingEvents = (events || []).filter(event => Boolean(event && event.isEnemy) === isSquadEvent);
@@ -1392,15 +1493,18 @@
                         <ul class="combat-replay-overview-help-list">
                             <li><strong>Our Squad</strong> shows outgoing pressure from your squad onto hostile players</li>
                             <li><strong>Enemy Team</strong> flips the same view to hostile players pressuring your squad</li>
-                            <li><strong>Comparison</strong> overlays squad and enemy damage with squad and enemy boon strips across the full fight</li>
+                            <li><strong>Comparison</strong> overlays squad and enemy damage with either boon strips or hard crowd control across the full fight</li>
                             <li>The selected-actor card follows the currently chosen side</li>
                         </ul>
                     </div>
                     <div class="combat-replay-overview-help-section">
                         <div class="combat-replay-overview-help-heading">Comparison graph</div>
                         <ul class="combat-replay-overview-help-list">
-                            <li>Damage lines use the left axis and boon-strip bars use the right axis so both scales remain readable</li>
+                            <li><strong>Strips</strong> mode compares three-second rolling damage with three-second rolling boon strips</li>
+                            <li><strong>Crowd Control</strong> mode compares the same damage with hard-CC event counts grouped into one-second buckets</li>
+                            <li>Damage lines use the left axis and the selected comparison bars use the right axis so both scales remain readable</li>
                             <li>Teal represents the squad and red represents the enemy team</li>
+                            <li>Hover a CC bar to see its event count, effective count, recorded duration, top skill, and top source</li>
                             <li>The two event lanes use hollow circles for downs and solid diamonds for kills credited to each side</li>
                             <li>Hover an event marker to see its timestamp and victim; legend entries can hide individual series</li>
                             <li>The dotted yellow line tracks the current combat replay time</li>

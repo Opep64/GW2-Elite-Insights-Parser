@@ -283,6 +283,17 @@ internal class CombatReplayIncomingConditionAnalysisDto
     public int TotalEffectiveCount { get; set; }
     public double TotalDuration { get; set; }
     public List<CombatReplayIncomingConditionDto> Conditions { get; set; } = [];
+    public List<CombatReplayCrowdControlTimelineBucketDto> Timeline { get; set; } = [];
+}
+
+internal class CombatReplayCrowdControlTimelineBucketDto
+{
+    public long Time { get; set; }
+    public int EventCount { get; set; }
+    public int EffectiveCount { get; set; }
+    public double TotalDuration { get; set; }
+    public string TopSkillName { get; set; } = "";
+    public string TopSourceName { get; set; } = "";
 }
 
 internal class CombatReplayIncomingConditionDto
@@ -1654,6 +1665,43 @@ internal static class CombatReplayAnalysisBuilder
         public int EffectiveCount { get; set; }
         public int TotalDuration { get; set; }
         public HashSet<int> RelatedActorIds { get; } = [];
+    }
+    private sealed class CrowdControlTimelineBucketAccumulator(long time)
+    {
+        public long Time { get; } = time;
+        public int EventCount { get; private set; }
+        public int EffectiveCount { get; private set; }
+        public int TotalDuration { get; private set; }
+        public Dictionary<long, (SkillItem Skill, int Count)> Skills { get; } = [];
+        public Dictionary<int, (SingleActor Actor, int Count)> Sources { get; } = [];
+
+        public void Add(SkillItem skill, SingleActor source, bool effective, int duration)
+        {
+            EventCount++;
+            TotalDuration += duration;
+            if (effective)
+            {
+                EffectiveCount++;
+            }
+
+            if (Skills.TryGetValue(skill.ID, out var skillEntry))
+            {
+                Skills[skill.ID] = (skillEntry.Skill, skillEntry.Count + 1);
+            }
+            else
+            {
+                Skills[skill.ID] = (skill, 1);
+            }
+
+            if (Sources.TryGetValue(source.UniqueID, out var sourceEntry))
+            {
+                Sources[source.UniqueID] = (sourceEntry.Actor, sourceEntry.Count + 1);
+            }
+            else
+            {
+                Sources[source.UniqueID] = (source, 1);
+            }
+        }
     }
 
     public static CombatReplayAnalysisDto? Build(ParsedEvtcLog log, Dictionary<long, SkillItem>? usedSkills = null)
@@ -7072,6 +7120,7 @@ internal static class CombatReplayAnalysisBuilder
             .GroupBy(entry => entry.FinalAgent)
             .ToDictionary(group => group.Key, group => group.First().Source);
         var accumulators = new Dictionary<long, CrowdControlAccumulator>();
+        var timelineBuckets = new Dictionary<long, CrowdControlTimelineBucketAccumulator>();
 
         foreach (SingleActor recipient in recipientPlayers)
         {
@@ -7114,6 +7163,14 @@ internal static class CombatReplayAnalysisBuilder
                 {
                     recipientAccumulator.EffectiveCount++;
                 }
+
+                long bucketTime = Math.Max(0, crowdControlEvent.Time / BucketSize * BucketSize);
+                if (!timelineBuckets.TryGetValue(bucketTime, out CrowdControlTimelineBucketAccumulator? timelineBucket))
+                {
+                    timelineBucket = new CrowdControlTimelineBucketAccumulator(bucketTime);
+                    timelineBuckets[bucketTime] = timelineBucket;
+                }
+                timelineBucket.Add(crowdControlEvent.Skill, resolvedSource, effective, duration);
             }
         }
 
@@ -7132,7 +7189,32 @@ internal static class CombatReplayAnalysisBuilder
         result.TotalEventCount = effects.Sum(effect => effect.EventCount);
         result.TotalEffectiveCount = effects.Sum(effect => effect.EffectiveCount);
         result.TotalDuration = Math.Round(effects.Sum(effect => effect.TotalDuration), 1);
+        result.Timeline = [.. timelineBuckets.Values
+            .OrderBy(bucket => bucket.Time)
+            .Select(BuildCrowdControlTimelineBucketDto)];
         return result;
+    }
+
+    private static CombatReplayCrowdControlTimelineBucketDto BuildCrowdControlTimelineBucketDto(
+        CrowdControlTimelineBucketAccumulator accumulator)
+    {
+        (SkillItem Skill, int Count) topSkill = accumulator.Skills.Values
+            .OrderByDescending(entry => entry.Count)
+            .ThenBy(entry => GetSkillDisplayName(entry.Skill), StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+        (SingleActor Actor, int Count) topSource = accumulator.Sources.Values
+            .OrderByDescending(entry => entry.Count)
+            .ThenBy(entry => entry.Actor.Character, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+        return new CombatReplayCrowdControlTimelineBucketDto
+        {
+            Time = accumulator.Time,
+            EventCount = accumulator.EventCount,
+            EffectiveCount = accumulator.EffectiveCount,
+            TotalDuration = Math.Round(accumulator.TotalDuration / 1000.0, 1),
+            TopSkillName = topSkill.Skill != null ? GetSkillDisplayName(topSkill.Skill) : "",
+            TopSourceName = topSource.Actor?.Character ?? "",
+        };
     }
 
     private static CrowdControlActorAccumulator GetOrCreateCrowdControlActorAccumulator(
