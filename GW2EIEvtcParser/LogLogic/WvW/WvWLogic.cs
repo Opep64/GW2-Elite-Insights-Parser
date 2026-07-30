@@ -3,13 +3,15 @@ using GW2EIEvtcParser.Exceptions;
 using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIGW2API;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogCategories;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicTimeUtils;
-using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.MapIDs;
+using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
@@ -41,14 +43,14 @@ internal class WvWLogic : LogLogic
             LogID |= LogIDs.WvWMasks.FullInstanceMask;
         }
         MechanicList.Add(new MechanicGroup([
-            new PlayerDamageMechanic(new MechanicPlotlySetting(Symbols.TriangleDown, Colors.Blue), "Kllng.Blw.Player", "Killing Blows inflicted by Squad Players to enemy Players", "Killing Blows to enemy Players", 0, (log, a) => {
+            new PlayerDamageMechanic(new MechanicPlotlySetting(Symbols.TriangleDown, Colors.Blue), "Kllng.Blw.Player", "Killing Blows inflicted by Squad Players to enemy Players", "Killing Blows to enemy Players", Sev0, 0, (log, a) => {
                 if (a.Type != AgentItem.AgentType.Player)
                 {
                     return new List<HealthDamageEvent>();
                 }
                 return log.FindActor(a).GetDamageEvents(null, log); //TODO_PERF(Rennorb)
             }).UsingChecker((x, log) => x.HasKilled && (x.To.Type == AgentItem.AgentType.NonSquadPlayer || x.To.IsSpecies(TargetID.WorldVersusWorld))),
-            new EnemyDamageMechanic(new MechanicPlotlySetting(Symbols.TriangleDown, Colors.Red), "Kllng.Blw.Enemy", "Killing Blows inflicted enemy Players by Squad Players", "Killing Blows received by enemies", 0, (log, a) => log.FindActor(a).GetDamageTakenEvents(null, log)) //TODO_PERF(Rennorb)
+            new EnemyDamageMechanic(new MechanicPlotlySetting(Symbols.TriangleDown, Colors.Red), "Kllng.Blw.Enemy", "Killing Blows inflicted enemy Players by Squad Players", "Killing Blows received by enemies", Sev0, 0, (log, a) => log.FindActor(a).GetDamageTakenEvents(null, log)) //TODO_PERF(Rennorb)
                 .UsingChecker((x, log) => x.HasKilled && x.CreditedFrom.Type == AgentItem.AgentType.Player),
         ]));
     }
@@ -97,9 +99,9 @@ internal class WvWLogic : LogLogic
         return LogData.Mode.NotApplicable;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
-        MapIDEvent? mapID = log.CombatData.GetMapIDEvents().LastOrDefault();
+        MapIDEvent? mapID = log.CombatData.GetMapIDEvent();
         if (mapID == null)
         {
             return base.GetCombatMapInternal(log, arenaDecorations);
@@ -109,19 +111,31 @@ internal class WvWLogic : LogLogic
         switch (mapID.MapID)
         {
             case EternalBattleground:
-                crMap = new CombatReplayMap((954, 1000), (-36864 + 950, -36864 + 2250, 36864 + 950, 36864 + 2250));
+                crMap = new CombatReplayMap((954, 1000), 
+                    (-36864 + 950, -36864 + 2250, 36864 + 950, 36864 + 2250), 
+                    (-36864, -36864, 36864, 36864), 
+                    (8958, 12798, 12030, 15870));
                 arenaDecorations.Add(new ArenaDecoration(lifespan, CombatReplayEternalBattlegrounds, crMap));
                 break;
             case GreenAlpineBorderland:
-                crMap = new CombatReplayMap((697, 1000), (-30720, -43008, 30720, 43008));
+                crMap = new CombatReplayMap((697, 1000), 
+                    (-30720, -43008, 30720, 43008), 
+                    (-30720, -43008, 30720, 43008), 
+                    (5630, 11518, 8190, 15102));
                 arenaDecorations.Add(new ArenaDecoration(lifespan, CombatReplayAlpineBorderlands, crMap));
                 break;
             case BlueAlpineBorderland:
-                crMap = new CombatReplayMap((697, 1000), (-30720, -43008, 30720, 43008));
+                crMap = new CombatReplayMap((697, 1000), 
+                    (-30720, -43008, 30720, 43008), 
+                    (-30720, -43008, 30720, 43008), 
+                    (12798, 10878, 15358, 14462));
                 arenaDecorations.Add(new ArenaDecoration(lifespan, CombatReplayAlpineBorderlands, crMap));
                 break;
             case RedDesertBorderland:
-                crMap = new CombatReplayMap((1000, 1000), (-36864, -36864, 36864, 36864));
+                crMap = new CombatReplayMap((1000, 1000), 
+                    (-36864, -36864, 36864, 36864), 
+                    (-36864, -36864, 36864, 36864), 
+                    (9214, 8958, 12286, 12030));
                 arenaDecorations.Add(new ArenaDecoration(lifespan, CombatReplayDesertBorderlands, crMap));
                 break;
             case EdgeOfTheMists:
@@ -132,11 +146,14 @@ internal class WvWLogic : LogLogic
                 crMap = base.GetCombatMapInternal(log, arenaDecorations);
                 break;
         }
+        var boundingCRMap = new CombatReplayMap((800, 800), (0, 0, 0, 0));
+        boundingCRMap.ComputeBoundingBox(log);
+        LogLogicUtils.AddDefaultViewpointOnParentFromChild(boundingCRMap, crMap, LogID);
         return crMap;
     }
     internal override string GetLogicName(CombatData combatData, AgentData agentData, GW2APIController apiController)
     {
-        MapIDEvent? mapEvent = combatData.GetMapIDEvents().LastOrDefault();
+        MapIDEvent? mapEvent = combatData.GetMapIDEvent();
         if (mapEvent == null)
         {
             return _defaultName;
@@ -368,19 +385,20 @@ internal class WvWLogic : LogLogic
     {
         base.ComputeEnvironmentCombatReplayDecorations(log, environmentDecorations);
         var wvwObjectiveStatusEvents = log.CombatData.GetWvWObjectStatusEvents();
+        var map = log.LogData.Logic.GetCombatReplayMap(log);
         foreach (var objectiveStatusEvent in wvwObjectiveStatusEvents)
         {
-            var position = objectiveStatusEvent.GetPosition();
+            var position = objectiveStatusEvent.GetPosition(map);
             var positionConnector = new PositionConnector(position);
             for (var i = 0; i < objectiveStatusEvent.Owners.Count - 1; i++)
             {
                 var (TeamID, Time) = objectiveStatusEvent.Owners[i];
                 var nextOwner = objectiveStatusEvent.Owners[i + 1];
-                environmentDecorations.Add(new IconDecoration(objectiveStatusEvent.GetIcon(log, TeamID), 20, 1.0f, (Time, nextOwner.Time), positionConnector));
+                environmentDecorations.Add(new IconDecoration(objectiveStatusEvent.GetIcon(log, TeamID), 30, 1.0f, (Time, nextOwner.Time), positionConnector));
             }
             {
                 var (TeamID, Time) = objectiveStatusEvent.Owners[^1];
-                environmentDecorations.Add(new IconDecoration(objectiveStatusEvent.GetIcon(log, TeamID), 20, 1.0f, (Time, log.LogData.LogEnd), positionConnector));
+                environmentDecorations.Add(new IconDecoration(objectiveStatusEvent.GetIcon(log, TeamID), 30, 1.0f, (Time, log.LogData.LogEnd), positionConnector));
             }
         }
     }

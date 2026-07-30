@@ -3,14 +3,15 @@ using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.Exceptions;
 using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
-using GW2EIEvtcParser.ParserHelpers;
 using static GW2EIEvtcParser.ArcDPSEnums;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicTimeUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
@@ -18,13 +19,16 @@ internal class Artsariiv : ShatteredObservatory
 {
     internal readonly MechanicGroup Mechanics = new(
         [
-            new PlayerDstHealthDamageHitMechanic(VaultArtsariiv, new MechanicPlotlySetting(Symbols.TriangleDownOpen,Colors.Yellow), "Vault", "Vault from Big Adds","Vault (Add)", 0),
-            new PlayerDstHealthDamageHitMechanic(SlamArtsariiv, new MechanicPlotlySetting(Symbols.Circle,Colors.LightOrange), "Slam", "Slam (Vault) from Boss","Vault (Arts)", 0),
-            new PlayerDstHealthDamageHitMechanic(TeleportLunge, new MechanicPlotlySetting(Symbols.StarTriangleDownOpen,Colors.LightOrange), "3 Jump", "Triple Jump Mid->Edge","Triple Jump", 0),
-            new PlayerDstHealthDamageHitMechanic(AstralSurge, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Yellow), "Floor Circle", "Different sized spiraling circles","1000 Circles", 0),
-            new PlayerDstHealthDamageHitMechanic([RedMarble1, RedMarble2], new MechanicPlotlySetting(Symbols.Circle,Colors.Red), "Marble", "Red KD Marble after Jump","Red Marble", 0),
-            new SpawnMechanic((int)TargetID.Spark, new MechanicPlotlySetting(Symbols.Star,Colors.Teal),"Spark","Spawned a Spark (missed marble)", "Spark",0),
+            new PlayerDstHealthDamageHitMechanic(VaultArtsariiv, new MechanicPlotlySetting(Symbols.TriangleDownOpen, Colors.Yellow), "Vault", "Vault from Big Adds", "Vault (Add)", Sev1, 0),
+            new PlayerDstHealthDamageHitMechanic(SlamArtsariiv, new MechanicPlotlySetting(Symbols.Circle, Colors.LightOrange), "Slam", "Slam (Vault) from Boss", "Vault (Arts)", Sev0, 0),
+            new PlayerDstHealthDamageHitMechanic(TeleportLunge, new MechanicPlotlySetting(Symbols.StarTriangleDownOpen, Colors.LightOrange), "3 Jump", "Triple Jump Mid->Edge", "Triple Jump", Sev1, 0),
+            new PlayerDstHealthDamageHitMechanic(AstralSurge, new MechanicPlotlySetting(Symbols.CircleOpen, Colors.Yellow), "Floor Circle", "Different sized spiraling circles", "1000 Circles", Sev2, 0),
+            new PlayerDstHealthDamageHitMechanic([RedMarble1, RedMarble2], new MechanicPlotlySetting(Symbols.Circle, Colors.Red), "Marble", "Red KD Marble after Jump", "Red Marble", Sev0, 0),
+            new PlayerDstHealthDamageHitMechanic([TawShot1, TawShot2, TawShot3, TawShot4], new MechanicPlotlySetting(Symbols.CircleOpen, Colors.Red), "Taw Shot", "Hit by Taw Shot projectile", "Taw Shot", Sev2, 0),
+            new PlayerSrcHealthDamageHitMechanic([TawShot1, TawShot2, TawShot3, TawShot4], new MechanicPlotlySetting(Symbols.CircleXOpen, Colors.Red), "Taw Shot Rfl.", "Hit reflected Taw Shot projectile", "Taw Shot Reflect", Sev0, 0),
+            new SpawnMechanic((int)TargetID.Spark, new MechanicPlotlySetting(Symbols.Star, Colors.Teal), "Spark", "Spawned a Spark (missed marble)", "Spark", Sev0,0),
         ]);
+
     public Artsariiv(int triggerID) : base(triggerID)
     {
         MechanicList.Add(Mechanics);
@@ -34,16 +38,16 @@ internal class Artsariiv : ShatteredObservatory
         LogID |= 0x000002;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (914, 914),
                         (8991, 112, 11731, 2812));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayArtsariiv, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayArtsariiv, crMap, parentMap);
         return crMap;
     }
 
-    internal override IReadOnlyList<TargetID>  GetTargetsIDs()
+    internal override IReadOnlyList<TargetID> GetTargetsIDs()
     {
         return
         [
@@ -132,7 +136,7 @@ internal class Artsariiv : ShatteredObservatory
         if (artsariivMarkerGUID != null)
         {
             var markedsArtsariivs = combatData.Where(x => x.IsStateChange == StateChange.Marker && x.Value == artsariivMarkerGUID.MarkerID).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Distinct();
-            foreach (AgentItem artsariiv in agentData.GetNPCsByID(TargetID.Artsariiv))
+            foreach (AgentItem artsariiv in agentData.GetStableSpeciesByID(TargetID.Artsariiv))
             {
                 if (!markedsArtsariivs.Any(x => x.Is(artsariiv)))
                 {
@@ -190,7 +194,7 @@ internal class Artsariiv : ShatteredObservatory
         {
             // Legacy
             var targetArtsariiv = FindTargetArtsariiv(agentData);
-            foreach (AgentItem artsariiv in agentData.GetNPCsByID(TargetID.Artsariiv))
+            foreach (AgentItem artsariiv in agentData.GetStableSpeciesByID(TargetID.Artsariiv))
             {
                 if (!artsariiv.Is(targetArtsariiv))
                 {
@@ -211,7 +215,7 @@ internal class Artsariiv : ShatteredObservatory
     private static AgentItem FindTargetArtsariiv(AgentData agentData)
     {
         // cc artsariiv clones have the same species id, find target with longest aware time
-        return agentData.GetNPCsByID(TargetID.Artsariiv).MaxBy(x => x.LastAware - x.FirstAware) ?? throw new MissingKeyActorsException("Artsariiv not found");
+        return agentData.GetStableSpeciesByID(TargetID.Artsariiv).MaxBy(x => x.LastAware - x.FirstAware) ?? throw new MissingKeyActorsException("Artsariiv not found");
     }
 
     internal override long GetLogOffset(EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData)
@@ -329,6 +333,10 @@ internal class Artsariiv : ShatteredObservatory
                 AddBeamingSmileDecoration(effect, (start, end), Colors.Red, 0.2, environmentDecorations);
             }
         }
+
+        // taw shots (small reflectable orbs)
+        var tawshots = log.CombatData.GetMissileEventsBySkillIDs([TawShot1, TawShot2, TawShot3, TawShot4]);
+        environmentDecorations.AddReflectableNonHomingMissiles(log, tawshots, Colors.DarkRed, 0.3, Colors.Grey, 0.3, 25);
     }
 
     internal override void SetInstanceBuffs(ParsedEvtcLog log, List<InstanceBuff> instanceBuffs)

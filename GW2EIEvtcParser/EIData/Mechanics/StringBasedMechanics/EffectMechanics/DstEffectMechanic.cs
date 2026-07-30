@@ -11,16 +11,16 @@ internal abstract class DstEffectMechanic : EffectMechanic
     {
         if (!effectEvt.IsAroundDst || effectEvt.Dst.IsUnamedSpecies())
         {
-            return agentData.GetNPCsByID(TargetID.Environment).First();
+            return agentData.GetStableSpeciesByID(TargetID.Environment).First();
         }
         return effectEvt.Dst;
     }
 
-    public DstEffectMechanic(GUID effectGUID, MechanicPlotlySetting plotlySetting, string shortName, string description, string fullName, int internalCoolDown) : this([ effectGUID ], plotlySetting, shortName, description, fullName, internalCoolDown)
+    public DstEffectMechanic(GUID effectGUID, MechanicPlotlySetting plotlySetting, string shortName, string description, string fullName, MechanicSeverity severity, int internalCoolDown) : this([ effectGUID ], plotlySetting, shortName, description, fullName, severity, internalCoolDown)
     {
     }
 
-    public DstEffectMechanic(ReadOnlySpan<GUID> effects, MechanicPlotlySetting plotlySetting, string shortName, string description, string fullName, int internalCoolDown) : base(effects, plotlySetting, shortName, description, fullName, internalCoolDown)
+    public DstEffectMechanic(ReadOnlySpan<GUID> effects, MechanicPlotlySetting plotlySetting, string shortName, string description, string fullName, MechanicSeverity severity, int internalCoolDown) : base(effects, plotlySetting, shortName, description, fullName, severity, internalCoolDown)
     {
     }
 }

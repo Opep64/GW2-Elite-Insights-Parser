@@ -60,7 +60,9 @@ internal static class BladeswornHelper
     [
         // Fierce as Fire
         new BuffOnActorDamageModifier(Mod_FierceAsFire, FierceAsFire, "Fierce as Fire", "1%", DamageSource.NoPets, 1.0, DamageType.Strike, DamageType.All, Source.Bladesworn, ByStack, TraitImages.FierceAsFire, DamageModifierMode.All)
-            .WithBuilds(GW2Builds.EODBeta4),
+            .WithBuilds(GW2Builds.EODBeta4, GW2Builds.July2026Balance),
+        new BuffOnActorDamageModifier(Mod_FierceAsFire, FierceAsFire, "Fierce as Fire", "1%", DamageSource.NoPets, 1.0, DamageType.StrikeAndCondition, DamageType.All, Source.Bladesworn, ByStack, TraitImages.FierceAsFire, DamageModifierMode.All)
+            .WithBuilds(GW2Builds.July2026Balance),
     ];
 
     internal static readonly IReadOnlyList<DamageModifierDescriptor> IncomingDamageModifiers = [];
@@ -75,9 +77,12 @@ internal static class BladeswornHelper
         new Buff("Guns and Glory", GunsAndGlory, Source.Bladesworn, BuffStackType.Queue, 9, BuffClassification.Other, TraitImages.GunsAndGlory),
         new Buff("Tactical Reload", TacticalReload, Source.Bladesworn, BuffClassification.Other, SkillImages.TacticalReload),
         new Buff("Overcharged Cartridges", OverchargedCartridgesBuff, Source.Bladesworn, BuffStackType.Stacking, 25, BuffClassification.Other, SkillImages.OverchargedCartridges)
-            .WithBuilds(GW2Builds.June2022Balance),
-        new Buff("Supercharged Cartridges", SuperchargedCartridges, Source.Bladesworn, BuffStackType.Stacking, 25, BuffClassification.Other, SkillImages.OverchargedCartridges),
+            .WithBuilds(GW2Builds.June2022Balance, GW2Builds.July2026Balance),
+        new Buff("Overcharged Cartridges", OverchargedCartridgesBuff, Source.Bladesworn, BuffClassification.Other, SkillImages.OverchargedCartridges)
+            .WithBuilds(GW2Builds.July2026Balance),
+        new Buff("Supercharged Cartridges", SuperchargedCartridges, Source.Bladesworn, BuffStackType.Stacking, 25, BuffClassification.Other, SkillImages.OverchargedCartridges)
+            .WithBuilds(GW2Builds.June2025Balance, GW2Builds.July2026Balance),
+        new Buff("Supercharged Cartridges", SuperchargedCartridges, Source.Bladesworn, BuffClassification.Other, SkillImages.OverchargedCartridges)
+            .WithBuilds(GW2Builds.July2026Balance),
     ];
-
-
 }

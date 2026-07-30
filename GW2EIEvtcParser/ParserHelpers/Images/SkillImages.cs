@@ -541,7 +541,7 @@ internal static class SkillImages
     public const string PhotosynthesizeJacaranda = "https://render.guildwars2.com/file/976A0CC4EA0F36C8A4A705FDE22F03D65CD050D1/1770577.png";
     public const string EvilEyeDemon = "https://wiki.guildwars2.com/images/2/27/Evil_Eye.png";
     public const string TormentingVisionSpinegazer = "https://render.guildwars2.com/file/CE7504440B0506240A599CF3C4F2B99D67354278/3307110.png";
-    public const string EletroctuteJuvenileSkyChak = "https://render.guildwars2.com/file/5C800D284EF75CA76EE34868E35FEFD3F7964E22/3256377.png";
+    public const string Electrocute_JuvenileSkyChak = "https://render.guildwars2.com/file/5C800D284EF75CA76EE34868E35FEFD3F7964E22/3256377.png";
     public const string HarmonicCry = "https://render.guildwars2.com/file/C8E6011DF9B8665510E9BC12186A01B64006A62A/103556.png";
     public const string QuickeningScreech = "https://render.guildwars2.com/file/69F1291534027E0937A5C020FFEBCC96F301EC54/104048.png";
     public const string WolfsOnslaught = "https://render.guildwars2.com/file/E1550C4BB87B62B14AC39E3F2DB2AC4E07F55F91/3379175.png";
@@ -566,6 +566,10 @@ internal static class SkillImages
     public const string LeylineVortexAetherHunter = "https://render.guildwars2.com/file/030E7AB1CB18A4B348FD17B54B2B68FDABDB1DBC/3124961.png";
     public const string LungeVortexAetherHunter = "https://render.guildwars2.com/file/B65ECEBB72F4F10C4144510777E899E477DEE5B2/3124960.png";
     public const string BumbleJanthiriBee = "https://render.guildwars2.com/file/DCA96000060D21F6E4A9600DB3D8A90CE8AB574B/3594073.png";
+    public const string InnocentDisplayOtter = "https://render.guildwars2.com/file/6548D0084D2F2D639EF62F60CBAA1712ABAA0127/3772574.png";
+    public const string JetOtter = "https://render.guildwars2.com/file/E839D32DEC66ACF974A59478370BA810C54CCC5D/3772575.png";
+    public const string TailWhipOtter = "https://render.guildwars2.com/file/A7179EB9654498EC366C0012246DCE91AD3D68B5/3772577.png";
+    public const string ScratchOtter = "https://assets.gw2dat.com/3772576.png";
     // Galeshot
     public const string Mistral = "https://render.guildwars2.com/file/10E31F10E7D84CABF0963FEA12B77EE0BD950E42/3680194.png";
     #endregion Ranger
@@ -610,6 +614,7 @@ internal static class SkillImages
     // Dwarf
     public const string VengefulHammers = "https://render.guildwars2.com/file/04E220E8A8B4BD682B6A7D780D98B80FEDF5B410/961436.png";
     public const string RiteOfTheGreatDwarf = "https://render.guildwars2.com/file/D8AEB219F1A057F3F4E47E5E54A12BBABFC8474F/961437.png";
+    public const string ForcedEngagement = "https://render.guildwars2.com/file/B244F19EA9F09D96D175BC0C2BC402A23D0EEFA5/961439.png";
     // Kalla
     public const string SoulcleavesSummit = "https://render.guildwars2.com/file/CFD1582E6B180CA2DE6AD205981CBBAFC7480294/1770589.png";
     public const string RazorclawsRage = "https://render.guildwars2.com/file/2449F064B1D3427FF311D3B4C101009C52250A0C/1770606.png";
@@ -711,6 +716,7 @@ internal static class SkillImages
     public const string ThousandNeedles = "https://render.guildwars2.com/file/2E9B1FD2687F76E4CDF00ADF04B6AB07CE7CD880/2175069.png";
     public const string ThrowLavaRock = "https://wiki.guildwars2.com/images/e/ed/Throw_Lava_Rock.png";
     public const string EternalNight = "https://render.guildwars2.com/file/D6CB992E12F0BCB2984C3FEA066FA1B7A077752A/2503738.png";
+    public const string ShadowRefuge = "https://render.guildwars2.com/file/FAF0369AED6357D7C95407ECBEC8E7959B95FB29/103911.png";
     // Antiquary
     public const string MetalLegionGuitar = "https://render.guildwars2.com/file/02727B1807CF0FEF31037FD9E307BABB2055AE3C/3680214.png";
     public const string InquestPortalDevice = "https://render.guildwars2.com/file/99210D96EB449F7A975920410C4EAEEECB41BC06/3680221.png";

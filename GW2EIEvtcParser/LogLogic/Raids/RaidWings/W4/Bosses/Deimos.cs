@@ -5,6 +5,7 @@ using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIEvtcParser.ParserHelpers;
 using static GW2EIEvtcParser.ArcDPSEnums;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicTimeUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
@@ -12,6 +13,7 @@ using static GW2EIEvtcParser.ParserHelper;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
@@ -19,8 +21,8 @@ internal class Deimos : BastionOfThePenitent
 {
     internal readonly MechanicGroup Mechanics = new([
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(RapidDecay, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Black), "Oil", "Rapid Decay (Black expanding oil)","Black Oil", 0),
-                new PlayerDstFirstHealthDamageHitMechanic(RapidDecay, new MechanicPlotlySetting(Symbols.Circle,Colors.Black), "Oil T.","Rapid Decay Trigger (Black expanding oil)", "Black Oil Trigger",0)
+                new PlayerDstHealthDamageHitMechanic(RapidDecay, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Black), "Oil", "Rapid Decay (Black expanding oil)","Black Oil", Sev1, 0),
+                new PlayerDstFirstHealthDamageHitMechanic(RapidDecay, new MechanicPlotlySetting(Symbols.Circle,Colors.Black), "Oil T.","Rapid Decay Trigger (Black expanding oil)", "Black Oil Trigger", Sev0,0)
                     .UsingChecker((ce, log) => {
                         SingleActor? actor = log.FindActor(ce.To);
                         if (actor == null)
@@ -34,36 +36,32 @@ internal class Deimos : BastionOfThePenitent
                 ),
             ]),
             new MechanicGroup([
-                new EnemyCastStartMechanic(OffBalance, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkTeal), "TP CC", "Off Balance (Saul TP Breakbar)","Saul TP Start", 0),
-                new EnemyCastEndMechanic(OffBalance, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Red), "TP CC Fail", "Failed Saul TP CC","Failed CC (TP)", 0)
+                new EnemyCastStartMechanic(OffBalance, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkTeal), "TP CC", "Off Balance (Saul TP Breakbar)","Saul TP Start", Sev3, 0),
+                new EnemyCastEndMechanic(OffBalance, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Red), "TP CC Fail", "Failed Saul TP CC","Failed CC (TP)", Sev0, 0)
                     .UsingChecker((ce,log) => ce.ActualDuration >= 2200),
-                new EnemyCastEndMechanic(OffBalance, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkGreen), "TP CCed", "Saul TP CCed","CCed (TP)", 0)
+                new EnemyCastEndMechanic(OffBalance, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkGreen), "TP CCed", "Saul TP CCed","CCed (TP)", Sev0, 0)
                     .UsingChecker((ce, log) => ce.ActualDuration < 2200),
             ]),
             new MechanicGroup([
-                new EnemyCastStartMechanic(BoonThief, new MechanicPlotlySetting(Symbols.DiamondWide,Colors.DarkTeal), "Thief CC", "Boon Thief (Saul Breakbar)","Boon Thief Start", 0),
-                new EnemyCastEndMechanic(BoonThief, new MechanicPlotlySetting(Symbols.DiamondWide,Colors.Red), "Thief CC Fail", "Failed Boon Thief CC","Failed CC (Thief)", 0)
+                new EnemyCastStartMechanic(BoonThief, new MechanicPlotlySetting(Symbols.DiamondWide,Colors.DarkTeal), "Thief CC", "Boon Thief (Saul Breakbar)","Boon Thief Start", Sev3, 0),
+                new EnemyCastEndMechanic(BoonThief, new MechanicPlotlySetting(Symbols.DiamondWide,Colors.Red), "Thief CC Fail", "Failed Boon Thief CC","Failed CC (Thief)", Sev0, 0)
                     .UsingChecker((ce,log) => ce.ActualDuration >= 4400),
-                new EnemyCastEndMechanic(BoonThief, new MechanicPlotlySetting(Symbols.DiamondWide,Colors.DarkGreen), "Thief CCed", "Boon Thief CCed","CCed (Thief)", 0)
+                new EnemyCastEndMechanic(BoonThief, new MechanicPlotlySetting(Symbols.DiamondWide,Colors.DarkGreen), "Thief CCed", "Boon Thief CCed","CCed (Thief)", Sev0, 0)
                     .UsingChecker((ce, log) => ce.ActualDuration < 4400),
             ]),
-            new PlayerDstHealthDamageHitMechanic([Annihilate2, Annihilate1], new MechanicPlotlySetting(Symbols.Hexagon,Colors.Yellow), "Pizza", "Annihilate (Cascading Pizza attack)","Boss Smash", 0),
+            new PlayerDstHealthDamageHitMechanic([Annihilate2, Annihilate1], new MechanicPlotlySetting(Symbols.Hexagon,Colors.Yellow), "Pizza", "Annihilate (Cascading Pizza attack)","Boss Smash", Sev0, 0),
+            new PlayerDstHealthDamageHitMechanic([DemonicShockWaveRight, DemonicShockWaveLeft, DemonicShockWaveCenter], new MechanicPlotlySetting(Symbols.TriangleRightOpen,Colors.Red), "10% Smash", "Knockback in 10% Phase","10% Smash", Sev0, 0),
+            new PlayerDstBuffApplyMechanic(TearInstability, new MechanicPlotlySetting(Symbols.Diamond,Colors.DarkTeal), "Tear", "Collected a Demonic Tear","Tear", Sev1, 0),
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(DemonicShockWaveRight, new MechanicPlotlySetting(Symbols.TriangleRightOpen,Colors.Red), "10% RSmash", "Knockback (right hand) in 10% Phase","10% Right Smash", 0),
-                new PlayerDstHealthDamageHitMechanic(DemonicShockWaveLeft, new MechanicPlotlySetting(Symbols.TriangleLeftOpen,Colors.Red), "10% LSmash", "Knockback (left hand) in 10% Phase","10% Left Smash", 0),
-                new PlayerDstHealthDamageHitMechanic(DemonicShockWaveCenter, new MechanicPlotlySetting(Symbols.Bowtie,Colors.Red), "10% DSmash", "Knockback (both hands) in 10% Phase","10% Double Smash", 0),
-            ]),
-            new PlayerDstBuffApplyMechanic(TearInstability, new MechanicPlotlySetting(Symbols.Diamond,Colors.DarkTeal), "Tear", "Collected a Demonic Tear","Tear", 0),
-            new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(MindCrush, new MechanicPlotlySetting(Symbols.Square,Colors.Blue), "Mind Crush", "Hit by Mind Crush without Bubble Protection","Mind Crush", 0)
+                new PlayerDstHealthDamageHitMechanic(MindCrush, new MechanicPlotlySetting(Symbols.Square,Colors.Blue), "Mind Crush", "Hit by Mind Crush without Bubble Protection","Mind Crush", Sev0, 0)
                     .UsingChecker( (de,log) => de.HealthDamage > 0),
-                new PlayerDstBuffApplyMechanic(WeakMinded, new MechanicPlotlySetting(Symbols.SquareOpen,Colors.LightPurple), "Weak Mind", "Weak Minded (Debuff after Mind Crush)","Weak Minded", 0),
+                new PlayerDstBuffApplyMechanic(WeakMinded, new MechanicPlotlySetting(Symbols.SquareOpen,Colors.LightPurple), "Weak Mind", "Weak Minded (Debuff after Mind Crush)","Weak Minded", Sev3, 0),
             ]),
             new MechanicGroup([
-                new PlayerDstBuffApplyMechanic(DeimosSelectedByGreen, new MechanicPlotlySetting(Symbols.Circle,Colors.Green), "Green.D", "Chosen by the Eye of Janthir","Chosen (Green)", 0),
-                new PlayerDstBuffApplyMechanic(GreenTeleport, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Green), "TP", "Teleport to/from Demonic Realm","Teleport", 0),
+                new PlayerDstBuffApplyMechanic(DeimosSelectedByGreen, new MechanicPlotlySetting(Symbols.Circle,Colors.Green), "Green.D", "Chosen by the Eye of Janthir","Chosen (Green)", Sev1, 0),
+                new PlayerDstBuffApplyMechanic(GreenTeleport, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Green), "TP", "Teleport to/from Demonic Realm","Teleport", Sev2, 0),
             ]),
-            new EnemyDstBuffApplyMechanic(UnnaturalSignet, new MechanicPlotlySetting(Symbols.SquareOpen,Colors.Teal), "DMG Debuff", "Double Damage Debuff on Deimos","+100% Dmg Buff", 0)
+            new EnemyDstBuffApplyMechanic(UnnaturalSignet, new MechanicPlotlySetting(Symbols.SquareOpen,Colors.Teal), "DMG Debuff", "Double Damage Debuff on Deimos","+100% Dmg Buff", Sev0, 0)
         ]);
 
     private bool _hasPreEvent = false;
@@ -80,12 +78,12 @@ internal class Deimos : BastionOfThePenitent
         ChestID = ChestID.SaulsTreasureChest;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (765, 1000),
                         (-9542, 1932, -7004, 5250));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayDeimos, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayDeimos, crMap, parentMap);
         return crMap;
     }
     internal override List<InstantCastFinder> GetInstantCastFinders()
@@ -235,7 +233,7 @@ internal class Deimos : BastionOfThePenitent
 
     internal override long GetLogOffset(EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData)
     {
-        var deimos = agentData.GetNPCsByID(TargetID.Deimos).FirstOrDefault() ?? throw new MissingKeyActorsException("Deimos not found");
+        var deimos = agentData.GetStableSpeciesByID(TargetID.Deimos).FirstOrDefault() ?? throw new MissingKeyActorsException("Deimos not found");
         long start = long.MinValue;
         long genericStart = GetGenericLogOffset(logData);
         // enter combat
@@ -274,14 +272,13 @@ internal class Deimos : BastionOfThePenitent
     internal static bool HandleDemonicBonds(AgentData agentData, List<CombatItem> combatData)
     {
         var maxHPUpdates = combatData.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 239040 && x.IsStateChange == StateChange.MaxHealthUpdate).ToList();
-        var demonicBonds = maxHPUpdates.Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Distinct().Where(x => x.Type == AgentItem.AgentType.Gadget);
+        var demonicBonds = maxHPUpdates.Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Distinct().Where(x => x.Type == AgentItem.AgentType.VolatileSpecies);
         bool hasBonds = false;
         var attackTargetEvents = combatData.Where(x => x.IsStateChange == StateChange.AttackTarget);
         foreach (AgentItem demonicBond in demonicBonds)
         {
             hasBonds = true;
             demonicBond.OverrideID(TargetID.DemonicBond, agentData);
-            demonicBond.OverrideType(AgentItem.AgentType.NPC, agentData);
             foreach (var atAgent in attackTargetEvents.Where(x => x.DstMatchesAgent(demonicBond)).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)))
             {
                 atAgent.OverrideID(TargetID.DemonicBondAttackTarget, agentData);
@@ -292,7 +289,7 @@ internal class Deimos : BastionOfThePenitent
 
     internal static void HandleShackledPrisoners(AgentData agentData, List<CombatItem> combatData)
     {
-        var deimosEncounterNPCs = agentData.GetNPCsByIDs([TargetID.Pride, TargetID.Greed, TargetID.Deimos]);
+        var deimosEncounterNPCs = agentData.GetStableSpeciesByIDs([TargetID.Pride, TargetID.Greed, TargetID.Deimos]);
         if (deimosEncounterNPCs.Count == 0)
         {
             return;
@@ -304,7 +301,6 @@ internal class Deimos : BastionOfThePenitent
             long expectedStart = Math.Max(shackledPrisoner.FirstAware, minFirstAware);
             var encounterShackledPrisoner = AgentManipulationHelper.CreateAgentInIntervalAndDummiesAround(shackledPrisoner, agentData, minFirstAware, shackledPrisoner.LastAware);
             encounterShackledPrisoner.OverrideID(TargetID.ShackledPrisoner, agentData);
-            encounterShackledPrisoner.OverrideType(AgentItem.AgentType.NPC, agentData);
         }
     }
 
@@ -327,7 +323,7 @@ internal class Deimos : BastionOfThePenitent
         if (firstTargetable != null)
         {
             var attackTarget = attackTargetEvents.FirstOrDefault(x => x.AttackTarget.Is(firstTargetable.Src));
-            if (attackTarget != null && attackTarget.Src.Type == AgentItem.AgentType.Gadget)
+            if (attackTarget != null && attackTarget.Src.Type == AgentItem.AgentType.VolatileSpecies)
             {
                 attackTarget.AttackTarget.OverrideID(TargetID.DeimosAttackTarget, agentData);
                 var bodyStruct = attackTarget.Src;
@@ -385,7 +381,7 @@ internal class Deimos : BastionOfThePenitent
         HandleShackledPrisoners(agentData, combatData);
         if (_hasPreEvent && needsDummy)
         {
-            agentData.AddCustomNPCAgent(logData.LogStart, logData.LogEnd, "Deimos Pre Event", Spec.NPC, TargetID.DummyTarget, true);
+            agentData.AddCustomNPCAgent(logData.LogStart, logData.LogEnd, "Deimos Pre Event", Spec.Gadget, TargetID.DummyTarget, true);
         }
         base.EIEvtcParse(gw2Build, evtcVersion, logData, agentData, combatData, extensions);
         // Find target
@@ -410,7 +406,7 @@ internal class Deimos : BastionOfThePenitent
             CombatItem? armDeimosDamageEvent = combatData.FirstOrDefault(x => x.Time >= deimos.LastAware && (x.SkillID == DemonicShockWaveRight || x.SkillID == DemonicShockWaveCenter || x.SkillID == DemonicShockWaveLeft) && x.IsDamageEvent());
             if (armDeimosDamageEvent != null)
             {
-                var deimosGadgets = agentData.GetAgentByType(AgentItem.AgentType.Gadget).Where(x => x.Name.Contains("Deimos") && x.LastAware > armDeimosDamageEvent.Time);
+                var deimosGadgets = agentData.GetAgentByType(AgentItem.AgentType.VolatileSpecies).Where(x => x.Name.Contains("Deimos") && x.LastAware > armDeimosDamageEvent.Time);
                 if (deimosGadgets.Any())
                 {
                     deimos10PercentTargetable = deimosGadgets.Max(x => x.FirstAware);
@@ -606,7 +602,7 @@ internal class Deimos : BastionOfThePenitent
         switch (target.ID)
         {
             case (int)TargetID.Deimos:
-                var hasSaul = log.AgentData.GetNPCsByID(TargetID.Saul).Any(x => x.InAwareTimes(target.FirstAware, target.FirstAware + 20000));
+                var hasSaul = log.AgentData.GetStableSpeciesByID(TargetID.Saul).Any(x => x.InAwareTimes(target.FirstAware, target.FirstAware + 20000));
                 foreach (CastEvent cast in target.GetAnimatedCastEvents(log))
                 {
                     switch (cast.SkillID)
@@ -680,7 +676,7 @@ internal class Deimos : BastionOfThePenitent
                 }
                 break;
             case (int)TargetID.ShackledPrisoner:
-                var Sauls = log.AgentData.GetNPCsByID(TargetID.Saul).Where(x => x.InAwareTimes(target.AgentItem));
+                var Sauls = log.AgentData.GetStableSpeciesByID(TargetID.Saul).Where(x => x.InAwareTimes(target.AgentItem));
                 foreach (var Saul in Sauls)
                 {
                     replay.Hidden.Add(new Segment(Saul.FirstAware, Saul.LastAware));
@@ -730,7 +726,7 @@ internal class Deimos : BastionOfThePenitent
                 {
                     var attackTarget = attackTargetEvent.AttackTarget;
                     var targetableEvents = attackTargetEvent.GetTargetableEvents(log.CombatData);
-                    long lineStart = 0;
+                    long lineStart = long.MaxValue;
                     foreach (var targetableEvent in targetableEvents)
                     {
                         if (targetableEvent.Targetable)

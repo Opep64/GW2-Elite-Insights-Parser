@@ -1,5 +1,4 @@
-﻿using System.Reflection.Metadata;
-using GW2EIEvtcParser.Extensions;
+﻿using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIEvtcParser.ParserHelpers;
 using static GW2EIEvtcParser.ArcDPSEnums;
@@ -155,12 +154,15 @@ internal static class MesmerHelper
         new DamageLogDamageModifier(Mod_EmpoweredIllusions, "Empowered Illusions", "15% for Illusions", DamageSource.PetsOnly, 15.0, DamageType.Strike, DamageType.All, Source.Mesmer, TraitImages.EmpoweredIllusions, IllusionsChecker, DamageModifierMode.All)
             .UsingEarlyExit((a, log) => !a.GetMinions(log).Any(x => IsIllusion(x.ReferenceAgentItem))),
         // - Vicious Expression
-        new BuffOnFoeDamageModifier(Mod_ViciousExpressionWithIllusions, NumberOfBoons, "Vicious Expression", "25% on boonless target", DamageSource.All, 25.0, DamageType.Strike, DamageType.All, Source.Mesmer, ByAbsence, TraitImages.ConfoundingSuggestions, DamageModifierMode.PvE)
+        new BuffOnFoeDamageModifier(Mod_ViciousExpressionNoBoons, NumberOfBoons, "Vicious Expression", "25% on boonless target", DamageSource.All, 25.0, DamageType.Strike, DamageType.All, Source.Mesmer, ByAbsence, TraitImages.ConfoundingSuggestions, DamageModifierMode.PvE)
             .UsingChecker(IllusionsWithMesmerChecker)
             .WithBuilds(GW2Builds.February2020Balance, GW2Builds.February2020Balance2),
-        new BuffOnFoeDamageModifier(Mod_ViciousExpressionWithIllusions, NumberOfBoons, "Vicious Expression", "15% on boonless target", DamageSource.All, 15.0, DamageType.Strike, DamageType.All, Source.Mesmer, ByAbsence, TraitImages.ConfoundingSuggestions, DamageModifierMode.All)
+        new BuffOnFoeDamageModifier(Mod_ViciousExpressionNoBoons, NumberOfBoons, "Vicious Expression (No Boons)", "15% on boonless target", DamageSource.All, 15.0, DamageType.Strike, DamageType.All, Source.Mesmer, ByAbsence, TraitImages.ConfoundingSuggestions, DamageModifierMode.All)
             .UsingChecker(IllusionsWithMesmerChecker)
             .WithBuilds(GW2Builds.February2020Balance2),
+        new BuffOnFoeDamageModifier(Mod_ViciousExpressionBoons, NumberOfBoons, "Vicious Expression (Boons)", "5% on target with boons", DamageSource.All, 5.0, DamageType.Strike, DamageType.All, Source.Mesmer, ByPresence, TraitImages.ConfoundingSuggestions, DamageModifierMode.All)
+            .UsingChecker(IllusionsWithMesmerChecker)
+            .WithBuilds(GW2Builds.July2026Balance),
         // - Egotism
         new DamageLogDamageModifier(Mod_Egotism, "Egotism", "10% if target hp% lower than self hp%", DamageSource.NoPets, 10.0, DamageType.Strike, DamageType.All, Source.Mesmer, TraitImages.TemporalEnchanter, FromHigherThanToHPChecker, DamageModifierMode.PvE)
             .WithBuilds(GW2Builds.October2018Balance, GW2Builds.February2023Balance)
@@ -237,9 +239,11 @@ internal static class MesmerHelper
     internal static readonly IReadOnlyList<DamageModifierDescriptor> IncomingDamageModifiers =
     [
         // Distortion
-        new CounterOnActorDamageModifier(Mod_Distortion, DistortionBuff, "Distortion", "Invulnerable", DamageSource.Incoming, DamageType.All, DamageType.All, Source.Mesmer, SkillImages.Distortion, DamageModifierMode.All)   
+        new CounterOnActorDamageModifier(Mod_Distortion, DistortionBuff, "Distortion", "Invulnerable", DamageSource.Incoming, DamageType.All, DamageType.All, Source.Mesmer, ByPresence, SkillImages.Distortion, DamageModifierMode.All)
+            .UsingHitAndAbsorbedDamageEvents()
             .WithBuilds(GW2Builds.StartOfLife, GW2Builds.OctoberVoERelease),
-        new CounterOnActorDamageModifier(Mod_Distortion, DistortionBuff, "Distortion", "Invulnerable", DamageSource.Incoming, DamageType.All, DamageType.All, Source.Mesmer, SkillImages.Distortion, DamageModifierMode.All)
+        new CounterOnActorDamageModifier(Mod_Distortion, DistortionBuff, "Distortion", "Invulnerable", DamageSource.Incoming, DamageType.All, DamageType.All, Source.Mesmer, ByPresence, SkillImages.Distortion, DamageModifierMode.All)
+            .UsingHitAndAbsorbedDamageEvents()
             .UsingSpecSpecificShared()
             .WithBuilds(GW2Builds.OctoberVoERelease),
     ];
@@ -396,7 +400,7 @@ internal static class MesmerHelper
 
     internal static bool IsClone(AgentItem agentItem)
     {
-        if (agentItem.Type == AgentItem.AgentType.Gadget)
+        if (agentItem.Type == AgentItem.AgentType.VolatileSpecies)
         {
             return false;
         }
@@ -423,7 +427,7 @@ internal static class MesmerHelper
 
     internal static bool IsPhantasm(AgentItem agentItem)
     {
-        if (agentItem.Type == AgentItem.AgentType.Gadget)
+        if (agentItem.Type == AgentItem.AgentType.VolatileSpecies)
         {
             return false;
         }
@@ -432,7 +436,7 @@ internal static class MesmerHelper
 
     internal static bool IsIllusion(AgentItem agentItem)
     {
-        if (agentItem.Type == AgentItem.AgentType.Gadget)
+        if (agentItem.Type == AgentItem.AgentType.VolatileSpecies)
         {
             return false;
         }

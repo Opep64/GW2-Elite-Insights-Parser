@@ -5,6 +5,7 @@ using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIEvtcParser.ParserHelpers;
 using static GW2EIEvtcParser.ArcDPSEnums;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicTimeUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
@@ -12,6 +13,7 @@ using static GW2EIEvtcParser.ParserHelper;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
@@ -19,22 +21,24 @@ internal class Skorvald : ShatteredObservatory
 {
     internal readonly MechanicGroup Mechanics = new(
         [
-            new PlayerDstHealthDamageHitMechanic([CombustionRush1, CombustionRush2, CombustionRush3], new MechanicPlotlySetting(Symbols.TriangleLeft,Colors.Magenta), "Charge", "Combustion Rush","Charge", 0),
-            new PlayerDstHealthDamageHitMechanic([PunishingKickAnomaly, PunishingKickSkorvald], new MechanicPlotlySetting(Symbols.TriangleRightOpen,Colors.Magenta), "Add Kick", "Punishing Kick (Single purple Line, Add)","Kick (Add)", 0),
-            new PlayerDstHealthDamageHitMechanic([CranialCascadeAnomaly,CranialCascade2], new MechanicPlotlySetting(Symbols.TriangleRightOpen,Colors.Yellow), "Add Cone KB", "Cranial Cascade (3 purple Line Knockback, Add)","Small Cone KB (Add)", 0),
-            new PlayerDstHealthDamageHitMechanic([RadiantFurySkorvald, RadiantFury2], new MechanicPlotlySetting(Symbols.Octagon,Colors.Red), "Burn Circle", "Radiant Fury (expanding burn circles)","Expanding Circles", 0),
-            new PlayerDstHealthDamageHitMechanic(FocusedAnger, new MechanicPlotlySetting(Symbols.TriangleDown,Colors.Orange), "Large Cone KB", "Focused Anger (Large Cone Overhead Crosshair Knockback)","Large Cone Knockback", 0),
+            new PlayerDstHealthDamageHitMechanic([CombustionRush1, CombustionRush2, CombustionRush3], new MechanicPlotlySetting(Symbols.TriangleLeft,Colors.Magenta), "Charge", "Combustion Rush","Charge", Sev1, 0),
+            new MechanicGroup([
+                new PlayerDstHealthDamageHitMechanic([PunishingKickAnomaly, PunishingKickSkorvald], new MechanicPlotlySetting(Symbols.TriangleRightOpen,Colors.Magenta), "Add Kick", "Punishing Kick (Single purple Line, Add)","Kick (Add)", Sev2, 0),
+                new PlayerDstHealthDamageHitMechanic([CranialCascadeAnomaly,CranialCascade2], new MechanicPlotlySetting(Symbols.TriangleRightOpen,Colors.Yellow), "Add Cone KB", "Cranial Cascade (3 purple Line Knockback, Add)","Small Cone KB (Add)", Sev1, 0),
+            ]),
+            new PlayerDstHealthDamageHitMechanic([RadiantFurySkorvald, RadiantFury2], new MechanicPlotlySetting(Symbols.Octagon,Colors.Red), "Burn Circle", "Radiant Fury (expanding burn circles)","Expanding Circles", Sev0, 0),
+            new PlayerDstHealthDamageHitMechanic(FocusedAnger, new MechanicPlotlySetting(Symbols.TriangleDown,Colors.Orange), "Large Cone KB", "Focused Anger (Large Cone Overhead Crosshair Knockback)","Large Cone Knockback", Sev0, 0),
             new MechanicGroup(
                 [
-                    new PlayerDstHealthDamageHitMechanic([HorizonStrikeSkorvald1, HorizonStrikeSkorvald2], new MechanicPlotlySetting(Symbols.Circle,Colors.LightOrange), "Horizon Strike.S", "Horizon Strike (turning pizza slices during Skorvald)","Horizon Strike (Skorvald)", 0), // 
-                    new PlayerDstHealthDamageHitMechanic(CrimsonDawn, new MechanicPlotlySetting(Symbols.Circle,Colors.DarkRed), "Horizon Strike.S End", "Crimson Dawn (almost Full platform attack after Horizon Strike)","Horizon Strike (last)", 0),
+                    new PlayerDstHealthDamageHitMechanic([HorizonStrikeSkorvald1, HorizonStrikeSkorvald2], new MechanicPlotlySetting(Symbols.Circle,Colors.LightOrange), "Horizon Strike.S", "Horizon Strike (turning pizza slices during Skorvald)","Horizon Strike (Skorvald)", Sev1, 0), // 
+                    new PlayerDstHealthDamageHitMechanic(CrimsonDawn, new MechanicPlotlySetting(Symbols.Circle,Colors.DarkRed), "Horizon Strike.S End", "Crimson Dawn (almost Full platform attack after Horizon Strike)","Horizon Strike (last)", Sev1, 0),
                 ]
             ),
-            new PlayerDstHealthDamageHitMechanic(SolarCyclone, new MechanicPlotlySetting(Symbols.BowtieOpen,Colors.DarkMagenta), "Cyclone", "Solar Cyclone (Circling Knockback)","KB Cyclone", 0),
-            new PlayerDstBuffApplyMechanic(SkorvaldsIre, new MechanicPlotlySetting(Symbols.CircleOpenDot, Colors.Purple), "Skor Fixate", "Fixated by Skorvald's Ire", "Skorvald's Fixate",  0),
-            new PlayerDstHealthDamageHitMechanic(BloomExplode, new MechanicPlotlySetting(Symbols.Circle,Colors.Yellow), "Bloom Expl", "Hit by Solar Bloom Explosion","Bloom Explosion", 0), //shockwave, not damage? (damage is 50% max HP, not tracked)
-            new PlayerDstHealthDamageHitMechanic(SpiralStrike, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.DarkGreen), "Spiral", "Hit after Warp (Jump to Player with overhead bomb)","Spiral Strike", 0),
-            new PlayerDstHealthDamageHitMechanic(WaveOfMutilation, new MechanicPlotlySetting(Symbols.TriangleSW,Colors.DarkGreen), "KB Jump", "Hit by KB Jump (player targeted)","Knockback jump", 0),
+            new PlayerDstHealthDamageHitMechanic(SolarCyclone, new MechanicPlotlySetting(Symbols.BowtieOpen,Colors.DarkMagenta), "Cyclone", "Solar Cyclone (Circling Knockback)","KB Cyclone", Sev0, 0),
+            new PlayerDstBuffApplyMechanic(SkorvaldsIre, new MechanicPlotlySetting(Symbols.CircleOpenDot, Colors.Purple), "Skor Fixate", "Fixated by Skorvald's Ire", "Skorvald's Fixate", Sev1,  0),
+            new PlayerDstHealthDamageHitMechanic(BloomExplode, new MechanicPlotlySetting(Symbols.Circle,Colors.Yellow), "Bloom Expl", "Hit by Solar Bloom Explosion","Bloom Explosion", Sev0, 0), //shockwave, not damage? (damage is 50% max HP, not tracked)
+            new PlayerDstHealthDamageHitMechanic(SpiralStrike, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.DarkGreen), "Spiral", "Hit after Warp (Jump to Player with overhead bomb)","Spiral Strike", Sev2, 0),
+            new PlayerDstHealthDamageHitMechanic(WaveOfMutilation, new MechanicPlotlySetting(Symbols.TriangleSW,Colors.DarkGreen), "KB Jump", "Hit by KB Jump (player targeted)","Knockback jump", Sev1, 0),
         ]);
     public Skorvald(int triggerID) : base(triggerID)
     {
@@ -45,12 +49,12 @@ internal class Skorvald : ShatteredObservatory
         LogID |= 0x000001;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (987, 1000),
                         (-22267, 15295, -17227, 20275));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplaySkorvald, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplaySkorvald, crMap, parentMap);
         return crMap;
     }
 
@@ -112,7 +116,7 @@ internal class Skorvald : ShatteredObservatory
         var fluxAnomalies = new List<AgentItem>();
         for (int i = 0; i < FluxAnomalies.Count; i++)
         {
-            fluxAnomalies.AddRange(agentData.GetNPCsByID(FluxAnomalies[i]));
+            fluxAnomalies.AddRange(agentData.GetStableSpeciesByID(FluxAnomalies[i]));
         }
         foreach (AgentItem fluxAnomaly in fluxAnomalies)
         {
@@ -176,7 +180,7 @@ internal class Skorvald : ShatteredObservatory
         base.EIEvtcParse(gw2Build, evtcVersion, logData, agentData, combatData, extensions);
         SingleActor skorvald = Targets.FirstOrDefault(x => x.IsSpecies(TargetID.Skorvald)) ?? throw new MissingKeyActorsException("Skorvald not found");
         skorvald.OverrideName("Skorvald");
-        if (manualFractalScaleSet && combatData.Any(x => x.IsStateChange == StateChange.MaxHealthUpdate && x.SrcMatchesAgent(skorvald.AgentItem) && MaxHealthUpdateEvent.GetMaxHealth(x) < 5e6 && MaxHealthUpdateEvent.GetMaxHealth(x) > 0))
+        if (manualFractalScaleSet && combatData.Any(x => x.IsStateChange == StateChange.MaxHealthUpdate && x.SrcMatchesAgent(skorvald.AgentItem) && MaxHealthUpdateEvent.GetMaxHealth(x) < 5e6 && MaxHealthUpdateEvent.GetMaxHealth(x) > 1))
         {
             // Remove manual scale from T1 to T3 for now
             combatData.FirstOrDefault(x => x.IsStateChange == StateChange.FractalScale)!.OverrideSrcAgent(0);
@@ -190,7 +194,7 @@ internal class Skorvald : ShatteredObservatory
         CombatItem? logStartNPCUpdate = combatData.FirstOrDefault(x => x.IsStateChange == StateChange.LogNPCUpdate);
         if (logStartNPCUpdate != null)
         {
-            AgentItem skorvald = agentData.GetNPCsByID(TargetID.Skorvald).FirstOrDefault() ?? throw new MissingKeyActorsException("Skorvald not found");
+            AgentItem skorvald = agentData.GetStableSpeciesByID(TargetID.Skorvald).FirstOrDefault() ?? throw new MissingKeyActorsException("Skorvald not found");
             long upperLimit = GetPostLogStartNPCUpdateDamageEventTime(logData, agentData, combatData, logStartNPCUpdate.Time, skorvald);
             // Skorvald may spawns with 0% hp
             CombatItem? firstNonZeroHPUpdate = combatData.FirstOrDefault(x => x.IsStateChange == StateChange.HealthUpdate && x.SrcMatchesAgent(skorvald) && HealthUpdateEvent.GetHealthPercent(x) > 0);
@@ -218,10 +222,10 @@ internal class Skorvald : ShatteredObservatory
                 //SupernovaCM,
             };
             if (cmSkills.Any(x => combatData.GetAnimatedCastData(x).Count > 0 || combatData.GetDamageData(x).Count > 0) ||
-                agentData.GetNPCsByID(TargetID.FluxAnomalyCM1).Any(x => x.FirstAware >= target.FirstAware) ||
-                agentData.GetNPCsByID(TargetID.FluxAnomalyCM2).Any(x => x.FirstAware >= target.FirstAware) ||
-                agentData.GetNPCsByID(TargetID.FluxAnomalyCM3).Any(x => x.FirstAware >= target.FirstAware) ||
-                agentData.GetNPCsByID(TargetID.FluxAnomalyCM4).Any(x => x.FirstAware >= target.FirstAware))
+                agentData.GetStableSpeciesByID(TargetID.FluxAnomalyCM1).Any(x => x.FirstAware >= target.FirstAware) ||
+                agentData.GetStableSpeciesByID(TargetID.FluxAnomalyCM2).Any(x => x.FirstAware >= target.FirstAware) ||
+                agentData.GetStableSpeciesByID(TargetID.FluxAnomalyCM3).Any(x => x.FirstAware >= target.FirstAware) ||
+                agentData.GetStableSpeciesByID(TargetID.FluxAnomalyCM4).Any(x => x.FirstAware >= target.FirstAware))
             {
                 return LogData.Mode.CM;
             }

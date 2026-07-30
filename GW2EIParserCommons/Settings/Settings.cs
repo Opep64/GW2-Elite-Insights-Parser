@@ -135,6 +135,82 @@ public sealed partial class Settings : global::System.Configuration.ApplicationS
 
     [global::System.Configuration.UserScopedSettingAttribute()]
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+    [global::System.Configuration.DefaultSettingValueAttribute("True")]
+    public bool ParseExtensions
+    {
+        get
+        {
+            return (bool)this[nameof(ParseExtensions)];
+        }
+        set
+        {
+            this[nameof(ParseExtensions)] = value;
+        }
+    }
+
+    [global::System.Configuration.UserScopedSettingAttribute()]
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+    [global::System.Configuration.DefaultSettingValueAttribute("True")]
+    public bool ComputeDamage
+    {
+        get
+        {
+            return (bool)this[nameof(ComputeDamage)];
+        }
+        set
+        {
+            this[nameof(ComputeDamage)] = value;
+        }
+    }
+
+    [global::System.Configuration.UserScopedSettingAttribute()]
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+    [global::System.Configuration.DefaultSettingValueAttribute("True")]
+    public bool ComputeBuff
+    {
+        get
+        {
+            return (bool)this[nameof(ComputeBuff)];
+        }
+        set
+        {
+            this[nameof(ComputeBuff)] = value;
+        }
+    }
+
+    [global::System.Configuration.UserScopedSettingAttribute()]
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+    [global::System.Configuration.DefaultSettingValueAttribute("True")]
+    public bool ComputeCast
+    {
+        get
+        {
+            return (bool)this[nameof(ComputeCast)];
+        }
+        set
+        {
+            this[nameof(ComputeCast)] = value;
+        }
+    }
+
+    [global::System.Configuration.UserScopedSettingAttribute()]
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+    [global::System.Configuration.DefaultSettingValueAttribute("True")]
+    public bool ComputeMechanics
+    {
+        get
+        {
+            return (bool)this[nameof(ComputeMechanics)];
+        }
+        set
+        {
+            this[nameof(ComputeMechanics)] = value;
+        }
+    }
+
+
+    [global::System.Configuration.UserScopedSettingAttribute()]
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
     [global::System.Configuration.DefaultSettingValueAttribute("False")]
     public bool UploadToDPSReports
     {
@@ -176,6 +252,36 @@ public sealed partial class Settings : global::System.Configuration.ApplicationS
         set
         {
             this[nameof(DPSReportUserToken)] = value;
+        }
+    }
+
+    [global::System.Configuration.UserScopedSettingAttribute()]
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+    [global::System.Configuration.DefaultSettingValueAttribute("False")]
+    public bool UploadToMistWarrior
+    {
+        get
+        {
+            return (bool)this[nameof(UploadToMistWarrior)];
+        }
+        set
+        {
+            this[nameof(UploadToMistWarrior)] = value;
+        }
+    }
+
+    [global::System.Configuration.UserScopedSettingAttribute()]
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+    [global::System.Configuration.DefaultSettingValueAttribute("")]
+    public string MistWarriorUserToken
+    {
+        get
+        {
+            return (string)this[nameof(MistWarriorUserToken)];
+        }
+        set
+        {
+            this[nameof(MistWarriorUserToken)] = value;
         }
     }
 

@@ -190,7 +190,8 @@ internal static class GuardianHelper
         new BuffOnActorDamageModifier(Mod_SignetOfJudgment, SignetOfJudgmentBuff, "Signet of Judgment", "-10%", DamageSource.Incoming, -10, DamageType.StrikeAndCondition, DamageType.All, Source.Guardian, ByPresence, SkillImages.SignetOfJudgment, DamageModifierMode.All),
         new BuffOnActorDamageModifier(Mod_SignetOfJudgmentPI, SignetOfJudgmentPI, "Signet of Judgment (PI)", "-12%", DamageSource.Incoming, -12, DamageType.StrikeAndCondition, DamageType.All, Source.Guardian, ByPresence, SkillImages.SignetOfJudgment, DamageModifierMode.All),
         // - Renewed Focus
-        new CounterOnActorDamageModifier(Mod_RenewedFocus, RenewedFocus, "Renewed Focus", "Invulnerable", DamageSource.Incoming, DamageType.All, DamageType.All, Source.Guardian, SkillImages.RenewedFocus, DamageModifierMode.All)
+        new CounterOnActorDamageModifier(Mod_RenewedFocus, RenewedFocus, "Renewed Focus", "Invulnerable", DamageSource.Incoming, DamageType.All, DamageType.All, Source.Guardian, ByPresence, SkillImages.RenewedFocus, DamageModifierMode.All)
+            .UsingHitAndAbsorbedDamageEvents()
     ];
 
     internal static readonly IReadOnlyList<Buff> Buffs =
@@ -203,11 +204,11 @@ internal static class GuardianHelper
         new Buff("Renewed Focus", RenewedFocus, Source.Guardian, BuffClassification.Other, SkillImages.RenewedFocus),
         new Buff("Shield of Wrath", ShieldOfWrathBuff, Source.Guardian, BuffStackType.Stacking, 3, BuffClassification.Other, SkillImages.ShieldOfWrath),
         new Buff("Binding Blade (Self)", BindingBladeSelf, Source.Guardian, BuffStackType.Stacking, 25, BuffClassification.Other, SkillImages.BindingBlade),
-        new Buff("Binding Blade", BindingBlade, Source.Guardian, BuffClassification.Other, SkillImages.BindingBlade)
+        new Buff("Binding Blade", BindingBlade, Source.Guardian, BuffClassification.Debuff, SkillImages.BindingBlade)
             .WithBuilds(GW2Builds.StartOfLife, GW2Builds.June2025Balance),
-        new Buff("Binding Blade", BindingBlade, Source.Guardian, BuffStackType.StackingUniquePerSrc, 999, BuffClassification.Other, SkillImages.BindingBlade)
+        new Buff("Binding Blade", BindingBlade, Source.Guardian, BuffStackType.StackingUniquePerSrc, 999, BuffClassification.Debuff, SkillImages.BindingBlade)
             .WithBuilds(GW2Builds.June2025Balance),
-        new Buff("Banished", Banished, Source.Guardian, BuffStackType.StackingConditionalLoss, 25, BuffClassification.Other, SkillImages.Banish),
+        new Buff("Banished", Banished, Source.Guardian, BuffStackType.StackingConditionalLoss, 25, BuffClassification.Debuff, SkillImages.Banish),
         new Buff("Merciful Intervention (Self)", MercifulAndJudgesInterventionSelfBuff, Source.Guardian, BuffClassification.Support, SkillImages.MercifulIntervention),
         new Buff("Merciful Intervention (Target)", MercifulInterventionTargetBuff, Source.Guardian, BuffClassification.Support, SkillImages.MercifulIntervention),
         // Signets
@@ -276,6 +277,17 @@ internal static class GuardianHelper
     internal static bool IsKnownMinionID(int id)
     {
         return Minions.Contains(id);
+    }
+
+    private static readonly HashSet<long> _spearAAs =
+    [
+        DaybreakingSlashWave,
+    ];
+
+    public static bool IsAutoAttack(ParsedEvtcLog log, long id)
+    {
+        var build = log.CombatData.GetGW2BuildEvent().Build;
+        return build >= GW2Builds.June2024SpearBeta && _spearAAs.Contains(id);
     }
 
     internal static void ComputeProfessionCombatReplayActors(PlayerActor player, ParsedEvtcLog log, CombatReplay replay)

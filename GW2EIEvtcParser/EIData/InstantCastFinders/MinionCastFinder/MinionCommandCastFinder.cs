@@ -1,5 +1,6 @@
 ﻿using GW2EIEvtcParser.ParsedData;
 using static GW2EIEvtcParser.SkillIDs;
+using static GW2EIEvtcParser.SpeciesIDs;
 
 namespace GW2EIEvtcParser.EIData;
 
@@ -16,6 +17,10 @@ internal class MinionCommandCastFinder : BuffGainCastFinder
     {
         SpeciesID = speciesID;
         Minions = true;
-        UsingChecker((evt, combatData, agentData, skillData) => evt.To.Type != AgentItem.AgentType.Gadget && evt.To.IsSpecies(speciesID) && evt.To.Master != null);
+        UsingChecker((evt, combatData, agentData, skillData) => evt.To.Type != AgentItem.AgentType.VolatileSpecies && evt.To.IsSpecies(speciesID) && evt.To.Master != null);
+    }
+
+    public MinionCommandCastFinder(long skillID, MinionID speciesID) : this(skillID, (int)speciesID)
+    {
     }
 }

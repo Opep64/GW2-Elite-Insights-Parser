@@ -2,22 +2,24 @@
 using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
+using GW2EIGW2API;
+using static GW2EIEvtcParser.AchievementEligibilityIDs;
 using static GW2EIEvtcParser.ArcDPSEnums;
-using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
+using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.ParserHelper;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
-using static GW2EIEvtcParser.AchievementEligibilityIDs;
-using GW2EIGW2API;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
 internal class SpiritRace : SpiritVale
 {
     internal readonly MechanicGroup Mechanics = new([
-            new PlayerDstHealthDamageHitMechanic(SpiritFog, new MechanicPlotlySetting(Symbols.CircleOpen, Colors.Red), "SpiritFog.H", "Hit by Spirit Fog", "Spirit Fog Hit", 0),
+            new PlayerDstHealthDamageHitMechanic(SpiritFog, new MechanicPlotlySetting(Symbols.CircleOpen, Colors.Red), "SpiritFog.H", "Hit by Spirit Fog", "Spirit Fog Hit", Sev0, 0),
             new MechanicGroup([
                 new AchievementEligibilityMechanic(Ach_OutrunGhost, new MechanicPlotlySetting(Symbols.Diamond, Colors.DarkPink), "Outrun.Achiv.L", "Achievement Eligibility: I Can Outrun A...Ghost Lost", "I Can Outrun A...Ghost Lost", 0)
                         .UsingChecker((evt, log) => evt.Lost),
@@ -34,12 +36,12 @@ internal class SpiritRace : SpiritVale
         LogID |= 0x000004;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (581, 1193),
                         (-11188, -13757, -4700, -436));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplaySpiritRun, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplaySpiritRun, crMap, parentMap);
         return crMap;
     }
     internal override IReadOnlyList<TargetID>  GetTargetsIDs()
@@ -95,7 +97,7 @@ internal class SpiritRace : SpiritVale
     internal override LogData.StartStatus GetLogStartStatus(CombatData combatData, AgentData agentData, LogData logData)
     {
 
-        AgentItem? wallOfGhosts = agentData.GetNPCsByID(TargetID.WallOfGhosts).FirstOrDefault();
+        AgentItem? wallOfGhosts = agentData.GetStableSpeciesByID(TargetID.WallOfGhosts).FirstOrDefault();
         if (wallOfGhosts == null)
         {
             return LogData.StartStatus.Late;
@@ -112,7 +114,7 @@ internal class SpiritRace : SpiritVale
 
     internal override long GetLogOffset(EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData)
     {
-        AgentItem? wallOfGhosts = agentData.GetNPCsByID(TargetID.WallOfGhosts).FirstOrDefault();
+        AgentItem? wallOfGhosts = agentData.GetStableSpeciesByID(TargetID.WallOfGhosts).FirstOrDefault();
         if (wallOfGhosts != null)
         {
             foreach(var velocityEvent in combatData.Where(x => x.IsStateChange == StateChange.Velocity && x.SrcMatchesAgent(wallOfGhosts)))
@@ -139,7 +141,7 @@ internal class SpiritRace : SpiritVale
         foreach (CombatItem maxHP in maxHPs)
         {
             AgentItem candidate = agentData.GetAgent(maxHP.SrcAgent, maxHP.Time);
-            if (candidate.Type == AgentItem.AgentType.Gadget)
+            if (candidate.Type == AgentItem.AgentType.VolatileSpecies)
             {
                 needsDummy = false;
                 var positions = combatData.Where(x => x.IsStateChange == StateChange.Position && x.SrcMatchesAgent(candidate)).Select(MovementEvent.GetPointXY).ToList();
@@ -159,7 +161,6 @@ internal class SpiritRace : SpiritVale
                 {
                     candidate.OverrideID(TargetID._EtherealBarrier4, agentData);
                 }
-                candidate.OverrideType(AgentItem.AgentType.NPC, agentData);
             }
         }
         return !needsDummy;
@@ -197,7 +198,7 @@ internal class SpiritRace : SpiritVale
     {
         if (!FindEtherealBarriers(agentData, combatData))
         {
-            agentData.AddCustomNPCAgent(logData.LogStart, logData.LogEnd, "Dummy Spirit Race", Spec.NPC, TargetID.DummyTarget, true);
+            agentData.AddCustomNPCAgent(logData.LogStart, logData.LogEnd, "Dummy Spirit Race", Spec.Gadget, TargetID.DummyTarget, true);
             Targetless = true;
         }
     }
@@ -267,7 +268,6 @@ internal class SpiritRace : SpiritVale
                 }
                 var spiritRaceEncounters = log.LogData.GetEncounterPhases(log, LogID);
                 replay.AddHideByEncounterPhases(spiritRaceEncounters, log);
-                replay.Hidden.Sort((x, y) => x.Start.CompareTo(y.Start));
                 break;
             case (int)TargetID.WallOfGhosts:
                 (long, long) lifespan = (target.FirstAware, target.LastAware);

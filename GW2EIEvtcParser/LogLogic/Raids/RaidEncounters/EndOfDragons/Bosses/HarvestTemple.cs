@@ -1,5 +1,4 @@
-﻿using System;
-using System.Numerics;
+﻿using System.Numerics;
 using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.Exceptions;
 using GW2EIEvtcParser.Extensions;
@@ -7,6 +6,7 @@ using GW2EIEvtcParser.ParsedData;
 using GW2EIGW2API;
 using static GW2EIEvtcParser.AchievementEligibilityIDs;
 using static GW2EIEvtcParser.ArcDPSEnums;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicTimeUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
@@ -14,6 +14,7 @@ using static GW2EIEvtcParser.ParserHelper;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
@@ -27,14 +28,14 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
         MechanicList.Add(new MechanicGroup([
             // General
             new MechanicGroup([
-                new PlayerDstEffectMechanic([EffectGUIDs.HarvestTempleTargetedExpulsionSpreadNM, EffectGUIDs.HarvestTempleTargetedExpulsionSpreadCM], new MechanicPlotlySetting(Symbols.Circle, Colors.Yellow), "Spread.B", "Baited spread mechanic", "Spread Bait", 150),
-                new PlayerDstEffectMechanic([EffectGUIDs.HarvestTempleVoidPoolRedPuddleSelectionNM, EffectGUIDs.HarvestTempleVoidPoolRedPuddleSelectionCM], new MechanicPlotlySetting(Symbols.Circle, Colors.Red), "Red.B", "Baited red puddle mechanic", "Red Bait", 150),
-                new PlayerDstBuffApplyMechanic(InfluenceOfTheVoidBuff, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.DarkPurple), "Void.D", "Received Void debuff", "Void Debuff", 150),
-                new PlayerDstHealthDamageHitMechanic(InfluenceOfTheVoidSkill, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.DarkPurple), "Void.H", "Hit by Void", "Void Hit", 150),
-                new PlayerDstHealthDamageHitMechanic([VoidPoolNM, VoidPoolCM], new MechanicPlotlySetting(Symbols.Circle, Colors.DarkPurple), "Red.H", "Hit by Red Void Pool", "Void Pool", 150),
-                new PlayerDstHealthDamageMechanic([HarvestTempleTargetedExpulsionNM, HarvestTempleTargetedExpulsionCM], new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Orange), "Spread.H", "Hit by Targeted Expulsion (Spread)", "Targeted Expulsion (Spread)", 150)
+                new PlayerDstEffectMechanic([EffectGUIDs.HarvestTempleTargetedExpulsionSpreadNM, EffectGUIDs.HarvestTempleTargetedExpulsionSpreadCM], new MechanicPlotlySetting(Symbols.Circle, Colors.Yellow), "Spread.B", "Baited spread mechanic", "Spread Bait", Sev1, 150),
+                new PlayerDstEffectMechanic([EffectGUIDs.HarvestTempleVoidPoolRedPuddleSelectionNM, EffectGUIDs.HarvestTempleVoidPoolRedPuddleSelectionCM], new MechanicPlotlySetting(Symbols.Circle, Colors.Red), "Red.B", "Baited red puddle mechanic", "Red Bait", Sev0, 150),
+                new PlayerDstBuffApplyMechanic(InfluenceOfTheVoidBuff, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.DarkPurple), "Void.D", "Received Void debuff", "Void Debuff", Sev0, 150),
+                new PlayerDstHealthDamageHitMechanic(InfluenceOfTheVoidSkill, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.DarkPurple), "Void.H", "Hit by Void", "Void Hit", Sev1, 150),
+                new PlayerDstHealthDamageHitMechanic([VoidPoolNM, VoidPoolCM], new MechanicPlotlySetting(Symbols.Circle, Colors.DarkPurple), "Red.H", "Hit by Red Void Pool", "Void Pool", Sev0, 150),
+                new PlayerDstHealthDamageMechanic([HarvestTempleTargetedExpulsionNM, HarvestTempleTargetedExpulsionCM], new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Orange), "Spread.H", "Hit by Targeted Expulsion (Spread)", "Targeted Expulsion (Spread)", Sev1, 150)
                     .UsingChecker((@event, log) => @event.HasHit || @event.IsNotADamageEvent),
-                new PlayerSrcAllHealthDamageHitsMechanic(new MechanicPlotlySetting(Symbols.StarOpen, Colors.LightOrange), "Orb Push", "Orb was pushed by player", "Orb Push", 0)
+                new PlayerSrcAllHealthDamageHitsMechanic(new MechanicPlotlySetting(Symbols.StarOpen, Colors.LightOrange), "Orb Push", "Orb was pushed by player", "Orb Push", Sev3, 0)
                     .UsingChecker((de, log) => (de.To.IsSpecies(TargetID.PushableVoidAmalgamate) || de.To.IsSpecies(TargetID.KillableVoidAmalgamate)) && de is DirectHealthDamageEvent),
                 new MechanicGroup([
                     new AchievementEligibilityMechanic(Ach_NopeRopes, new MechanicPlotlySetting(Symbols.CircleOpenDot, Colors.DarkYellow), "NopeRopes.Achiv.L", "Achievement Eligibility: Jumping the Nope Ropes Lost", "Achiv Jumping Nope Ropes Lost", 0)
@@ -43,121 +44,121 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                         .UsingChecker((evt, log) => !evt.Lost)
                 ]),
                 new MechanicGroup([
-                    new PlayerDstHealthDamageHitMechanic([VoidExplosion120Radius, VoidExplosion180Radius], new MechanicPlotlySetting(Symbols.StarSquareOpenDot, Colors.Yellow), "VoidExp.H", "Hit by Void Explosion (Last Laugh)", "Void Explosion", 0)
+                    new PlayerDstHealthDamageHitMechanic([VoidExplosion120Radius, VoidExplosion180Radius], new MechanicPlotlySetting(Symbols.StarSquareOpenDot, Colors.Yellow), "VoidExp.H", "Hit by Void Explosion (Last Laugh)", "Void Explosion", Sev1, 0)
                         .UsingChecker((hde, log) => hde.SkillID == VoidExplosion120Radius || log.LogData.EncounterIsCM(log, LogID, hde.Time)),
-                    new PlayerDstHealthDamageHitMechanic([VoidExplosion180Radius, VoidExplosion240Radius], new MechanicPlotlySetting(Symbols.StarSquareOpen, Colors.Yellow), "VoidExp.Champ.H", "Hit by Void Explosion (Last Laugh, Champion)", "Void Explosion Champion", 0)
+                    new PlayerDstHealthDamageHitMechanic([VoidExplosion180Radius, VoidExplosion240Radius], new MechanicPlotlySetting(Symbols.StarSquareOpen, Colors.Yellow), "VoidExp.Champ.H", "Hit by Void Explosion (Last Laugh, Champion)", "Void Explosion Champion", Sev1, 0)
                         .UsingChecker((hde, log) => hde.SkillID == VoidExplosion240Radius || log.LogData.EncounterIsNM(log, LogID, hde.Time)),
                 ]),
-                new PlayerDstHealthDamageHitMechanic(MagicDischarge, new MechanicPlotlySetting(Symbols.Octagon, Colors.Grey), "MagicDisc.H", "Hit by Magic Discharge (Orb Explosion Wave)", "Magic Discharge", 0),
+                new PlayerDstHealthDamageHitMechanic(MagicDischarge, new MechanicPlotlySetting(Symbols.Octagon, Colors.Grey), "MagicDisc.H", "Hit by Magic Discharge (Orb Explosion Wave)", "Magic Discharge", Sev0, 0),
                 new MechanicGroup([
-                    new EnemySrcEffectMechanic(EffectGUIDs.HarvestTempleSuccessGreen, new MechanicPlotlySetting(Symbols.Circle, Colors.DarkGreen), "S.Green", "Green Successful", "Success Green", 0),
-                    new EnemySrcEffectMechanic(EffectGUIDs.HarvestTempleFailedGreen, new MechanicPlotlySetting(Symbols.Circle, Colors.DarkRed), "F.Green", "Green Failed", "Failed Green", 0),
+                    new EnemySrcEffectMechanic(EffectGUIDs.HarvestTempleSuccessGreen, new MechanicPlotlySetting(Symbols.Circle, Colors.DarkGreen), "S.Green", "Green Successful", "Success Green", Sev0, 0),
+                    new EnemySrcEffectMechanic(EffectGUIDs.HarvestTempleFailedGreen, new MechanicPlotlySetting(Symbols.Circle, Colors.DarkRed), "F.Green", "Green Failed", "Failed Green", Sev0, 0),
                 ]),
             ]),
             // Purification 1
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(LightningOfJormag, new MechanicPlotlySetting(Symbols.StarTriangleDown, Colors.Ice), "Light.H", "Hit by Lightning of Jormag", "Lightning of Jormag", 0),
-                new PlayerDstHealthDamageHitMechanic(FlamesOfPrimordus, new MechanicPlotlySetting(Symbols.StarTriangleDownOpen, Colors.Orange), "Flame.H", "Hit by Flames of Primordus", "Flames of Primordus", 0),
-                new PlayerDstHealthDamageHitMechanic(Stormfall, new MechanicPlotlySetting(Symbols.YUpOpen, Colors.Purple), "Storm.H", "Hit by Kralkatorrik's Stormfall", "Kralkatorrik's Stormfall", 0),
+                new PlayerDstHealthDamageHitMechanic(LightningOfJormag, new MechanicPlotlySetting(Symbols.StarTriangleDown, Colors.Ice), "Light.H", "Hit by Lightning of Jormag", "Lightning of Jormag", Sev2, 0),
+                new PlayerDstHealthDamageHitMechanic(FlamesOfPrimordus, new MechanicPlotlySetting(Symbols.StarTriangleDownOpen, Colors.Orange), "Flame.H", "Hit by Flames of Primordus", "Flames of Primordus", Sev2, 0),
+                new PlayerDstHealthDamageHitMechanic(Stormfall, new MechanicPlotlySetting(Symbols.YUpOpen, Colors.Purple), "Storm.H", "Hit by Kralkatorrik's Stormfall", "Kralkatorrik's Stormfall", Sev0, 0),
             ]),
             // Jormag
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic([BreathOfJormagNorth, BreathOfJormagSouth, BreathOfJormagCenter], new MechanicPlotlySetting(Symbols.TriangleRight, Colors.Blue), "J.Breath.H", "Hit by Jormag Breath", "Jormag Breath", 150),
-                new PlayerDstHealthDamageHitMechanic(GraspOfJormag, new MechanicPlotlySetting(Symbols.StarOpen, Colors.DarkWhite), "J.Grasp.H", "Hit by Grasp of Jormag", "Grasp of Jormag", 0),
-                new PlayerDstHealthDamageHitMechanic(FrostMeteor, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Blue), "J.Meteor.H", "Hit by Jormag Meteor", "Jormag Meteor", 150),
+                new PlayerDstHealthDamageHitMechanic([BreathOfJormagNorth, BreathOfJormagSouth, BreathOfJormagCenter], new MechanicPlotlySetting(Symbols.TriangleRight, Colors.Blue), "J.Breath.H", "Hit by Jormag Breath", "Jormag Breath", Sev1, 150),
+                new PlayerDstHealthDamageHitMechanic(GraspOfJormag, new MechanicPlotlySetting(Symbols.StarOpen, Colors.DarkWhite), "J.Grasp.H", "Hit by Grasp of Jormag", "Grasp of Jormag", Sev2, 0),
+                new PlayerDstHealthDamageHitMechanic(FrostMeteor, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Blue), "J.Meteor.H", "Hit by Jormag Meteor", "Jormag Meteor", Sev1, 150),
             ]),
             // Primordus
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(LavaSlam, new MechanicPlotlySetting(Symbols.TriangleRight, Colors.Red), "Slam.H", "Hit by Primordus Slam", "Primordus Slam", 150),
-                new PlayerDstHealthDamageHitMechanic(JawsOfDestruction, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Red), "Jaws.H", "Hit by Primordus Jaws", "Primordus Jaws", 150),
+                new PlayerDstHealthDamageHitMechanic(LavaSlam, new MechanicPlotlySetting(Symbols.TriangleRight, Colors.Red), "Slam.H", "Hit by Primordus Slam", "Primordus Slam", Sev0, 150),
+                new PlayerDstHealthDamageHitMechanic(JawsOfDestruction, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Red), "Jaws.H", "Hit by Primordus Jaws", "Primordus Jaws", Sev0, 150),
             ]),
-            // Kralkatorrik 
+            // Kralkatorrik
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(CrystalBarrage, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Purple), "Barrage.H", "Hit by Crystal Barrage", "Barrage", 150),
-                new PlayerDstHealthDamageHitMechanic(BrandingBeam, new MechanicPlotlySetting(Symbols.TriangleRight, Colors.Purple), "Beam.H", "Hit by Kralkatorrik's Branding Beam", "Kralkatorrik Beam", 150),
-                new PlayerDstHealthDamageHitMechanic(BrandedArtillery, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.Purple), "Artillery.H", "Hit by Brandbomber Artillery", "Brandbomber Artillery", 150),
-                new PlayerDstHealthDamageHitMechanic(VoidPoolKralkatorrik, new MechanicPlotlySetting(Symbols.Circle, Colors.Black), "K.Pool.H", "Hit by Kralkatorrik Void Pool", "Kralkatorrik Void Pool", 150),
+                new PlayerDstHealthDamageHitMechanic(CrystalBarrage, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Purple), "Barrage.H", "Hit by Crystal Barrage", "Barrage", Sev2, 150),
+                new PlayerDstHealthDamageHitMechanic(BrandingBeam, new MechanicPlotlySetting(Symbols.TriangleRight, Colors.Purple), "Beam.H", "Hit by Kralkatorrik's Branding Beam", "Kralkatorrik Beam", Sev1, 150),
+                new PlayerDstHealthDamageHitMechanic(BrandedArtillery, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.Purple), "Artillery.H", "Hit by Brandbomber Artillery", "Brandbomber Artillery", Sev2, 150),
+                new PlayerDstHealthDamageHitMechanic(VoidPoolKralkatorrik, new MechanicPlotlySetting(Symbols.Circle, Colors.Black), "K.Pool.H", "Hit by Kralkatorrik Void Pool", "Kralkatorrik Void Pool", Sev0, 150),
             ]),
             // Purification 2
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(SwarmOfMordremoth_PoolOfUndeath, new MechanicPlotlySetting(Symbols.Circle, Colors.Green), "Goop.H", "Hit by goop left by heart", "Heart Goop", 150),
-                new PlayerDstHealthDamageHitMechanic(SwarmOfMordremoth, new MechanicPlotlySetting(Symbols.TriangleLeft, Colors.Red), "Bees.H", "Hit by bees from heart", "Heart Bees", 150),
+                new PlayerDstHealthDamageHitMechanic(SwarmOfMordremoth_PoolOfUndeath, new MechanicPlotlySetting(Symbols.Circle, Colors.Green), "Goop.H", "Hit by goop left by heart", "Heart Goop", Sev0, 150),
+                new PlayerDstHealthDamageHitMechanic(SwarmOfMordremoth, new MechanicPlotlySetting(Symbols.TriangleLeft, Colors.Red), "Bees.H", "Hit by bees from heart", "Heart Bees", Sev0, 150),
                 // Timecaster
                 new MechanicGroup([
-                    new PlayerDstHealthDamageHitMechanic(GravityCrushDamage, new MechanicPlotlySetting(Symbols.CircleOpenDot, Colors.Black), "Grav.Cru.H", "Hit by Gravity Crush", "Gravity Crush", 0),
-                    new PlayerDstHealthDamageHitMechanic(NightmareEpochDamage, new MechanicPlotlySetting(Symbols.Hexagon, Colors.Pink), "NigEpoch.H", "Hit by Nightmare Epoch", "Nightmare Epoch", 0),
+                    new PlayerDstHealthDamageHitMechanic(GravityCrushDamage, new MechanicPlotlySetting(Symbols.CircleOpenDot, Colors.Black), "Grav.Cru.H", "Hit by Gravity Crush", "Gravity Crush", Sev2, 0),
+                    new PlayerDstHealthDamageHitMechanic(NightmareEpochDamage, new MechanicPlotlySetting(Symbols.Hexagon, Colors.Pink), "NigEpoch.H", "Hit by Nightmare Epoch", "Nightmare Epoch", Sev3, 0),
                 ]),
             ]),
             // Mordremoth
             new MechanicGroup([
                 new MechanicGroup([
-                    new PlayerDstHealthDamageHitMechanic(MordremothShockwave, new MechanicPlotlySetting(Symbols.TriangleRight, Colors.Green), "ShckWv.H", "Hit by Mordremoth's Shockwave", "Mordremoth Shockwave", 150),
-                    new EnemyCastStartMechanic(MordremothShockwave, new MechanicPlotlySetting(Symbols.TriangleRightOpen, Colors.Green), "ShckWv.Start", "Mordremoth's Shockwave started", "Mordremoth Shockwave Start", 150)
+                    new PlayerDstHealthDamageHitMechanic(MordremothShockwave, new MechanicPlotlySetting(Symbols.TriangleRight, Colors.Green), "ShckWv.H", "Hit by Mordremoth's Shockwave", "Mordremoth Shockwave", Sev0, 150),
+                    new EnemyCastStartMechanic(MordremothShockwave, new MechanicPlotlySetting(Symbols.TriangleRightOpen, Colors.Green), "ShckWv.Start", "Mordremoth's Shockwave started", "Mordremoth Shockwave Start", Sev3, 150)
                 ]),
-                new PlayerDstHealthDamageHitMechanic(PoisonRoar, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Green), "M.Poison.H", "Hit by Mordremoth's Poison Roar", "Mordremoth Poison", 150),
+                new PlayerDstHealthDamageHitMechanic(PoisonRoar, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Green), "M.Poison.H", "Hit by Mordremoth's Poison Roar", "Mordremoth Poison", Sev0, 150),
                 // Skullpiercer
                 new MechanicGroup([
-                    new PlayerDstHealthDamageHitMechanic(Kick, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.Green), "Kick.H", "Kicked by Void Skullpiercer", "Skullpiercer Kick", 150)
+                    new PlayerDstHealthDamageHitMechanic(Kick, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.Green), "Kick.H", "Kicked by Void Skullpiercer", "Skullpiercer Kick", Sev0, 150)
                         .UsingBuffChecker(Stability, false),
-                    new PlayerDstHealthDamageHitMechanic(ChargedShot, new MechanicPlotlySetting(Symbols.TriangleDownOpen, Colors.FluoOrange), "ChrgShot.H", "Hit by Void Skullpiercer's Charged Shot", "Skullpiercer Charged Shot", 0),
+                    new PlayerDstHealthDamageHitMechanic(ChargedShot, new MechanicPlotlySetting(Symbols.TriangleDownOpen, Colors.FluoOrange), "ChrgShot.H", "Hit by Void Skullpiercer's Charged Shot", "Skullpiercer Charged Shot", Sev3, 0),
                 ]),
             ]),
             // Giants
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(DeathScream, new MechanicPlotlySetting(Symbols.SquareOpen, Colors.Grey), "Scream.G.CC", "CC'd by Giant's Death Scream", "Death Scream", 0)
+                new PlayerDstHealthDamageHitMechanic(DeathScream, new MechanicPlotlySetting(Symbols.SquareOpen, Colors.Grey), "Scream.G.CC", "CC'd by Giant's Death Scream", "Death Scream", Sev0, 0)
                     .UsingBuffChecker(Stability, false),
-                new PlayerDstHealthDamageHitMechanic(RottingBile, new MechanicPlotlySetting(Symbols.Square, Colors.GreenishYellow), "RotBile.H", "Hit by Giant's Rotting Bile", "Rotting Bile", 0),
-                new PlayerDstHealthDamageHitMechanic(Stomp, new MechanicPlotlySetting(Symbols.StarSquare, Colors.Teal), "Stomp.CC", "CC'd by Giant's Stomp", "Stomp", 0)
+                new PlayerDstHealthDamageHitMechanic(RottingBile, new MechanicPlotlySetting(Symbols.Square, Colors.GreenishYellow), "RotBile.H", "Hit by Giant's Rotting Bile", "Rotting Bile", Sev2, 0),
+                new PlayerDstHealthDamageHitMechanic(Stomp, new MechanicPlotlySetting(Symbols.StarSquare, Colors.Teal), "Stomp.CC", "CC'd by Giant's Stomp", "Stomp", Sev0, 0)
                     .UsingBuffChecker(Stability, false),
             ]),
             // Zhaitan
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic([ScreamOfZhaitanNM, ScreamOfZhaitanCM], new MechanicPlotlySetting(Symbols.TriangleRight, Colors.DarkGreen), "Scream.H", "Hit by Zhaitan Scream", "Zhaitan Scream", 150),
-                new PlayerDstHealthDamageHitMechanic(PutridDeluge, new MechanicPlotlySetting(Symbols.TriangleLeft, Colors.DarkGreen), "Z.Poison.H", "Hit by Zhaitan Poison", "Zhaitan Poison", 150),
-                new PlayerDstHealthDamageHitMechanic(ZhaitanTailSlam, new MechanicPlotlySetting(Symbols.Circle, Colors.Grey), "T.Slam.H", "Hit by Zhaitan's Tail Slam", "Zhaitan Tail Slam", 0),
+                new PlayerDstHealthDamageHitMechanic([ScreamOfZhaitanNM, ScreamOfZhaitanCM], new MechanicPlotlySetting(Symbols.TriangleRight, Colors.DarkGreen), "Scream.H", "Hit by Zhaitan Scream", "Zhaitan Scream", Sev1, 150),
+                new PlayerDstHealthDamageHitMechanic(PutridDeluge, new MechanicPlotlySetting(Symbols.TriangleLeft, Colors.DarkGreen), "Z.Poison.H", "Hit by Zhaitan Poison", "Zhaitan Poison", Sev0, 150),
+                new PlayerDstHealthDamageHitMechanic(ZhaitanTailSlam, new MechanicPlotlySetting(Symbols.Circle, Colors.Grey), "T.Slam.H", "Hit by Zhaitan's Tail Slam", "Zhaitan Tail Slam", Sev0, 0),
             ]),
             // Purification 3
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(SwarmOfMordremoth_CorruptedWaters, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.LightBlue), "Prjtile.H", "Hit by Corrupted Waters (Heart Projectile)", "Heart Projectile", 150),
+                new PlayerDstHealthDamageHitMechanic(SwarmOfMordremoth_CorruptedWaters, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.LightBlue), "Prjtile.H", "Hit by Corrupted Waters (Heart Projectile)", "Heart Projectile", Sev1, 150),
                 // Saltspray
                 new MechanicGroup([
-                    new PlayerDstHealthDamageHitMechanic(HydroBurst, new MechanicPlotlySetting(Symbols.Circle, Colors.LightBlue), "Whrlpl.H", "Hit by Hydro Burst (Whirlpool)", "Hydro Burst (Whirlpool)", 150),
-                    new PlayerDstHealthDamageHitMechanic(CallLightning, new MechanicPlotlySetting(Symbols.TriangleDownOpen, Colors.Purple), "CallLigh.H", "Hit by Call Lightning", "Call Lightning", 0),
-                    new PlayerDstHealthDamageHitMechanic(FrozenFury, new MechanicPlotlySetting(Symbols.TriangleRightOpen, Colors.Ice), "FrozFury.H", "Hit by Frozen Fury", "Frozen Fury", 0),
-                    new PlayerDstHealthDamageHitMechanic(RollingFlame, new MechanicPlotlySetting(Symbols.Circle, Colors.LightRed), "RollFlame.H", "Hit by Rolling Flame", "Rolling Flame", 0),
-                    new PlayerDstHealthDamageHitMechanic([ShatterEarth, ShatterEarth2], new MechanicPlotlySetting(Symbols.CircleOpen, Colors.Brown), "ShatEarth.H", "Hit by Shatter Earth", "Shatter Earth", 0),
+                    new PlayerDstHealthDamageHitMechanic(HydroBurst, new MechanicPlotlySetting(Symbols.Circle, Colors.LightBlue), "Whrlpl.H", "Hit by Hydro Burst (Whirlpool)", "Hydro Burst (Whirlpool)", Sev3, 150),
+                    new PlayerDstHealthDamageHitMechanic(CallLightning, new MechanicPlotlySetting(Symbols.TriangleDownOpen, Colors.Purple), "CallLigh.H", "Hit by Call Lightning", "Call Lightning", Sev3, 0),
+                    new PlayerDstHealthDamageHitMechanic(FrozenFury, new MechanicPlotlySetting(Symbols.TriangleRightOpen, Colors.Ice), "FrozFury.H", "Hit by Frozen Fury", "Frozen Fury", Sev3, 0),
+                    new PlayerDstHealthDamageHitMechanic(RollingFlame, new MechanicPlotlySetting(Symbols.Circle, Colors.LightRed), "RollFlame.H", "Hit by Rolling Flame", "Rolling Flame", Sev3, 0),
+                    new PlayerDstHealthDamageHitMechanic([ShatterEarth, ShatterEarth2], new MechanicPlotlySetting(Symbols.CircleOpen, Colors.Brown), "ShatEarth.H", "Hit by Shatter Earth", "Shatter Earth", Sev3, 0),
                 ]),
             ]),
             // Soo Won
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic([TsunamiSlamClawOrb, TsunamiSlamTailOrb], new MechanicPlotlySetting(Symbols.TriangleRight, Colors.LightBlue), "Tsunami.H", "Hit by Soo-Won Tsunami", "Soo-Won Tsunami", 150),
-                new PlayerDstHealthDamageHitMechanic(ClawSlap, new MechanicPlotlySetting(Symbols.TriangleLeft, Colors.LightBlue), "Claw.H", "Hit by Soo-Won Claw", "Soo-Won Claw", 150),
-                new PlayerDstHealthDamageHitMechanic(VoidPoolSooWon, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.DarkPink), "SW.Pool.H", "Hit by Soo-Won Void Pool", "Soo-Won Void Pool", 150),
-                new PlayerDstHealthDamageHitMechanic(TsunamiSlamTail, new MechanicPlotlySetting(Symbols.Square, Colors.LightBlue), "Tail.H", "Hit by Soo-Won Tail", "Soo-Won Tail", 150),
-                new PlayerDstHealthDamageHitMechanic(TormentOfTheVoid, new MechanicPlotlySetting(Symbols.Circle, Colors.DarkMagenta), "Torment.H", "Hit by Torment of the Void (Bouncing Orbs)", "Torment of the Void", 150),
-                new PlayerDstHealthDamageHitMechanic(MagicHail, new MechanicPlotlySetting(Symbols.CircleX, Colors.Black), "MagHail.H", "Hit by Magic Hail", "Magic Hail Hit", 0),
+                new PlayerDstHealthDamageHitMechanic([TsunamiSlamClawOrb, TsunamiSlamTailOrb], new MechanicPlotlySetting(Symbols.TriangleRight, Colors.LightBlue), "Tsunami.H", "Hit by Soo-Won Tsunami", "Soo-Won Tsunami", Sev0, 150),
+                new PlayerDstHealthDamageHitMechanic(ClawSlap, new MechanicPlotlySetting(Symbols.TriangleLeft, Colors.LightBlue), "Claw.H", "Hit by Soo-Won Claw", "Soo-Won Claw", Sev0, 150),
+                new PlayerDstHealthDamageHitMechanic(VoidPoolSooWon, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.DarkPink), "SW.Pool.H", "Hit by Soo-Won Void Pool", "Soo-Won Void Pool", Sev0, 150),
+                new PlayerDstHealthDamageHitMechanic(TsunamiSlamTail, new MechanicPlotlySetting(Symbols.Square, Colors.LightBlue), "Tail.H", "Hit by Soo-Won Tail", "Soo-Won Tail", Sev0, 150),
+                new PlayerDstHealthDamageHitMechanic(TormentOfTheVoid, new MechanicPlotlySetting(Symbols.Circle, Colors.DarkMagenta), "Torment.H", "Hit by Torment of the Void (Bouncing Orbs)", "Torment of the Void", Sev0, 150),
+                new PlayerDstHealthDamageHitMechanic(MagicHail, new MechanicPlotlySetting(Symbols.CircleX, Colors.Black), "MagHail.H", "Hit by Magic Hail", "Magic Hail Hit", Sev1, 0),
                 // Obliterator
                 new MechanicGroup([
-                    new PlayerDstHealthDamageHitMechanic(VoidObliteratorFirebomb, new MechanicPlotlySetting(Symbols.TriangleNW, Colors.DarkTeal), "Firebomb.H", "Hit by Firebomb", "Firebomb", 0),
-                    new PlayerDstHealthDamageHitMechanic(VoidObliteratorWyvernBreathDamage, new MechanicPlotlySetting(Symbols.TriangleNEOpen, Colors.Magenta), "WyvBreath.H", "Hit by Wyvern Breath", "Wyvern Breath", 0),
-                    new PlayerDstHealthDamageHitMechanic(VoidObliteratorCharge, new MechanicPlotlySetting(Symbols.Diamond, Colors.Teal), "Charge.H", "Hit by Obliterator's Charge", "Charge Hit", 0)
+                    new PlayerDstHealthDamageHitMechanic(VoidObliteratorFirebomb, new MechanicPlotlySetting(Symbols.TriangleNW, Colors.DarkTeal), "Firebomb.H", "Hit by Firebomb", "Firebomb", Sev3, 0),
+                    new PlayerDstHealthDamageHitMechanic(VoidObliteratorWyvernBreathDamage, new MechanicPlotlySetting(Symbols.TriangleNEOpen, Colors.Magenta), "WyvBreath.H", "Hit by Wyvern Breath", "Wyvern Breath", Sev3, 0),
+                    new PlayerDstHealthDamageHitMechanic(VoidObliteratorCharge, new MechanicPlotlySetting(Symbols.Diamond, Colors.Teal), "Charge.H", "Hit by Obliterator's Charge", "Charge Hit", Sev2, 0)
                         .WithStabilitySubMechanic(
-                            new SubMechanic(new MechanicPlotlySetting(Symbols.PentagonOpen, Colors.Revenant), "Charge.CC", "CC'd by Obliterator's Charge", "Charge CC", 0),
+                            new SubMechanic(new MechanicPlotlySetting(Symbols.PentagonOpen, Colors.Revenant), "Charge.CC", "CC'd by Obliterator's Charge", "Charge CC", Sev0, 0),
                             false
                         ),
                 ]),
                 // Goliath
                 new MechanicGroup([
-                    new PlayerDstHealthDamageHitMechanic(GlacialSlam, new MechanicPlotlySetting(Symbols.CircleX, Colors.Ice), "GlaSlam.H", "Hit by Glacial Slam", "Glacial Slam Hit", 0)
+                    new PlayerDstHealthDamageHitMechanic(GlacialSlam, new MechanicPlotlySetting(Symbols.CircleX, Colors.Ice), "GlaSlam.H", "Hit by Glacial Slam", "Glacial Slam Hit", Sev2, 0)
                             .WithStabilitySubMechanic(
-                                new SubMechanic(new MechanicPlotlySetting(Symbols.CircleXOpen, Colors.Ice), "GlaSlam.CC", "CC'd by Glacial Slam", "Glacial Slam CC", 0),
+                                new SubMechanic(new MechanicPlotlySetting(Symbols.CircleXOpen, Colors.Ice), "GlaSlam.CC", "CC'd by Glacial Slam", "Glacial Slam CC", Sev0, 0),
                                 false
                             ),
                 ]),
             ]),
             // Purification 4
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(GraspOfTheVoid, new MechanicPlotlySetting(Symbols.Hexagram, Colors.Black), "GraspVoid.H", "Hit by Grasp of the Void (Final Orb Projectile)", "Grasp of the Void", 0),
+                new PlayerDstHealthDamageHitMechanic(GraspOfTheVoid, new MechanicPlotlySetting(Symbols.Hexagram, Colors.Black), "GraspVoid.H", "Hit by Grasp of the Void (Final Orb Projectile)", "Grasp of the Void", Sev2, 0),
             ]),
         ]));
         Icon = EncounterIconHarvestTemple;
@@ -167,12 +168,12 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
         LogCategoryInformation.InSubCategoryOrder = 3;
         LogID |= 0x000004;
     }
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (1024, 1024),
                         (-844, -21845, 2055, -18946));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayHarvestTemple, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayHarvestTemple, crMap, parentMap);
         return crMap;
     }
     internal override List<PhaseData> GetPhases(ParsedEvtcLog log, bool requirePhases)
@@ -338,8 +339,8 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
 
     internal override LogData.StartStatus GetLogStartStatus(CombatData combatData, AgentData agentData, LogData logData)
     {
-        var jormagVoid = agentData.GetNPCsByID(TargetID.TheDragonVoidJormag).FirstOrDefault();
-        var otherVoids = agentData.GetNPCsByIDs([
+        var jormagVoid = agentData.GetStableSpeciesByID(TargetID.TheDragonVoidJormag).FirstOrDefault();
+        var otherVoids = agentData.GetStableSpeciesByIDs([
             TargetID.TheDragonVoidPrimordus,
             TargetID.TheDragonVoidKralkatorrik,
             TargetID.TheDragonVoidMordremoth,
@@ -350,12 +351,12 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
         if (jormagVoid != null)
         {
             pushableOrbCheckThreshold = jormagVoid.FirstAware;
-        } 
+        }
         else if (otherVoids.Count > 0)
         {
             return LogData.StartStatus.Late;
         }
-        var pushableOrb = agentData.GetNPCsByID(TargetID.PushableVoidAmalgamate).LastOrDefault(x => x.FirstAware <= pushableOrbCheckThreshold);
+        var pushableOrb = agentData.GetStableSpeciesByID(TargetID.PushableVoidAmalgamate).LastOrDefault(x => x.FirstAware <= pushableOrbCheckThreshold);
         if (pushableOrb == null)
         {
             return LogData.StartStatus.Late;
@@ -389,7 +390,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
         CombatItem? logStartNPCUpdate = combatData.FirstOrDefault(x => x.IsStateChange == StateChange.LogNPCUpdate);
         if (logStartNPCUpdate != null)
         {
-            AgentItem firstAmalgamate = agentData.GetNPCsByID(TargetID.VoidAmalgamate).MinBy(x => x.FirstAware);
+            AgentItem firstAmalgamate = agentData.GetStableSpeciesByID(TargetID.VoidAmalgamate).MinBy(x => x.FirstAware);
             if (firstAmalgamate != null)
             {
                 startToUse = firstAmalgamate.FirstAware;
@@ -416,7 +417,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
             TargetID.PushableVoidAmalgamate,
             TargetID.KillableVoidAmalgamate,
             TargetID.VoidGiant,
-            // Greens         
+            // Greens
             TargetID.HTGreenJormagWest,
             TargetID.HTGreenJormagEast,
             TargetID.HTGreenJormagSouthEast,
@@ -508,7 +509,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     if (lastDamageTaken != null)
                     {
                         bool isSuccess = false;
-                        if (agentData.GetGadgetsByID(ChestID).Any())
+                        if (agentData.GetStableSpeciesByID(ChestID).Any())
                         {
                             isSuccess = true;
                         }
@@ -550,7 +551,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
         if (effect.IsAroundDst)
         {
             res.Add(new AnimatedCastEvent(target.AgentItem, skill, effect.Time - startOffset, dur, effect.Dst));
-        } 
+        }
         else
         {
             res.Add(new AnimatedCastEvent(target.AgentItem, skill, effect.Time - startOffset, dur));
@@ -567,7 +568,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                 case (int)TargetID.TheDragonVoidJormag:
                     var northBeamSkill = skillData.Get(BreathOfJormagNorth);
                     long curNorthBeamTime = int.MinValue;
-                    foreach (var northBeam in agentData.GetNPCsByID(TargetID.JormagMovingFrostBeamNorth))
+                    foreach (var northBeam in agentData.GetStableSpeciesByID(TargetID.JormagMovingFrostBeamNorth))
                     {
                         VelocityEvent? frostBeamMoveStartVelocity = combatData.GetMovementData(northBeam).OfType<VelocityEvent>().FirstOrDefault(x => x.GetPoint3D().Length() > 0);
                         if (frostBeamMoveStartVelocity != null && frostBeamMoveStartVelocity.Time - curNorthBeamTime > 1000)
@@ -578,7 +579,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     }
                     var centerBeamSkill = skillData.Get(BreathOfJormagCenter);
                     long curCenterBeamTime = int.MinValue;
-                    foreach (var centerBeam in agentData.GetNPCsByID(TargetID.JormagMovingFrostBeamCenter))
+                    foreach (var centerBeam in agentData.GetStableSpeciesByID(TargetID.JormagMovingFrostBeamCenter))
                     {
                         VelocityEvent? frostBeamMoveStartVelocity = combatData.GetMovementData(centerBeam).OfType<VelocityEvent>().FirstOrDefault(x => x.GetPoint3D().Length() > 0);
                         if (frostBeamMoveStartVelocity != null && frostBeamMoveStartVelocity.Time - curCenterBeamTime > 1000)
@@ -853,7 +854,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
         int delta = idsToUse.Count - index + 1;
         for (int i = index; i < idsToUse.Count; i++)
         {
-            agentData.AddCustomNPCAgent(lastLastAware - delta + index, lastLastAware - delta + index + 1, "Dragonvoid", Spec.NPC, idsToUse[i], false);
+            agentData.AddCustomNPCAgent(lastLastAware - delta + index, lastLastAware - delta + index + 1, "Dragonvoid", Spec.Gadget, idsToUse[i], false);
         }
     }
 
@@ -893,6 +894,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                 GetContentLocal((byte)x.OverstackValue) == ContentLocal.Effect &&
                 usefulEffectGUIDs.Any(y => y.Equals(x.SrcAgent, x.DstAgent)))
             .Select(x => new EffectGUIDEvent(x, evtcVersion))
+            .DistinctBy(x => x.EffectID)
             .Select(x => (x, combatData.Where(y => y.IsEffect && y.SkillID == x.EffectID)))
             .GroupBy(x => x.Item1)
             .ToDictionary(x => x.Key.GUID, x => x.SelectMany(x => x.Item2));
@@ -970,7 +972,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     ||
                     (usefulEffectEvents.TryGetValue(EffectGUIDs.HarvestTempleSooWonTsunamiSlamClawIndicator, out var soowonTsunami) && soowonTsunami.Any(x => x.Time >= start && x.Time <= end))
                     ||
-                    (agentData.GetNPCsByIDs([TargetID.VoidAbomination, TargetID.VoidColdsteel, TargetID.VoidTangler, TargetID.VoidWarforgedVeteran, TargetID.VoidObliterator, TargetID.VoidGoliath]).Any(x => start <= x.FirstAware && end >= x.FirstAware)))
+                    (agentData.GetStableSpeciesByIDs([TargetID.VoidAbomination, TargetID.VoidColdsteel, TargetID.VoidTangler, TargetID.VoidWarforgedVeteran, TargetID.VoidObliterator, TargetID.VoidGoliath]).Any(x => start <= x.FirstAware && end >= x.FirstAware)))
                 {
 
                     if (i < targetOns.Count - 1)
@@ -984,7 +986,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                             lastHPEventBeforeEnd = dragonVoidHPEvents.LastOrDefault(x => x.Time >= (end - start) / 2 && x.Time <= end);
                         }
                         // Check if split happened, otherwise only one phase and the next targetable in a soo won from another encounter
-                        if (agentData.GetNPCsByID(TargetID.KillableVoidAmalgamate).Any(x => x.InAwareTimes(end, nextStart)))
+                        if (agentData.GetStableSpeciesByID(TargetID.KillableVoidAmalgamate).Any(x => x.InAwareTimes(end, nextStart)))
                         {
                             i++;
                             end = nextEnd;
@@ -1000,9 +1002,9 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     ||
                     (usefulEffectEvents.TryGetValue(EffectGUIDs.HarvestTempleZhaitanTailSlamImpact, out var shaiTailSlams) && shaiTailSlams.Any(x => x.Time >= start && x.Time <= end))
                     ||
-                    (agentData.GetNPCsByID(TargetID.VoidGiant).Any(x => start - 17000 <= x.FirstAware && end >= x.FirstAware))
+                    (agentData.GetStableSpeciesByID(TargetID.VoidGiant).Any(x => start - 17000 <= x.FirstAware && end >= x.FirstAware))
                     ||
-                    (agentData.GetNPCsByIDs([TargetID.VoidRotswarmer, TargetID.ZhaitansReach]).Any(x => start <= x.FirstAware && end >= x.FirstAware))
+                    (agentData.GetStableSpeciesByIDs([TargetID.VoidRotswarmer, TargetID.ZhaitansReach]).Any(x => start <= x.FirstAware && end >= x.FirstAware))
                 )
                 {
                     id = TargetID.TheDragonVoidZhaitan;
@@ -1013,7 +1015,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     ||
                     (usefulEffectEvents.TryGetValue(EffectGUIDs.HarvestTempleMordremothShockwave1, out var mordShockwaves) && mordShockwaves.Any(x => x.Time >= start && x.Time <= end))
                     ||
-                    (agentData.GetNPCsByID(TargetID.VoidSkullpiercer).Any(x => start <= x.FirstAware && end >= x.FirstAware))
+                    (agentData.GetStableSpeciesByID(TargetID.VoidSkullpiercer).Any(x => start <= x.FirstAware && end >= x.FirstAware))
                 )
                 {
                     id = TargetID.TheDragonVoidMordremoth;
@@ -1024,7 +1026,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     ||
                     (usefulEffectEvents.TryGetValue(EffectGUIDs.HarvestTempleKralkatorrikBeamIndicator, out var kralkBeam) && kralkBeam.Any(x => x.Time >= start && x.Time <= end))
                     ||
-                    (agentData.GetNPCsByID(TargetID.VoidBrandbomber).Any(x => start - 11000 <= x.FirstAware && end >= x.FirstAware))
+                    (agentData.GetStableSpeciesByID(TargetID.VoidBrandbomber).Any(x => start - 11000 <= x.FirstAware && end >= x.FirstAware))
                 )
                 {
                     id = TargetID.TheDragonVoidKralkatorrik;
@@ -1037,7 +1039,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     ||
                     (usefulEffectEvents.TryGetValue(EffectGUIDs.HarvestTemplePrimordusJawsOfDestructionDamage, out var jawsDamage) && jawsDamage.Any(x => x.Time >= start && x.Time <= end))
                     ||
-                    (agentData.GetNPCsByIDs([TargetID.VoidWarforgedElite, TargetID.VoidBurster]).Any(x => start - 9000 <= x.FirstAware && end >= x.FirstAware))
+                    (agentData.GetStableSpeciesByIDs([TargetID.VoidWarforgedElite, TargetID.VoidBurster]).Any(x => start - 9000 <= x.FirstAware && end >= x.FirstAware))
                 )
                 {
                     id = TargetID.TheDragonVoidPrimordus;
@@ -1048,11 +1050,11 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     ||
                     (usefulMissileEvents.TryGetValue(GraspOfJormag, out var graspsOfJormags) && graspsOfJormags.Any(x => x.Time >= start && x.Time <= end))
                     ||
-                    (agentData.GetNPCsByID(TargetID.JormagMovingFrostBeamNorth).Any(x => x.InAwareTimes(start, end)))
+                    (agentData.GetStableSpeciesByID(TargetID.JormagMovingFrostBeamNorth).Any(x => x.InAwareTimes(start, end)))
                     ||
-                    (agentData.GetNPCsByID(TargetID.JormagMovingFrostBeamCenter).Any(x => x.InAwareTimes(start, end)))
+                    (agentData.GetStableSpeciesByID(TargetID.JormagMovingFrostBeamCenter).Any(x => x.InAwareTimes(start, end)))
                     ||
-                    (agentData.GetNPCsByID(TargetID.VoidStormseer).Any(x => start <= x.FirstAware && end >= x.FirstAware))
+                    (agentData.GetStableSpeciesByID(TargetID.VoidStormseer).Any(x => start <= x.FirstAware && end >= x.FirstAware))
                 )
                 {
                     id = TargetID.TheDragonVoidJormag;
@@ -1069,7 +1071,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                         needSortByTime = true;
                     }
                 }
-                AgentItem elderDragonVoid = agentData.AddCustomNPCAgent(start, end, dragonVoid.Name, dragonVoid.Spec, (int)id, false, dragonVoid.Toughness, dragonVoid.Healing, dragonVoid.Condition, dragonVoid.Concentration, atAgent.HitboxWidth > 0 ? dragonVoid.HitboxWidth : 800, dragonVoid.HitboxHeight);
+                AgentItem elderDragonVoid = agentData.AddCustomNPCAgent(start, end, dragonVoid.Name, dragonVoid.Spec, id, false, dragonVoid.Toughness, dragonVoid.Healing, dragonVoid.Condition, dragonVoid.Concentration, atAgent.HitboxWidth > 0 ? dragonVoid.HitboxWidth : 800, dragonVoid.HitboxHeight);
                 elderDragonVoid.SetEnglobingAgentItem(dragonVoid, agentData);
             }
         }
@@ -1088,7 +1090,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
             { (int)TargetID.TheDragonVoidUnknown, (int)TargetID.Unknown },
         };
         // Add missing dragons (only forward, back ward missing dragons are ignored)
-        var sortedDragons = agentData.GetNPCsByIDs([
+        var sortedDragons = agentData.GetStableSpeciesByIDs([
             TargetID.TheDragonVoidJormag,
             TargetID.TheDragonVoidPrimordus,
             TargetID.TheDragonVoidKralkatorrik,
@@ -1163,7 +1165,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                 int delta = idsToAdd.Count;
                 for (var extraIDIndex = 0; extraIDIndex < idsToAdd.Count; extraIDIndex++)
                 {
-                    agentData.AddCustomNPCAgent(lastLastAware - delta + extraIDIndex, lastLastAware - delta + extraIDIndex + 1, "Dragonvoid", Spec.NPC, idsToAdd[extraIDIndex], false);
+                    agentData.AddCustomNPCAgent(lastLastAware - delta + extraIDIndex, lastLastAware - delta + extraIDIndex + 1, "Dragonvoid", Spec.Gadget, idsToAdd[extraIDIndex], false);
                 }
             }
         }
@@ -1230,7 +1232,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                 {
                     id = TargetID.HTGreenJormagEast;
                     name = "Jormag Green E";
-                } 
+                }
                 else if (Math.Abs(angle - 3.14159274) < threshold)
                 {
                     id = TargetID.HTGreenJormagWest;
@@ -1292,12 +1294,12 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                 }
                 if (!greenAgents.TryGetValue(id, out var greenAgent))
                 {
-                    greenAgent = agentData.AddCustomNPCAgent(logData.EvtcLogStart, logData.EvtcLogEnd, name, Spec.NPC, (int)id, true, 0, 0, 0, 0, 180, 1);
+                    greenAgent = agentData.AddCustomNPCAgent(logData.EvtcLogStart, logData.EvtcLogEnd, name, Spec.Gadget, id, true, 0, 0, 0, 0, 180, 1);
                     greenAgents[id] = greenAgent;
                 }
                 greenEffectEventTuple.Item2.OverrideSrcAgent(greenAgent);
                 var (dstAgent, value) = MovementEvent.PackMovementData(position.X, position.Y, position.Z);
-                toAdd.Add(new CombatItem(greenEffectEvent.Time, greenAgent.Agent, dstAgent, value, 0, 0, 0, greenAgent.InstID, 
+                toAdd.Add(new CombatItem(greenEffectEvent.Time, greenAgent.Agent, dstAgent, value, 0, 0, 0, greenAgent.InstID,
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (byte)StateChange.Position, 0, 0, 0, 0,
                     evtcVersion));
             }
@@ -1323,7 +1325,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
     internal override void EIEvtcParse(ulong gw2Build, EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData, IReadOnlyDictionary<uint, ExtensionHandler> extensions)
     {
         FindChestGadgets([
-            (ChestID, GrandStrikeChestHarvestTemplePosition, (agentItem) => agentItem.HitboxHeight == 0 || (agentItem.HitboxHeight == 500 && agentItem.HitboxWidth == 2)),
+            (ChestID, GrandStrikeChestHarvestTemplePosition, 2),
         ], agentData, combatData);
         IdentifyGreens(gw2Build, evtcVersion, logData, agentData, combatData, extensions);
         var maxHPEvents = combatData
@@ -1331,7 +1333,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
             .Select(x => new MaxHealthUpdateEvent(x, agentData))
             .GroupBy(x => x.MaxHealth).ToDictionary(x => x.Key);
         //
-        var dragonOrbs = agentData.GetNPCsByID(TargetID.DragonEnergyOrb);
+        var dragonOrbs = agentData.GetStableSpeciesByID(TargetID.DragonEnergyOrb);
         // For old logs
         if (dragonOrbs.Count == 0 && maxHPEvents.TryGetValue(491550, out var dragonOrbMaxHPs))
         {
@@ -1344,7 +1346,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     dragonOrb.OverrideID(TargetID.DragonEnergyOrb, agentData);
                 }
             }
-        } 
+        }
         else if (dragonOrbs.Count > 0)
         {
             foreach (var dragonOrb in dragonOrbs)
@@ -1353,7 +1355,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
             }
         }
         //
-        IReadOnlyList<AgentItem> voidAmalgamates = agentData.GetNPCsByID(TargetID.VoidAmalgamate);
+        IReadOnlyList<AgentItem> voidAmalgamates = agentData.GetStableSpeciesByID(TargetID.VoidAmalgamate);
         foreach (AgentItem voidAmal in voidAmalgamates)
         {
             if (combatData.Any(x => x.SkillID == VoidShell && x.IsBuffApplyEvent() && x.SrcMatchesAgent(voidAmal)))
@@ -1364,18 +1366,11 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
         // Gravity Ball - Timecaster gadget
         if (agentData.TryGetFirstAgentItem(TargetID.VoidTimeCaster, out var timecaster))
         {
-            if (maxHPEvents.TryGetValue(14940, out var potentialGravityBallHPs))
+            var gravityBallsFromSelfBuffApply = combatData.Where(x => x.IsBuffApplyEvent() && x.SkillID == HarvestTempleGravityBallSelfBuff).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Distinct().ToList();
+            foreach (AgentItem gravityBall in gravityBallsFromSelfBuffApply)
             {
-                var gravityBallCandidates = potentialGravityBallHPs.Where(x => x.Src.Type == AgentItem.AgentType.Gadget && x.Src.HitboxHeight == 300 && x.Src.HitboxWidth == 100 && x.Src.Master == null && x.Src.FirstAware > timecaster.FirstAware && x.Src.FirstAware < timecaster.LastAware + 2000).Select(x => x.Src);
-                var candidateVelocities = combatData.Where(x => x.IsStateChange == StateChange.Velocity && gravityBallCandidates.Any(y => x.SrcMatchesAgent(y)));
-                const int referenceLength = 200;
-                var gravityBalls = gravityBallCandidates.Where(x => candidateVelocities.Any(y => Math.Abs(MovementEvent.GetPointXY(y).Length() - referenceLength) < 10));
-                foreach (AgentItem gravityBall in gravityBalls)
-                {
-                    gravityBall.OverrideType(AgentItem.AgentType.NPC, agentData);
-                    gravityBall.OverrideID(TargetID.GravityBall, agentData);
-                    gravityBall.SetMaster(timecaster);
-                }
+                gravityBall.OverrideID(TargetID.GravityBall, agentData);
+                gravityBall.SetMaster(timecaster);
             }
         }
         {
@@ -1388,11 +1383,10 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                 foreach (AgentItem frostBeam in frostBeams)
                 {
                     frostBeam.OverrideID(TargetID.JormagMovingFrostBeam, agentData);
-                    frostBeam.OverrideType(AgentItem.AgentType.NPC, agentData);
                     frostBeam.SetMaster(jormagAgent);
                 }
-                var knownFrostBeams = agentData.GetNPCsByID(TargetID.JormagMovingFrostBeamNorth).ToList();
-                knownFrostBeams.AddRange(agentData.GetNPCsByID(TargetID.JormagMovingFrostBeamCenter));
+                var knownFrostBeams = agentData.GetStableSpeciesByID(TargetID.JormagMovingFrostBeamNorth).ToList();
+                knownFrostBeams.AddRange(agentData.GetStableSpeciesByID(TargetID.JormagMovingFrostBeamCenter));
                 knownFrostBeams.ForEach(x => x.SetMaster(jormagAgent));
             }
         }
@@ -1781,15 +1775,11 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                 var graspOfJormagProjectiles = log.CombatData.GetMissileEventsBySkillID(GraspOfJormag);
                 foreach (MissileEvent grasp in graspOfJormagProjectiles)
                 {
-                    lifespan = (grasp.Time, grasp.RemoveEvent?.Time ?? Math.Min(log.LogData.LogEnd, target.LastAware));
-                    for (int i = 0; i < grasp.LaunchEvents.Count; i++)
+                    CombatReplayDecorationContainer.AddNonHomingMissile(log, grasp, (launch, lifespan, connector) =>
                     {
-                        MissileLaunchEvent? launch = grasp.LaunchEvents[i];
-                        lifespan = (launch.Time, i != grasp.LaunchEvents.Count - 1 ? grasp.LaunchEvents[i + 1].Time : lifespan.end);
-                        var connector = new InterpolationConnector([new ParametricPoint3D(launch.LaunchPosition, lifespan.start), launch.GetFinalPosition(lifespan)]);
                         var beamAoE = new CircleDecoration(160, lifespan, Colors.LightBlue, 0.1, connector);
                         replay.Decorations.AddWithBorder(beamAoE, Colors.Red, 0.5);
-                    }
+                    }, Math.Min(log.LogData.LogEnd, target.LastAware));
                 }
                 // Frost Beam - Non-NPC sets
                 var breathOfJormag = log.CombatData.GetMissileEventsBySkillID(BreathOfJormagSouth);
@@ -1797,7 +1787,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                 {
                     // The breath is missing MissileRemove events, we compute the removal manually
                     long beamAgentSpawnTime = log.LogData.LogEnd;
-                    var beamAgents = log.AgentData.GetNPCsByIDs([TargetID.JormagMovingFrostBeam, TargetID.JormagMovingFrostBeamNorth, TargetID.JormagMovingFrostBeamCenter]);
+                    var beamAgents = log.AgentData.GetStableSpeciesByIDs([TargetID.JormagMovingFrostBeam, TargetID.JormagMovingFrostBeamNorth, TargetID.JormagMovingFrostBeamCenter]);
                     foreach (AgentItem agent in beamAgents)
                     {
                         // Find the closest velocity change event
@@ -1811,16 +1801,12 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     // If there isn't a VelocityEvent, it uses FightEnd, otherwise it's always LastAware
                     // The beams can spawn after Jormag has died, they last roughly 3 seconds, if they spawn just before Jormag dies, they get cancelled
                     var end = breath.Time >= target.LastAware ? Math.Min(target.LastAware + 3000, beamAgentSpawnTime) : Math.Min(target.LastAware, beamAgentSpawnTime);
-                    lifespan = (breath.Time, end);
 
-                    for (int i = 0; i < breath.LaunchEvents.Count; i++)
+                    CombatReplayDecorationContainer.AddNonHomingMissile(log, breath, (launch, lifespan, connector) =>
                     {
-                        MissileLaunchEvent? launch = breath.LaunchEvents[i];
-                        lifespan = (launch.Time, i != breath.LaunchEvents.Count - 1 ? breath.LaunchEvents[i + 1].Time : lifespan.end);
-                        var connector = new InterpolationConnector([new ParametricPoint3D(launch.LaunchPosition, lifespan.start), launch.GetFinalPosition(lifespan)]);
                         var beamAoE = new CircleDecoration(300, lifespan, Colors.LightBlue, 0.1, connector);
                         replay.Decorations.AddWithBorder(beamAoE, Colors.Red, 0.5);
-                    }
+                    }, end);
                 }
                 break;
             case (int)TargetID.JormagMovingFrostBeam:
@@ -2942,7 +2928,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
                     radius = radiuses.cm;
                 }
                 (long, long) lifespan = effect.ComputeLifespan(log, 2050);
-                replay.Decorations.AddWithBorder(new CircleDecoration(radius, lifespan, Colors.Orange, 0.3, new PositionConnector(effect.Position)), Colors.Orange, 0.4);   
+                replay.Decorations.AddWithBorder(new CircleDecoration(radius, lifespan, Colors.Orange, 0.3, new PositionConnector(effect.Position)), Colors.Orange, 0.4);
             }
         }
     }
@@ -2961,7 +2947,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
         {
             return LogData.Mode.CM;
         }
-        IReadOnlyList<AgentItem> voidMelters = agentData.GetNPCsByID(TargetID.VoidMelter);
+        IReadOnlyList<AgentItem> voidMelters = agentData.GetStableSpeciesByID(TargetID.VoidMelter);
         if (voidMelters.Count > 5)
         {
             long firstAware = voidMelters[0].FirstAware;
@@ -2971,7 +2957,7 @@ internal class HarvestTemple : EndOfDragonsRaidEncounter
             }
         }
         // fallback for late logs
-        if (combatData.GetEffectGUIDEventByGUID(EffectGUIDs.HarvestTempleSuccessGreen).IsValid || agentData.GetNPCsByID(TargetID.VoidGoliath).Any() || combatData.GetBuffData(VoidEmpowerment).Any())
+        if (combatData.GetEffectGUIDEventByGUID(EffectGUIDs.HarvestTempleSuccessGreen).IsValid || agentData.GetStableSpeciesByID(TargetID.VoidGoliath).Any() || combatData.GetBuffData(VoidEmpowerment).Any())
         {
             return LogData.Mode.CM;
         }

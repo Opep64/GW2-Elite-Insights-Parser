@@ -1,14 +1,15 @@
 ﻿using System.Numerics;
 using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.Exceptions;
-using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIEvtcParser.ParserHelpers;
-using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
+using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
@@ -16,33 +17,33 @@ internal class ValeGuardian : SpiritVale
 {
     internal readonly MechanicGroup Mechanics = new([
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(GreenGuardianUnstableMagicSpike, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Blue), "Split TP", "Unstable Magic Spike (Green Guard Teleport)","Green Guard TP",500),
-                new PlayerDstHealthDamageHitMechanic(UnstableMagicSpike, new MechanicPlotlySetting(Symbols.Circle,Colors.Blue), "Boss TP", "Unstable Magic Spike (Boss Teleport)","Boss TP", 500),
-                new PlayerDstHealthDamageHitMechanic(BulletStorm, new MechanicPlotlySetting(Symbols.Circle, Colors.White), "Orbs", "Bullet Storm (Orbs during split)", "Bullet Storm Orbs", 0),
+                new PlayerDstHealthDamageHitMechanic(GreenGuardianUnstableMagicSpike, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Blue), "Split TP", "Unstable Magic Spike (Green Guard Teleport)","Green Guard TP", Sev0, 500),
+                new PlayerDstHealthDamageHitMechanic(UnstableMagicSpike, new MechanicPlotlySetting(Symbols.Circle,Colors.Blue), "Boss TP", "Unstable Magic Spike (Boss Teleport)","Boss TP", Sev0, 500),
+                new PlayerDstHealthDamageHitMechanic(BulletStorm, new MechanicPlotlySetting(Symbols.Circle, Colors.White), "Orbs", "Bullet Storm (Orbs during split)", "Bullet Storm Orbs", Sev2, 0),
             ]),
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic([DistributedMagicBlue, DistributedMagicRed, DistributedMagic, DistributedMagicGreen], new MechanicPlotlySetting(Symbols.Circle,Colors.DarkGreen), "Green", "Distributed Magic (Stood in Green)","Green Team", 0),
-                new EnemyCastStartMechanic(DistributedMagicBlue, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.LightBlue) , "Green Cast B", "Distributed Magic (Green Field appeared in Blue Sector)","Green in Blue", 0),
-                new EnemyCastStartMechanic(DistributedMagicRed, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Orange), "Green Cast R", "Distributed Magic (Green Field appeared in Red Sector)","Green in Red", 0),
-                new EnemyCastStartMechanic(DistributedMagicGreen, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Green), "Green Cast G", "Distributed Magic (Green Field appeared in Green Sector)","Green in Green", 0),
+                new PlayerDstHealthDamageHitMechanic([DistributedMagicBlue, DistributedMagicRed, DistributedMagic, DistributedMagicGreen], new MechanicPlotlySetting(Symbols.Circle,Colors.DarkGreen), "Green", "Distributed Magic (Stood in Green)","Green Team", Sev2, 0),
+                new EnemyCastStartMechanic(DistributedMagicBlue, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.LightBlue) , "Green Cast B", "Distributed Magic (Green Field appeared in Blue Sector)","Green in Blue", Sev3, 0),
+                new EnemyCastStartMechanic(DistributedMagicRed, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Orange), "Green Cast R", "Distributed Magic (Green Field appeared in Red Sector)","Green in Red", Sev3, 0),
+                new EnemyCastStartMechanic(DistributedMagicGreen, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Green), "Green Cast G", "Distributed Magic (Green Field appeared in Green Sector)","Green in Green", Sev3, 0),
             ]),
-            new PlayerDstHealthDamageHitMechanic(MagicPulse, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Red), "Seeker", "Magic Pulse (Hit by Seeker)","Seeker", 0),
+            new PlayerDstHealthDamageHitMechanic(MagicPulse, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Red), "Seeker", "Magic Pulse (Hit by Seeker)","Seeker", Sev0, 0),
             new MechanicGroup([
-                new PlayerDstBuffApplyMechanic(PylonAttunementRed, new MechanicPlotlySetting(Symbols.Square,Colors.Red), "Attune R", "Pylon Attunement: Red","Red Attuned", 0),
-                new PlayerDstBuffApplyMechanic(PylonAttunementBlue, new MechanicPlotlySetting(Symbols.Square,Colors.Blue), "Attune B", "Pylon Attunement: Blue","Blue Attuned", 0),
-                new PlayerDstBuffApplyMechanic(PylonAttunementGreen, new MechanicPlotlySetting(Symbols.Square,Colors.DarkGreen), "Attune G", "Pylon Attunement: Green","Green Attuned", 0),
+                new PlayerDstBuffApplyMechanic(PylonAttunementRed, new MechanicPlotlySetting(Symbols.Square,Colors.Red), "Attune R", "Pylon Attunement: Red","Red Attuned", Sev2, 0),
+                new PlayerDstBuffApplyMechanic(PylonAttunementBlue, new MechanicPlotlySetting(Symbols.Square,Colors.Blue), "Attune B", "Pylon Attunement: Blue","Blue Attuned", Sev2, 0),
+                new PlayerDstBuffApplyMechanic(PylonAttunementGreen, new MechanicPlotlySetting(Symbols.Square,Colors.DarkGreen), "Attune G", "Pylon Attunement: Green","Green Attuned", Sev2, 0),
             ]),
-            new EnemyDstBuffRemoveMechanic(BluePylonPower, new MechanicPlotlySetting(Symbols.SquareOpen,Colors.Blue), "Invuln Strip", "Blue Guard Invuln was stripped","Blue Invuln Strip", 0),
+            new EnemyDstBuffRemoveMechanic(BluePylonPower, new MechanicPlotlySetting(Symbols.SquareOpen,Colors.Blue), "Invuln Strip", "Blue Guard Invuln was stripped","Blue Invuln Strip", Sev1, 0),
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(UnstablePylonRed, new MechanicPlotlySetting(Symbols.HexagramOpen,Colors.Red), "Floor R", "Unstable Pylon (Red Floor dmg)","Floor dmg", 0),
-                new PlayerDstHealthDamageHitMechanic(UnstablePylonBlue, new MechanicPlotlySetting(Symbols.HexagramOpen,Colors.Blue), "Floor B", "Unstable Pylon (Blue Floor dmg)","Floor dmg", 0),
-                new PlayerDstHealthDamageHitMechanic(UnstablePylonGreen, new MechanicPlotlySetting(Symbols.HexagramOpen,Colors.DarkGreen), "Floor G", "Unstable Pylon (Green Floor dmg)","Floor dmg", 0),
+                new PlayerDstHealthDamageHitMechanic(UnstablePylonRed, new MechanicPlotlySetting(Symbols.HexagramOpen,Colors.Red), "Floor R", "Unstable Pylon (Red Floor dmg)","Floor dmg", Sev0, 0),
+                new PlayerDstHealthDamageHitMechanic(UnstablePylonBlue, new MechanicPlotlySetting(Symbols.HexagramOpen,Colors.Blue), "Floor B", "Unstable Pylon (Blue Floor dmg)","Floor dmg", Sev0, 0),
+                new PlayerDstHealthDamageHitMechanic(UnstablePylonGreen, new MechanicPlotlySetting(Symbols.HexagramOpen,Colors.DarkGreen), "Floor G", "Unstable Pylon (Green Floor dmg)","Floor dmg", Sev0, 0),
             ]),
             new MechanicGroup([
-                new EnemyCastStartMechanic(MagicStorm, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkTeal), "CC.VG", "Magic Storm (Breakbar)","Breakbar",0),
-                new EnemyCastEndMechanic(MagicStorm, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkGreen), "CCed.VG", "Magic Storm (Breakbar broken) ","CCed", 0)
+                new EnemyCastStartMechanic(MagicStorm, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkTeal), "CC.VG", "Magic Storm (Breakbar)","Breakbar", Sev3,0),
+                new EnemyCastEndMechanic(MagicStorm, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkGreen), "CCed.VG", "Magic Storm (Breakbar broken) ","CCed", Sev0, 0)
                     .UsingChecker((c, log) => c.ActualDuration <= 8544),
-                new EnemyCastEndMechanic(MagicStorm, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Red), "CC.VG Fail", "Magic Storm (Breakbar failed) ","CC Fail", 0)
+                new EnemyCastEndMechanic(MagicStorm, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Red), "CC.VG Fail", "Magic Storm (Breakbar failed) ","CC Fail", Sev0, 0)
                     .UsingChecker((c, log) => c.ActualDuration > 8544),
             ]),
         ]);
@@ -57,12 +58,12 @@ internal class ValeGuardian : SpiritVale
         ChestID = ChestID.GuardianChest;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (889, 889),
                         (-6365, -22213, -3150, -18999));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayValeGuardian, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayValeGuardian, crMap, parentMap);
         return crMap;
     }
     internal override List<InstantCastFinder> GetInstantCastFinders()
@@ -155,18 +156,56 @@ internal class ValeGuardian : SpiritVale
             base.ComputeEnvironmentCombatReplayDecorations(log, environmentDecorations);
         }
 
+        // Distributed Magic - Green circle
         if (log.CombatData.TryGetEffectEventsByGUID(EffectGUIDs.ValeGuardianDistributedMagic, out var distributedMagicEvents))
         {
             foreach (EffectEvent distributedMagic in distributedMagicEvents)
             {
-                // Effect duration is 6000, added 700 for the damage.
-                (long start, long end) lifespan = distributedMagic.ComputeLifespan(log, 6000);
-                lifespan.end = Math.Min(lifespan.end + 700, distributedMagic.Src.LastAware);
+                long duration = 6000;
+                long extendedDuration = 700;
+                // Effect duration is 6000, added 700 for the trigger.
+                (long start, long end) lifespan = (distributedMagic.Time, distributedMagic.Time + duration + extendedDuration);
+                long growing = lifespan.end;
+                // Blue Guardian LastAware is delayed, we use the death event to cancel the green.
+                if (distributedMagic.Src.IsSpecies(TargetID.BlueGuardian))
+                {
+                    var deathEvent = log.CombatData.GetDeadEvents(distributedMagic.Src).FirstOrDefault();
+                    if (deathEvent != null)
+                    {
+                        lifespan.end = Math.Min(lifespan.end, deathEvent.Time);
+                    }
+                }
                 var circle = new CircleDecoration(180, lifespan, Colors.DarkGreen, 0.2, new PositionConnector(distributedMagic.Position));
-                environmentDecorations.AddWithGrowing(circle, lifespan.end);
+                environmentDecorations.AddWithGrowing(circle, growing, true);
             }
         }
 
+        // Distributed Magic - Green circle successful
+        if (log.CombatData.TryGetEffectEventsByGUID(EffectGUIDs.ValeGuardianDistributedMagicSuccess, out var successes))
+        {
+            foreach (EffectEvent effect in successes)
+            {
+                (long, long) lifespan = effect.ComputeLifespan(log, 1000);
+                var circle = new CircleDecoration(180, lifespan, Colors.Green, 0.2, new PositionConnector(effect.Position));
+                environmentDecorations.Add(circle);
+            }
+        }
+
+        // Distributed Magic - Green circle failed
+        if (log.CombatData.TryGetEffectEventsByGUID(EffectGUIDs.ValeGuardianDistributedMagicFailure, out var failures))
+        {
+            foreach (EffectEvent effect in failures)
+            {
+                (long, long) lifespan = effect.ComputeLifespan(log, 1000);
+                var position = new PositionConnector(effect.Position);
+                var circle = new CircleDecoration(180, lifespan, Colors.DarkRed, 0.2, position);
+                environmentDecorations.Add(circle);
+                // Add a shockwave effect matching the in-game visual
+                environmentDecorations.AddShockwave(position, lifespan, Colors.LightGrey, 0.5, 1200);
+            }
+        }
+
+        // Unstable Magic Spike - Blue circle
         if (log.CombatData.TryGetEffectEventsByGUID(EffectGUIDs.ValeGuardianMagicSpike, out var magicSpikeEvents))
         {
             foreach (EffectEvent magicSpike in magicSpikeEvents)

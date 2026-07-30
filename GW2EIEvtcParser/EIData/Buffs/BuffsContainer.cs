@@ -200,13 +200,14 @@ public class BuffsContainer
             foreach (Buff buff in stackTypeBuffs)
             {
                 IReadOnlyList<BuffEvent> buffData = combatData.GetBuffData(buff.ID);
-                if (buffData.OfType<BuffRemoveSingleEvent>().Any(x => !x.OverstackOrNaturalEnd))
+                if (buffData.OfType<BuffRemoveSingleEvent>().Any(x => !x.OverstackOrNaturalEnd && (buff.StackType == BuffStackType.StackingConditionalLoss || x.RemovedDuration == int.MaxValue)))
                 {
                     foreach (var group in buffData.GroupBy(x => x.To))
                     {
                         var buffs = group.ToList();
                         var appliesPerInstanceID = buffs.OfType<BuffApplyEvent>().GroupBy(x => x.BuffInstance).ToDictionary(x => x.Key, x => x.ToList());
-                        var removeSinglesPerInstanceID = buffs.OfType<BuffRemoveSingleEvent>().Where(x => !x.OverstackOrNaturalEnd).GroupBy(x => x.BuffInstance);
+                        var othersPerInstanceID = buffs.Where(x => x is BuffExtensionEvent || x is BuffStackEvent).GroupBy(x => x is BuffExtensionEvent bee ? bee.BuffInstance : ((BuffStackEvent)x).BuffInstance).ToDictionary(x => x.Key, x => x.ToList());
+                        var removeSinglesPerInstanceID = buffs.OfType<BuffRemoveSingleEvent>().Where(x => !x.OverstackOrNaturalEnd && (buff.StackType == BuffStackType.StackingConditionalLoss || x.RemovedDuration == int.MaxValue)).GroupBy(x => x.BuffInstance);
                         foreach (var removePair in removeSinglesPerInstanceID)
                         {
                             if (appliesPerInstanceID.TryGetValue(removePair.Key, out var applyList))
@@ -214,11 +215,34 @@ public class BuffsContainer
                                 foreach (BuffRemoveSingleEvent remove in removePair)
                                 {
                                     BuffApplyEvent? apply = applyList.LastOrDefault(x => x.Time <= remove.Time); //TODO_PERF(Rennorb)
-                                    if (apply != null && apply.OriginalAppliedDuration == remove.RemovedDuration)
+                                    if (apply != null)
                                     {
-                                        int activeTime = apply.OriginalAppliedDuration - apply.AppliedDuration;
-                                        int elapsedTime = (int)(remove.Time - apply.Time);
-                                        remove.OverrideRemovedDuration(remove.RemovedDuration - activeTime - elapsedTime);
+                                        var totalDuration = apply.OriginalAppliedDuration;
+                                        var previousTime = apply.Time;
+                                        if (othersPerInstanceID.TryGetValue(apply.BuffInstance, out var others))
+                                        {
+                                            foreach (var other in others)
+                                            {
+                                                if (other.Time >= apply.Time && other.Time <= remove.Time)
+                                                {
+                                                    if (other is BuffExtensionEvent bee)
+                                                    {
+                                                        totalDuration += (int)bee.ExtendedDuration;
+                                                    } 
+                                                    else if (other is BuffStackActiveEvent bsae)
+                                                    {
+                                                        totalDuration -= (int)(other.Time - previousTime);
+                                                    }
+                                                }
+                                                previousTime = other.Time;
+                                            }
+                                        }
+                                        if (totalDuration == remove.RemovedDuration)
+                                        {
+                                            int activeTime = apply.OriginalAppliedDuration - apply.AppliedDuration;
+                                            int elapsedTime = (int)(remove.Time - apply.Time);
+                                            remove.OverrideRemovedDuration(remove.RemovedDuration - activeTime - elapsedTime);
+                                        }
                                     }
                                 }
                             }

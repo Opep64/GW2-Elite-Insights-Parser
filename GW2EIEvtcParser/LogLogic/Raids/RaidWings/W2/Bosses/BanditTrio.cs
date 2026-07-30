@@ -6,6 +6,7 @@ using GW2EIEvtcParser.ParsedData;
 using GW2EIEvtcParser.ParserHelpers;
 using GW2EIGW2API;
 using static GW2EIEvtcParser.ArcDPSEnums;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicTimeUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
@@ -13,37 +14,38 @@ using static GW2EIEvtcParser.ParserHelper;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
 internal class BanditTrio : SalvationPass
 {
     internal readonly MechanicGroup Mechanics = new([
-            new PlayerDstBuffApplyMechanic(ShellShocked, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.DarkGreen), "Launched", "Shell-Shocked (Launched from pad)", "Shell-Shocked", 0),
-            new PlayerDstBuffApplyMechanic(SlowBurn, new MechanicPlotlySetting(Symbols.StarTriangleDown, Colors.LightPurple), "SlowBurn.A", "Received Slow Burn", "Slow Burn Application", 0),
-            new PlayerSrcBuffApplyMechanic(SapperBombDamageBuff, new MechanicPlotlySetting(Symbols.CircleCross, Colors.Green), "Hit Cage", "Hit Cage with Sapper Bomb", "Hit Cage (Sapper Bomb)", 0).UsingChecker((bae, log) => bae.To.IsSpecies(TargetID.Cage)),
+            new PlayerDstBuffApplyMechanic(ShellShocked, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.DarkGreen), "Launched", "Shell-Shocked (Launched from pad)", "Shell-Shocked", Sev2, 0),
+            new PlayerDstBuffApplyMechanic(SlowBurn, new MechanicPlotlySetting(Symbols.StarTriangleDown, Colors.LightPurple), "SlowBurn.A", "Received Slow Burn", "Slow Burn Application", Sev1, 0),
+            new PlayerSrcBuffApplyMechanic(SapperBombDamageBuff, new MechanicPlotlySetting(Symbols.CircleCross, Colors.Green), "Hit Cage", "Hit Cage with Sapper Bomb", "Hit Cage (Sapper Bomb)", Sev0, 0).UsingChecker((bae, log) => bae.To.IsSpecies(TargetID.Cage)),
             new MechanicGroup([
                 new MechanicGroup([
-                    new PlayerSrcBuffApplyMechanic(Targeted, new MechanicPlotlySetting(Symbols.StarSquare, Colors.Pink), "Targeted.B", "Applied Targeted Buff (Berg)", "Targeted Application (Berg)", 0).UsingChecker((bae, log) => bae.To.IsSpecies(TargetID.Berg)),
-                    new PlayerSrcBuffApplyMechanic(Targeted, new MechanicPlotlySetting(Symbols.StarSquare, Colors.Purple), "Targeted.A", "Applied Targeted Buff (Any)", "Targeted Application (Any)", 0),
+                    new PlayerSrcBuffApplyMechanic(Targeted, new MechanicPlotlySetting(Symbols.StarSquare, Colors.Pink), "Targeted.B", "Applied Targeted Buff (Berg)", "Targeted Application (Berg)", Sev0, 0).UsingChecker((bae, log) => bae.To.IsSpecies(TargetID.Berg)),
+                    new PlayerSrcBuffApplyMechanic(Targeted, new MechanicPlotlySetting(Symbols.StarSquare, Colors.Purple), "Targeted.A", "Applied Targeted Buff (Any)", "Targeted Application (Any)", Sev1, 0),
                 ]),
                 new MechanicGroup([
-                    new PlayerCastStartMechanic(Beehive, new MechanicPlotlySetting(Symbols.Pentagon, Colors.Yellow), "Beehive.T", "Threw Beehive", "Beehive Throw", 0),
-                    new PlayerSrcHealthDamageHitMechanic(Beehive, new MechanicPlotlySetting(Symbols.PentagonOpen, Colors.Yellow), "Beehive.H.B", "Beehive Hits (Berg)", "Beehive Hit (Berg)", 0)
+                    new PlayerCastStartMechanic(Beehive, new MechanicPlotlySetting(Symbols.Pentagon, Colors.Yellow), "Beehive.T", "Threw Beehive", "Beehive Throw", Sev0, 0),
+                    new PlayerSrcHealthDamageHitMechanic(Beehive, new MechanicPlotlySetting(Symbols.PentagonOpen, Colors.Yellow), "Beehive.H.B", "Beehive Hits (Berg)", "Beehive Hit (Berg)", Sev0, 0)
                         .UsingChecker((ahde, log) => ahde.To.IsSpecies(TargetID.Berg)),
-                    new PlayerSrcHealthDamageHitMechanic(Beehive, new MechanicPlotlySetting(Symbols.PentagonOpen, Colors.LightOrange), "Beehive.H.A", "Beehive Hits (Any)", "Beehive Hit (Any)", 0)
+                    new PlayerSrcHealthDamageHitMechanic(Beehive, new MechanicPlotlySetting(Symbols.PentagonOpen, Colors.LightOrange), "Beehive.H.A", "Beehive Hits (Any)", "Beehive Hit (Any)", Sev1, 0)
                 ]),
-                new PlayerDstHealthDamageHitMechanic(OverheadSmashBerg, new MechanicPlotlySetting(Symbols.TriangleLeft,Colors.Orange), "Smash", "Overhead Smash (CC Attack Berg)","CC Smash", 0),
+                new PlayerDstHealthDamageHitMechanic(OverheadSmashBerg, new MechanicPlotlySetting(Symbols.TriangleLeft,Colors.Orange), "Smash", "Overhead Smash (CC Attack Berg)","CC Smash", Sev0, 0),
             ]),
             new MechanicGroup([
-                new PlayerDstBuffApplyMechanic(Blind, new MechanicPlotlySetting(Symbols.X, Colors.White), "Blinded", "Blinded by Zane", "Blinded", 0).UsingChecker((bae, log) => bae.CreditedBy.IsSpecies(TargetID.Zane)),
-                new PlayerDstHealthDamageHitMechanic(HailOfBulletsZane, new MechanicPlotlySetting(Symbols.TriangleRightOpen,Colors.Red), "Zane Cone", "Hail of Bullets (Zane Cone Shot)","Hail of Bullets", 0),
+                new PlayerDstBuffApplyMechanic(Blind, new MechanicPlotlySetting(Symbols.X, Colors.White), "Blinded", "Blinded by Zane", "Blinded", Sev1, 0).UsingChecker((bae, log) => bae.CreditedBy.IsSpecies(TargetID.Zane)),
+                new PlayerDstHealthDamageHitMechanic(HailOfBulletsZane, new MechanicPlotlySetting(Symbols.TriangleRightOpen,Colors.Red), "Zane Cone", "Hail of Bullets (Zane Cone Shot)","Hail of Bullets", Sev2, 0),
             ]),
             new MechanicGroup([
-                new PlayerCastStartMechanic(ThrowOilKeg, new MechanicPlotlySetting(Symbols.Hourglass, Colors.LightRed), "OilKeg.T", "Threw Oil Keg", "Oil Keg Throw", 0),
-                new PlayerDstBuffApplyMechanic(Burning, new MechanicPlotlySetting(Symbols.StarOpen, Colors.Red), "Burning", "Burned by Narella", "Burning", 0).UsingChecker((bae, log) => bae.CreditedBy.IsSpecies(TargetID.Narella)),
-                new PlayerDstHealthDamageHitMechanic(FieryVortexNarella, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Yellow), "Tornado.N", "Fiery Vortex (Tornado Narella)","Tornado (Narella)", 250),
-                new PlayerDstHealthDamageHitMechanic(FlakShotNarella, new MechanicPlotlySetting(Symbols.Diamond, Colors.LightRed), "Flak", "Flak Shot (Narella)", "Flak Shot Hit", 0),
+                new PlayerCastStartMechanic(ThrowOilKeg, new MechanicPlotlySetting(Symbols.Hourglass, Colors.LightRed), "OilKeg.T", "Threw Oil Keg", "Oil Keg Throw", Sev0, 0),
+                new PlayerDstBuffApplyMechanic(Burning, new MechanicPlotlySetting(Symbols.StarOpen, Colors.Red), "Burning", "Burned by Narella", "Burning", Sev1, 0).UsingChecker((bae, log) => bae.CreditedBy.IsSpecies(TargetID.Narella)),
+                new PlayerDstHealthDamageHitMechanic(FieryVortexNarella, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Yellow), "Tornado.N", "Fiery Vortex (Tornado Narella)","Tornado (Narella)", Sev0, 250),
+                new PlayerDstHealthDamageHitMechanic(FlakShotNarella, new MechanicPlotlySetting(Symbols.Diamond, Colors.LightRed), "Flak", "Flak Shot (Narella)", "Flak Shot Hit", Sev2, 0),
             ]),
         ]);
     public BanditTrio(int triggerID) : base(triggerID)
@@ -84,12 +86,12 @@ internal class BanditTrio : SalvationPass
         ];
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (1000, 913),
                         (-2900, -12251, 2561, -7265));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayBanditTrio, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayBanditTrio, crMap, parentMap);
         return crMap;
     }
 
@@ -150,34 +152,57 @@ internal class BanditTrio : SalvationPass
         return startToUse;
     }
 
-    internal static void FindCageAndBombs(AgentData agentData, List<CombatItem> combatData)
+    internal static void FindCageAndBombs(AgentData agentData, List<CombatItem> combatData, EvtcVersionEvent evtcVersion)
     {
-        var banditTrioBosses = agentData.GetNPCsByIDs([TargetID.Berg, TargetID.Narella, TargetID.Zane]);
+        var banditTrioBosses = agentData.GetStableSpeciesByIDs([TargetID.Berg, TargetID.Narella, TargetID.Zane]);
         if (banditTrioBosses.Count == 0)
         {
             return;
         }
-        var banditTrioNPCs = agentData.GetNPCsByIDs([.. TrashMobsToCheck.ToArray(), TargetID.Berg, TargetID.Narella, TargetID.Zane]);
+        var banditTrioNPCs = agentData.GetStableSpeciesByIDs([.. TrashMobsToCheck.ToArray(), TargetID.Berg, TargetID.Narella, TargetID.Zane]);
         long minFirstAware = banditTrioNPCs.Count > 0 ? banditTrioNPCs.Min(x => x.FirstAware - 2000) : long.MinValue;
         long maxLastAware = banditTrioBosses.Count > 0 ? banditTrioBosses.Max(x => x.LastAware + 2000) : long.MaxValue;
         // Cage
-        var cages = combatData.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 224100 && x.IsStateChange == StateChange.MaxHealthUpdate).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Where(x => x.Type == AgentItem.AgentType.Gadget && x.HitboxWidth == 238 && x.HitboxHeight == 300).Distinct();
-        foreach (var cage in cages)
+        var cageMarkerGUID = combatData
+            .Where(x => x.IsStateChange == StateChange.IDToGUID &&
+                GetContentLocal((byte)x.OverstackValue) == ContentLocal.Marker &&
+                MarkerGUIDs.BanditTrioCageMarker.Equals(x.SrcAgent, x.DstAgent))
+            .Select(x => new MarkerGUIDEvent(x, evtcVersion))
+            .FirstOrDefault();
+        if (cageMarkerGUID != null)
         {
-            long expectedStart = Math.Max(minFirstAware, cage.FirstAware);
-            long expectedEnd = Math.Min(maxLastAware, cage.LastAware);
-            AgentItem encounterCage = AgentManipulationHelper.CreateAgentInIntervalAndDummiesAround(cage, agentData, expectedStart, expectedEnd);
-            encounterCage.OverrideType(AgentItem.AgentType.NPC, agentData);
-            encounterCage.OverrideID(TargetID.Cage, agentData);
+            var maxHealths = combatData.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 224100 && x.IsStateChange == StateChange.MaxHealthUpdate).ToList();
+            var cages = combatData
+                .Where(x => x.IsStateChange == StateChange.Marker && x.Value == cageMarkerGUID.MarkerID)
+                .Select(x => agentData.GetAgent(x.SrcAgent, x.Time))
+                .Where(x => x.Type == AgentItem.AgentType.VolatileSpecies && maxHealths.Any(y=> y.SrcMatchesAgent(x)))
+                .Distinct();
+            foreach (var cage in cages)
+            {
+                long expectedStart = Math.Max(minFirstAware, cage.FirstAware);
+                long expectedEnd = Math.Min(maxLastAware, cage.LastAware);
+                AgentItem encounterCage = AgentManipulationHelper.CreateAgentInIntervalAndDummiesAround(cage, agentData, expectedStart, expectedEnd);
+                encounterCage.OverrideID(TargetID.Cage, agentData);
+            }
+        } 
+        else
+        {
+            var cages = combatData.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 224100 && x.IsStateChange == StateChange.MaxHealthUpdate).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Where(x => x.Type == AgentItem.AgentType.VolatileSpecies && x.HitboxWidth == 238).Distinct();
+            foreach (var cage in cages)
+            {
+                long expectedStart = Math.Max(minFirstAware, cage.FirstAware);
+                long expectedEnd = Math.Min(maxLastAware, cage.LastAware);
+                AgentItem encounterCage = AgentManipulationHelper.CreateAgentInIntervalAndDummiesAround(cage, agentData, expectedStart, expectedEnd);
+                encounterCage.OverrideID(TargetID.Cage, agentData);
+            }
         }
-        // Bombs
-        var bombs = combatData.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 0 && x.IsStateChange == StateChange.MaxHealthUpdate).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Where(x => x.Type == AgentItem.AgentType.Gadget && x.HitboxHeight == 240);
+        // Bombs - this is the whateverest gadget stabilisation to ever whatever, if it is broken, it is broken
+        var bombs = combatData.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) <= 1 && x.IsStateChange == StateChange.MaxHealthUpdate).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Where(x => x.Type == AgentItem.AgentType.VolatileSpecies && x.HitboxHeight == 240);
         foreach (AgentItem bomb in bombs)
         {
             long expectedStart = Math.Max(minFirstAware, bomb.FirstAware);
             long expectedEnd = Math.Min(maxLastAware, bomb.LastAware);
             AgentItem encounterBomb = AgentManipulationHelper.CreateAgentInIntervalAndDummiesAround(bomb, agentData, expectedStart, expectedEnd);
-            encounterBomb.OverrideType(AgentItem.AgentType.NPC, agentData);
             encounterBomb.OverrideID(TargetID.Bombs, agentData);
         }
     }
@@ -190,7 +215,7 @@ internal class BanditTrio : SalvationPass
     internal static void RedirectInsectSwarmsToCustomMaster(AgentItem bees, AgentData agentData)
     {
         var minions = new List<AgentItem>();
-        foreach (var bee in agentData.GetNPCsByID(MinionID.InsectSwarm))
+        foreach (var bee in agentData.GetStableSpeciesByID(MinionID.InsectSwarm))
         {
             minions.Add(bee);
             bee.SetMaster(bees);
@@ -202,7 +227,7 @@ internal class BanditTrio : SalvationPass
     }
     internal override void EIEvtcParse(ulong gw2Build, EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData, IReadOnlyDictionary<uint, ExtensionHandler> extensions)
     {
-        FindCageAndBombs(agentData, combatData);
+        FindCageAndBombs(agentData, combatData, evtcVersion);
         var insectSwarms = CreateCustomInsectSwarmMasterAgent(logData, agentData);
         base.EIEvtcParse(gw2Build, evtcVersion, logData, agentData, combatData, extensions);
         RedirectInsectSwarmsToCustomMaster(insectSwarms, agentData);

@@ -1,45 +1,46 @@
-﻿using System;
-using System.Numerics;
+﻿using System.Numerics;
 using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.Exceptions;
 using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIEvtcParser.ParserHelpers;
 using static GW2EIEvtcParser.ArcDPSEnums;
-using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
+using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.ParserHelper;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
 internal class Slothasor : SalvationPass
 {
     internal readonly MechanicGroup Mechanics = new([
-            new PlayerDstHealthDamageHitMechanic(TantrumDamage, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Yellow), "Tantrum", "Tantrum (Triple Circles after Ground slamming)","Tantrum", 5000),
+            new PlayerDstHealthDamageHitMechanic(TantrumDamage, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Yellow), "Tantrum", "Tantrum (Triple Circles after Ground slamming)","Tantrum", Sev0, 5000),
             new MechanicGroup([
-                new PlayerDstBuffApplyMechanic(VolatilePoisonBuff, new MechanicPlotlySetting(Symbols.Circle,Colors.Red), "Poison", "Volatile Poison Application (Special Action Key)","Poison (Action Key)", 0),
-                new PlayerDstHealthDamageHitMechanic(VolatilePoisonSkill, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Red), "Poison dmg", "Stood in Volatile Poison","Poison dmg", 0),
+                new PlayerDstBuffApplyMechanic(VolatilePoisonBuff, new MechanicPlotlySetting(Symbols.Circle,Colors.Red), "Poison", "Volatile Poison Application (Special Action Key)","Poison (Action Key)", Sev0, 0),
+                new PlayerDstHealthDamageHitMechanic(VolatilePoisonSkill, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Red), "Poison dmg", "Stood in Volatile Poison","Poison dmg", Sev0, 0),
             ]),
-            new PlayerDstHealthDamageHitMechanic(Halitosis, new MechanicPlotlySetting(Symbols.TriangleRightOpen,Colors.LightOrange), "Breath", "Halitosis (Flame Breath)","Flame Breath", 0),
-            new PlayerDstHealthDamageHitMechanic(SporeRelease, new MechanicPlotlySetting(Symbols.Pentagon,Colors.Red), "Shake", "Spore Release (Coconut Shake)","Shake", 0),
-            new PlayerDstBuffApplyMechanic(MagicTransformation, new MechanicPlotlySetting(Symbols.Hexagram,Colors.Teal), "Slub", "Magic Transformation (Ate Magic Mushroom)","Slub Transform", 0)
+            new PlayerDstHealthDamageHitMechanic(Halitosis, new MechanicPlotlySetting(Symbols.TriangleRightOpen,Colors.LightOrange), "Breath", "Halitosis (Flame Breath)","Flame Breath", Sev2, 0),
+            new PlayerDstHealthDamageHitMechanic(SporeRelease, new MechanicPlotlySetting(Symbols.Pentagon,Colors.Red), "Shake", "Spore Release (Coconut Shake)","Shake", Sev0, 0),
+            new PlayerDstBuffApplyMechanic(MagicTransformation, new MechanicPlotlySetting(Symbols.Hexagram,Colors.Teal), "Slub", "Magic Transformation (Ate Magic Mushroom)","Slub Transform", Sev1, 0)
                     .UsingTimeClamper((time, log, encounterPhase) => Math.Max(encounterPhase.Start, time)), 
             //new Mechanic(Nauseated, "Nauseated", ParseEnum.BossIDS.Slothasor, new MechanicPlotlySetting("diamond-tall-open",Colors.LightPurple), "Slub CD",0), //can be skipped imho, identical person and timestamp as Slub Transform
-            new PlayerDstBuffApplyMechanic(FixatedSlothasor, new MechanicPlotlySetting(Symbols.Star,Colors.Magenta), "Fixate", "Fixated by Slothasor","Fixated", 0),
-            new PlayerDstHealthDamageHitMechanic([ToxicCloud1, ToxicCloud2], new MechanicPlotlySetting(Symbols.PentagonOpen,Colors.DarkGreen), "Floor", "Toxic Cloud (stood in green floor poison)","Toxic Floor", 0),
+            new PlayerDstBuffApplyMechanic(FixatedSlothasor, new MechanicPlotlySetting(Symbols.Star,Colors.Magenta), "Fixate", "Fixated by Slothasor","Fixated", Sev1, 0),
+            new PlayerDstHealthDamageHitMechanic([ToxicCloud1, ToxicCloud2], new MechanicPlotlySetting(Symbols.PentagonOpen,Colors.DarkGreen), "Floor", "Toxic Cloud (stood in green floor poison)","Toxic Floor", Sev3, 0),
             new MechanicGroup([
-                new PlayerDstBuffApplyMechanic(Fear, new MechanicPlotlySetting(Symbols.SquareOpen,Colors.Red), "Fear", "Hit by fear after breakbar","Feared", 0)
+                new PlayerDstBuffApplyMechanic(Fear, new MechanicPlotlySetting(Symbols.SquareOpen,Colors.Red), "Fear", "Hit by fear after breakbar","Feared", Sev3, 0)
                     .UsingChecker((ba,log) => ba.AppliedDuration == 8000),
-                new EnemyDstBuffApplyMechanic(NarcolepsyBuff, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkTeal), "CC.Slth", "Narcolepsy (Breakbar)","Breakbar", 0),
-                new EnemyDstBuffRemoveMechanic(NarcolepsyBuff, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Red), "CC.Slth Fail", "Narcolepsy (Failed CC)","CC Fail", 0)
+                new EnemyDstBuffApplyMechanic(NarcolepsyBuff, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkTeal), "CC.Slth", "Narcolepsy (Breakbar)","Breakbar", Sev2, 0),
+                new EnemyDstBuffRemoveMechanic(NarcolepsyBuff, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Red), "CC.Slth Fail", "Narcolepsy (Failed CC)","CC Fail", Sev0, 0)
                     .UsingChecker((br,log) => br.RemovedDuration > 120000),
-                new EnemyDstBuffRemoveMechanic(NarcolepsyBuff, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkGreen), "CCed.Slth", "Narcolepsy (Breakbar broken)","CCed", 0)
+                new EnemyDstBuffRemoveMechanic(NarcolepsyBuff, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkGreen), "CCed.Slth", "Narcolepsy (Breakbar broken)","CCed", Sev0, 0)
                     .UsingChecker( (br,log) => br.RemovedDuration <= 120000),
             ]),
-            new PlayerDstBuffApplyMechanic(SlipperySlubling, new MechanicPlotlySetting(Symbols.Star,Colors.Yellow), "Slppr.Slb", "Slippery Slubling","Slippery Slubling", 0),
+            new PlayerDstBuffApplyMechanic(SlipperySlubling, new MechanicPlotlySetting(Symbols.Star,Colors.Yellow), "Slppr.Slb", "Slippery Slubling","Slippery Slubling", Sev2, 0),
         ]);
     public Slothasor(int triggerID) : base(triggerID)
     {
@@ -51,12 +52,12 @@ internal class Slothasor : SalvationPass
         ChestID = ChestID.SlothasorChest;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (654, 1000),
                         (5822, -3491, 9549, 2205));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplaySlothasor, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplaySlothasor, crMap, parentMap);
         return crMap;
     }
 
@@ -110,6 +111,14 @@ internal class Slothasor : SalvationPass
             TargetID.Slubling2,
             TargetID.Slubling3,
             TargetID.Slubling4,
+            TargetID.EvolvedSlublingCave1,
+            TargetID.EvolvedSlublingCave2,
+            TargetID.EvolvedSlublingCave3,
+            TargetID.EvolvedSlublingCave4,
+            TargetID.SlublingCave1,
+            TargetID.SlublingCave2,
+            TargetID.SlublingCave3,
+            TargetID.SlublingCave4,
             TargetID.PoisonMushroom
         ];
     }
@@ -178,10 +187,12 @@ internal class Slothasor : SalvationPass
 
     internal static void FindMushrooms(LogData logData, AgentData agentData, List<CombatItem> combatData, IReadOnlyDictionary<uint, ExtensionHandler> extensions)
     {
+        var positionsDict = combatData.Where(x => x.IsStateChange == StateChange.Position).Select(x => new PositionEvent(x, agentData)).GroupBy(x => x.Src).ToDictionary(x => x.Key, x => x.ToList());
+        var center = new Vector2(7685.5f, -643f);
         var mushroomAgents = combatData
             .Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 14940 && x.IsStateChange == StateChange.MaxHealthUpdate)
             .Select(x => agentData.GetAgent(x.SrcAgent, x.Time))
-            .Where(x => x.Type == AgentItem.AgentType.Gadget && (x.HitboxWidth == 146 || x.HitboxWidth == 210) && x.HitboxHeight == 300)
+            .Where(x => x.Type == AgentItem.AgentType.VolatileSpecies && (x.HitboxWidth == 146 || x.HitboxWidth == 210) && positionsDict.TryGetValue(x, out var agentPositions) && agentPositions.Any(x => (x.GetPointXY() - center).LengthSquared() < 6250000)) // 2500 squared
             .ToList();
         if (mushroomAgents.Count > 0)
         {
@@ -192,24 +203,7 @@ internal class Slothasor : SalvationPass
                 {
                     continue;
                 }
-                var hpUpdates = combatData.Where(x => x.SrcMatchesAgent(mushroom) && x.IsStateChange == StateChange.HealthUpdate);
-                var aliveUpdates = hpUpdates.Where(x => HealthUpdateEvent.GetHealthPercent(x) == 100).ToList();
-                var deadUpdates = hpUpdates.Where(x => HealthUpdateEvent.GetHealthPercent(x) == 0).ToList();
-                long lastDeadTime = long.MinValue;
-                foreach (CombatItem aliveEvent in aliveUpdates)
-                {
-                    CombatItem? deadEvent = deadUpdates.FirstOrDefault(x => x.Time > lastDeadTime && x.Time > aliveEvent.Time);
-                    if (deadEvent == null)
-                    {
-                        lastDeadTime = Math.Min(logData.EvtcLogEnd, mushroom.LastAware);
-                    }
-                    else
-                    {
-                        lastDeadTime = deadEvent.Time;
-                    }
-                    AgentItem aliveMushroom = agentData.AddCustomNPCAgent(aliveEvent.Time, lastDeadTime, mushroom.Name, mushroom.Spec, TargetID.PoisonMushroom, false, mushroom.Toughness, mushroom.Healing, mushroom.Condition, mushroom.Concentration, mushroom.HitboxWidth, mushroom.HitboxHeight);
-                    aliveMushroom.SetEnglobingAgentItem(mushroom, agentData);
-                }
+                mushroom.OverrideID(TargetID.PoisonMushroom, agentData);
             }
         }
     }
@@ -327,6 +321,26 @@ internal class Slothasor : SalvationPass
                 }
                 break;
             case (int)TargetID.PoisonMushroom:
+                var hpUpdates = log.CombatData.GetHealthUpdateEvents(target.AgentItem);
+                var aliveUpdates = hpUpdates.Where(x => x.HealthPercent == 100).ToList();
+                var deadUpdates = hpUpdates.Where(x => x.HealthPercent == 0).ToList();
+                long hideStart = target.FirstAware;
+                foreach (var aliveEvent in aliveUpdates)
+                {
+                    replay.Hidden.Add(new(hideStart, aliveEvent.Time));
+                    var deadEvent = deadUpdates.FirstOrDefault(x => x.Time > hideStart && x.Time > aliveEvent.Time);
+                    if (deadEvent == null)
+                    {
+                        hideStart = Math.Min(log.LogData.EvtcLogEnd, target.LastAware);
+                    }
+                    else
+                    {
+                        hideStart = deadEvent.Time;
+                    }
+                }
+                replay.Hidden.Add(new(hideStart, target.LastAware));
+                var slothasorPhases = log.LogData.GetEncounterPhases(log, LogID);
+                replay.AddHideByEncounterPhases(slothasorPhases, log);
                 break;
             default:
                 break;

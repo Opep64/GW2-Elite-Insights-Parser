@@ -2,11 +2,13 @@
 using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
-using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.ArcDPSEnums;
+using static GW2EIEvtcParser.EIData.Mechanic;
+using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
@@ -15,28 +17,28 @@ internal class Boneskinner : Bjora
     public Boneskinner(int triggerID) : base(triggerID)
     {
         MechanicList.Add(new MechanicGroup([
-            new PlayerDstHealthDamageHitMechanic(Grasp, new MechanicPlotlySetting(Symbols.Circle, Colors.Grey), "Grasp.H", "Grasp (Claw AoE)", "Grasp Hit", 0),
-            new PlayerDstHealthDamageHitMechanic(Cascade, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.DarkRed), "Cascade.H", "Cascade (Rectangle AoEs from paws stomp)", "Cascade Hit", 0),
+            new PlayerDstHealthDamageHitMechanic(Grasp, new MechanicPlotlySetting(Symbols.Circle, Colors.Grey), "Grasp.H", "Grasp (Claw AoE)", "Grasp Hit", Sev2, 0),
+            new PlayerDstHealthDamageHitMechanic(Cascade, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.DarkRed), "Cascade.H", "Cascade (Rectangle AoEs from paws stomp)", "Cascade Hit", Sev2, 0),
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(BoneskinnerCharge, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Red), "H.Charge", "Hit by Charge", "Charge hit", 0),
-                new EnemyCastEndMechanic(BoneskinnerCharge, new MechanicPlotlySetting(Symbols.Hexagram, Colors.LightRed), "D.Torch", "Charged a torch", "Charge", 0)
+                new PlayerDstHealthDamageHitMechanic(BoneskinnerCharge, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Red), "H.Charge", "Hit by Charge", "Charge hit", Sev1, 0),
+                new EnemyCastEndMechanic(BoneskinnerCharge, new MechanicPlotlySetting(Symbols.Hexagram, Colors.LightRed), "D.Torch", "Charged a torch", "Charge", Sev0, 0)
                     .UsingChecker((ce, log) => !ce.IsInterrupted),
             ]),
-            new PlayerDstHealthDamageHitMechanic(CrushingCruelty, new MechanicPlotlySetting(Symbols.Star, Colors.DarkGreen), "Crush.Cru.H", "Hit by Crushing Cruelty (Jump middle after Charge)", "Crushing Cruelty Hit", 0),
+            new PlayerDstHealthDamageHitMechanic(CrushingCruelty, new MechanicPlotlySetting(Symbols.Star, Colors.DarkGreen), "Crush.Cru.H", "Hit by Crushing Cruelty (Jump middle after Charge)", "Crushing Cruelty Hit", Sev0, 0),
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(DeathWind, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Orange), "Launched", "Hit by Death Wind", "Death Wind Hit", 0), // This attack removes stability
-                new EnemyCastEndMechanic(DeathWind, new MechanicPlotlySetting(Symbols.TriangleUpOpen, Colors.LightOrange), "D.Wind", "Cast Death Wind (extinguished one torch)", "Death Wind", 0)
+                new PlayerDstHealthDamageHitMechanic(DeathWind, new MechanicPlotlySetting(Symbols.TriangleUp, Colors.Orange), "Launched", "Hit by Death Wind", "Death Wind Hit", Sev0, 0), // This attack removes stability
+                new EnemyCastEndMechanic(DeathWind, new MechanicPlotlySetting(Symbols.TriangleUpOpen, Colors.LightOrange), "D.Wind", "Cast Death Wind (extinguished one torch)", "Death Wind", Sev0, 0)
                     .UsingChecker((ce, log) => !ce.IsInterrupted),
             ]),
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(DouseInDarkness, new MechanicPlotlySetting(Symbols.Cross, Colors.DarkTeal), "DouseDarkness.H", "Hit by Douse in Darkness", "Douse in Darkness Hit", 0),
-                new EnemyCastEndMechanic(DouseInDarkness, new MechanicPlotlySetting(Symbols.Cross, Colors.Teal), "D.Darkness", "Cast Douse in Darkness (extinguished all torches)", "Douse in Darkness", 0)
+                new PlayerDstHealthDamageHitMechanic(DouseInDarkness, new MechanicPlotlySetting(Symbols.Cross, Colors.DarkTeal), "DouseDarkness.H", "Hit by Douse in Darkness", "Douse in Darkness Hit", Sev1, 0),
+                new EnemyCastEndMechanic(DouseInDarkness, new MechanicPlotlySetting(Symbols.Cross, Colors.Teal), "D.Darkness", "Cast Douse in Darkness (extinguished all torches)", "Douse in Darkness", Sev0, 0)
                     .UsingChecker((ce, log) => !ce.IsInterrupted),
             ]),
-            new PlayerDstHealthDamageHitMechanic(BarrageWispBoneskinner, new MechanicPlotlySetting(Symbols.TriangleRight, Colors.Green), "Barrage.H", "Hit by Barrage (Wisp AoE)", "Barrage Hit", 0),
-            new PlayerDstBuffApplyMechanic(UnrelentingPainBuff, new MechanicPlotlySetting(Symbols.DiamondOpen, Colors.Pink), "UnrelPain.A", "Unreleting Pain Applied", "Unrelenting Pain Applied", 0),
-            new EnemyCastStartMechanic(BoneskinnerBreakbar, new MechanicPlotlySetting(Symbols.Square, Colors.Purple), "Breakbar", "Casting a Breakbar", "Breakbar", 0),
-            new EnemyDstBuffApplyMechanic(Exposed31589, new MechanicPlotlySetting(Symbols.SquareOpen, Colors.Pink), "Exposed.E", "Gained Exposed (Breakbar broken)", "Exposed", 0),
+            new PlayerDstHealthDamageHitMechanic(BarrageWispBoneskinner, new MechanicPlotlySetting(Symbols.TriangleRight, Colors.Green), "Barrage.H", "Hit by Barrage (Wisp AoE)", "Barrage Hit", Sev0, 0),
+            new PlayerDstBuffApplyMechanic(UnrelentingPainBuff, new MechanicPlotlySetting(Symbols.DiamondOpen, Colors.Pink), "UnrelPain.A", "Unreleting Pain Applied", "Unrelenting Pain Applied", Sev0, 0),
+            new EnemyCastStartMechanic(BoneskinnerBreakbar, new MechanicPlotlySetting(Symbols.Square, Colors.Purple), "Breakbar", "Casting a Breakbar", "Breakbar", Sev3, 0),
+            new EnemyDstBuffApplyMechanic(Exposed31589, new MechanicPlotlySetting(Symbols.SquareOpen, Colors.Pink), "Exposed.E", "Gained Exposed (Breakbar broken)", "Exposed", Sev2, 0),
         ])
         );
         Extension = "boneskin";
@@ -45,12 +47,12 @@ internal class Boneskinner : Bjora
         LogID |= 0x000004;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (905, 789),
-                        (-1013, -1600, 2221, 1416));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayBoneskinner, crMap);
+                        (-1013, -1550, 2221, 1266));
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayBoneskinner, crMap, parentMap);
         return crMap;
     }
 
@@ -77,10 +79,14 @@ internal class Boneskinner : Bjora
 
     internal override void EIEvtcParse(ulong gw2Build, EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData, IReadOnlyDictionary<uint, ExtensionHandler> extensions)
     {
-        var torches = combatData.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 14940 && x.IsStateChange == StateChange.MaxHealthUpdate).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Where(x => x.Type == AgentItem.AgentType.Gadget && x.HitboxHeight == 500 && x.HitboxWidth >= 250);
+        var torches = combatData.Where(x => MaxHealthUpdateEvent.GetMaxHealth(x) == 14940 && x.IsStateChange == StateChange.MaxHealthUpdate).Select(x => agentData.GetAgent(x.SrcAgent, x.Time)).Where(x => x.Type == AgentItem.AgentType.VolatileSpecies && x.HitboxWidth >= 250);
+        var invulApplies = combatData.Where(x => x.IsBuffApplyEvent() && x.SkillID == Invulnerability757).Select(x => agentData.GetAgent(x.DstAgent, x.Time)).ToHashSet();
         foreach (AgentItem torch in torches)
         {
-            torch.OverrideType(AgentItem.AgentType.NPC, agentData);
+            if (!invulApplies.Contains(torch))
+            {
+                continue;
+            }
             torch.OverrideID(TargetID.Torch, agentData);
             torch.OverrideAwareTimes(logData.EvtcLogStart, logData.EvtcLogEnd);
         }

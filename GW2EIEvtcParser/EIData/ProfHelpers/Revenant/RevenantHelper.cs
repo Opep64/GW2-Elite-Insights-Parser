@@ -151,13 +151,29 @@ internal static class RevenantHelper
         // Legendary Dwarf
         // - Rite of the Great Dwarf
         new BuffOnActorDamageModifier(Mod_RiteOfTheGreatDwarfCondition, RiteOfTheGreatDwarf, "Rite of the Great Dwarf (condition)", "-50%", DamageSource.Incoming, -50.0, DamageType.Condition, DamageType.All, Source.Revenant, ByPresence, SkillImages.RiteOfTheGreatDwarf, DamageModifierMode.All)
+            .WithBuilds(GW2Builds.HoTRelease, GW2Builds.July2026Balance)
             .UsingSpecSpecificShared(),
         new BuffOnActorDamageModifier(Mod_RiteOfTheGreatDwarfStrike, RiteOfTheGreatDwarf, "Rite of the Great Dwarf (strike)", "-50%", DamageSource.Incoming, -50.0, DamageType.Strike, DamageType.All, Source.Revenant, ByPresence, SkillImages.RiteOfTheGreatDwarf, DamageModifierMode.All)
+            .WithBuilds(GW2Builds.HoTRelease, GW2Builds.July2026Balance)
             .UsingSpecSpecificShared(),
+        new BuffOnActorDamageModifier(Mod_RiteOfTheGreatDwarf, RiteOfTheGreatDwarf, "Rite of the Great Dwarf", "-33%", DamageSource.Incoming, -33.0, DamageType.StrikeAndCondition, DamageType.All, Source.Revenant, ByPresence, SkillImages.RiteOfTheGreatDwarf, DamageModifierMode.All)
+            .WithBuilds(GW2Builds.July2026Balance)
+            .UsingSpecSpecificShared(),
+        new BuffOnActorDamageModifier(Mod_RiteOfTheGreatDwarf_VersedInStone, RiteOfTheGreatDwarfVersedInStone, "Rite of the Great Dwarf (Versed in Stone)", "-50%", DamageSource.Incoming, -50.0, DamageType.StrikeAndCondition, DamageType.All, Source.Revenant, ByPresence, SkillImages.RiteOfTheGreatDwarf, DamageModifierMode.All)
+            .WithBuilds(GW2Builds.July2026Balance)
+            .UsingSpecSpecificShared(),
+        // TODO check what happens to the echo
         new BuffOnActorDamageModifier(Mod_RiteOfTheGreatDwarfEcho, RiteOfTheGreatDwarfAncientEcho, "Rite of the Great Dwarf (Ancient Echo)", "-50%", DamageSource.Incoming, -50.0, DamageType.Strike, DamageType.All, Source.Revenant, ByPresence, SkillImages.RiteOfTheGreatDwarf, DamageModifierMode.All)
-            .UsingSpecSpecificShared(),
+            .UsingSpecSpecificShared()
+            .WithBuilds(GW2Builds.April2019Balance, GW2Builds.July2026Balance),
         // - Vengeful Hammers
         new BuffOnActorDamageModifier(Mod_VengefulHammers, VengefulHammersBuff, "Vengeful Hammers", "-20%", DamageSource.Incoming, -20.0, DamageType.StrikeAndCondition, DamageType.All, Source.Revenant, ByPresence, SkillImages.RiteOfTheGreatDwarf, DamageModifierMode.All),
+        new BuffOnFoeDamageModifier(Mod_ForcedEngagement, Taunt, "Forced Engagement", "-20%", DamageSource.Incoming, -20.0, DamageType.StrikeAndCondition, DamageType.All, Source.Revenant, ByPresence, SkillImages.ForcedEngagement, DamageModifierMode.All)
+            .UsingActorCheckerByPresence(ForcedEngagement)
+            .WithBuilds(GW2Builds.December2018Balance, GW2Builds.October2019Balance),
+        new BuffOnFoeDamageModifier(Mod_ForcedEngagement, Taunt, "Forced Engagement", "-33%", DamageSource.Incoming, -33.0, DamageType.StrikeAndCondition, DamageType.All, Source.Revenant, ByPresence, SkillImages.ForcedEngagement, DamageModifierMode.All)
+            .UsingActorCheckerByPresence(ForcedEngagement)
+            .WithBuilds(GW2Builds.October2019Balance),
         
         // Corruption
         // - Demonic Resistance
@@ -210,7 +226,10 @@ internal static class RevenantHelper
     [
         new Buff("Vengeful Hammers", VengefulHammersBuff, Source.Revenant, BuffClassification.Other, SkillImages.VengefulHammers),
         new Buff("Rite of the Great Dwarf", RiteOfTheGreatDwarf, Source.Revenant, BuffClassification.Defensive, SkillImages.RiteOfTheGreatDwarf),
-        new Buff("Rite of the Great Dwarf (Ancient Echo)", RiteOfTheGreatDwarfAncientEcho, Source.Revenant, BuffClassification.Defensive, SkillImages.RiteOfTheGreatDwarf),
+        new Buff("Rite of the Great Dwarf (Versed in Stone)", RiteOfTheGreatDwarfVersedInStone, Source.Revenant, BuffClassification.Defensive, SkillImages.RiteOfTheGreatDwarf)
+            .WithBuilds(GW2Builds.July2026Balance),
+        new Buff("Rite of the Great Dwarf (Ancient Echo)", RiteOfTheGreatDwarfAncientEcho, Source.Revenant, BuffClassification.Defensive, SkillImages.RiteOfTheGreatDwarf)
+            .WithBuilds(GW2Builds.April2019Balance, GW2Builds.July2026Balance),
         new Buff("Embrace the Darkness", EmbraceTheDarkness, Source.Revenant, BuffClassification.Other, SkillImages.EmbraceTheDarkness),
         new Buff("Enchanted Daggers", EnchantedDaggers, Source.Revenant, BuffStackType.Stacking, 25, BuffClassification.Other, SkillImages.EnchantedDaggers),
         new Buff("Phase Traversal", PhaseTraversal, Source.Revenant, BuffStackType.Stacking, 25, BuffClassification.Other, SkillImages.PhaseTraversal),
@@ -225,6 +244,8 @@ internal static class RevenantHelper
             .WithBuilds(GW2Builds.June2023BalanceAndSOTOBetaAndSilentSurfNM),
         new Buff("Imperial Guard", ImperialGuard, Source.Revenant, BuffStackType.Stacking, 5, BuffClassification.Other, SkillImages.ImperialGuard)
             .WithBuilds(GW2Builds.June2023BalanceAndSOTOBetaAndSilentSurfNM),
+        new Buff("Forced Engagement", ForcedEngagement, Source.Revenant, BuffClassification.Other, SkillImages.ForcedEngagement)
+            .WithBuilds(GW2Builds.December2018Balance),
         // Traits
         new Buff("Vicious Lacerations", ViciousLacerations, Source.Revenant, BuffStackType.Stacking, 3, BuffClassification.Other, TraitImages.ViciousLacerations)
             .WithBuilds(GW2Builds.StartOfLife, GW2Builds.February2020Balance),
@@ -267,6 +288,17 @@ internal static class RevenantHelper
         return Minions.Contains(id);
     }
 
+    private static readonly HashSet<long> _spearAAs =
+    [
+        AbyssalStrike_SecondHit,
+    ];
+
+    public static bool IsAutoAttack(ParsedEvtcLog log, long id)
+    {
+        var build = log.CombatData.GetGW2BuildEvent().Build;
+        return build >= GW2Builds.June2024SpearBeta && _spearAAs.Contains(id);
+    }
+
     public static void ProcessGadgets(IReadOnlyList<AgentItem> players, CombatData combatData, AgentData agentData)
     {
         var allTablets = new HashSet<AgentItem>();
@@ -284,7 +316,6 @@ internal static class RevenantHelper
         }
         foreach (AgentItem tablet in allTablets)
         {
-            tablet.OverrideType(AgentItem.AgentType.NPC, agentData);
             tablet.OverrideID(MinionID.VentariTablet, agentData);
             tablet.OverrideName("Ventari's Tablet");
         }

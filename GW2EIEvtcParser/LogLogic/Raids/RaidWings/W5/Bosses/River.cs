@@ -5,12 +5,14 @@ using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIGW2API;
 using static GW2EIEvtcParser.ArcDPSEnums;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicTimeUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.ParserHelper;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
@@ -18,12 +20,12 @@ internal class River : HallOfChains
 {
     internal readonly MechanicGroup Mechanics = new([
 
-            new PlayerDstHealthDamageHitMechanic(BombShellRiverOfSouls, new MechanicPlotlySetting(Symbols.Circle,Colors.Orange), "Bomb Hit","Hit by Hollowed Bomber Exlosion", "Hit by Bomb", 0 ),
-            new PlayerDstHealthDamageHitMechanic(SoullessTorrent, new MechanicPlotlySetting(Symbols.Square,Colors.Orange), "Stun Bomb", "Stunned by Soulless Torrent (Mini Bomb)", "Stun Bomb", 0)
+            new PlayerDstHealthDamageHitMechanic(BombShellRiverOfSouls, new MechanicPlotlySetting(Symbols.Circle,Colors.Orange), "Bomb Hit","Hit by Hollowed Bomber Exlosion", "Hit by Bomb", Sev0, 0 ),
+            new PlayerDstHealthDamageHitMechanic(SoullessTorrent, new MechanicPlotlySetting(Symbols.Square,Colors.Orange), "Stun Bomb", "Stunned by Soulless Torrent (Mini Bomb)", "Stun Bomb", Sev0, 0)
                 .UsingBuffChecker(Stability, false),
-            new EnemySrcHealthDamageHitMechanic(BombShellRiverOfSouls, new MechanicPlotlySetting(Symbols.Circle, Colors.LightOrange), "Bomb Hit Desmina", "Hollowed Bomber hit Desmina", "Bomb Desmina", 0)
+            new EnemySrcHealthDamageHitMechanic(BombShellRiverOfSouls, new MechanicPlotlySetting(Symbols.Circle, Colors.LightOrange), "Bomb Hit Desmina", "Hollowed Bomber hit Desmina", "Bomb Desmina", Sev0, 0)
                 .UsingChecker((de, log) => de.To.IsSpecies(TargetID.Desmina)),
-            new EnemySrcHealthDamageHitMechanic(EnervatorDamageSkillToDesmina, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.GreenishYellow), "Tether Desmina", "Enervator tethers and damages Desmina", "Enervator Tether", 0)
+            new EnemySrcHealthDamageHitMechanic(EnervatorDamageSkillToDesmina, new MechanicPlotlySetting(Symbols.TriangleDown, Colors.GreenishYellow), "Tether Desmina", "Enervator tethers and damages Desmina", "Enervator Tether", Sev0, 0)
                 .UsingChecker((de, log) => de.To.IsSpecies(TargetID.Desmina)),
         ]);
     public River(int triggerID) : base(triggerID)
@@ -38,12 +40,12 @@ internal class River : HallOfChains
         LogID |= 0x000002;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (1000, 387),
                         (-12201, -4866, 7742, 2851));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayRiver, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayRiver, crMap, parentMap);
         return crMap;
     }
 
@@ -73,7 +75,7 @@ internal class River : HallOfChains
         CombatItem? logStartNPCUpdate = combatData.FirstOrDefault(x => x.IsStateChange == StateChange.LogNPCUpdate);
         if (logStartNPCUpdate != null)
         {
-            IReadOnlyList<AgentItem> enervators = agentData.GetNPCsByID(TargetID.Enervator);
+            IReadOnlyList<AgentItem> enervators = agentData.GetStableSpeciesByID(TargetID.Enervator);
             if (!enervators.Any())
             {
                 throw new MissingKeyActorsException("Enervators not found");
@@ -107,8 +109,8 @@ internal class River : HallOfChains
 
     internal override void EIEvtcParse(ulong gw2Build, EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData, IReadOnlyDictionary<uint, ExtensionHandler> extensions)
     {
-        agentData.AddCustomNPCAgent(logData.LogStart, logData.LogEnd, "River of Souls", Spec.NPC, (int)TargetID.DummyTarget, true);
-        foreach (var desmina in agentData.GetNPCsByID(TargetID.Desmina))
+        agentData.AddCustomNPCAgent(logData.LogStart, logData.LogEnd, "River of Souls", Spec.Gadget, TargetID.DummyTarget, true);
+        foreach (var desmina in agentData.GetStableSpeciesByID(TargetID.Desmina))
         {
             var positions = combatData.Where(x => x.IsStateChange == StateChange.Position && x.SrcMatchesAgent(desmina)).Take(5).Select(x => new PositionEvent(x, agentData).GetParametricPoint3D());
             if (positions.Any(x => x.XYZ.X >= 7500))
@@ -125,23 +127,23 @@ internal class River : HallOfChains
         // Handle potentially wrongly associated logs
         if (logStartNPCUpdate != null)
         {
-            if (agentData.GetNPCsByID(TargetID.BrokenKing).Any(brokenKing => combatData.Any(evt => evt.IsNonZeroDamageEvent() && evt.DstMatchesAgent(brokenKing))))
+            if (agentData.GetStableSpeciesByID(TargetID.BrokenKing).Any(brokenKing => combatData.Any(evt => evt.IsNonZeroDamageEvent() && evt.DstMatchesAgent(brokenKing))))
             {
                 return new StatueOfIce((int)TargetID.BrokenKing);
             }
-            if (agentData.GetNPCsByID(TargetID.EaterOfSouls).Any(soulEater => combatData.Any(evt => evt.IsNonZeroDamageEvent() && evt.DstMatchesAgent(soulEater))))
+            if (agentData.GetStableSpeciesByID(TargetID.EaterOfSouls).Any(soulEater => combatData.Any(evt => evt.IsNonZeroDamageEvent() && evt.DstMatchesAgent(soulEater))))
             {
                 return new StatueOfDeath((int)TargetID.EaterOfSouls);
             }
-            if (agentData.GetNPCsByID(TargetID.EyeOfFate).Any(eyeOfFate => combatData.Any(evt => evt.IsNonZeroDamageEvent() && evt.DstMatchesAgent(eyeOfFate))))
+            if (agentData.GetStableSpeciesByID(TargetID.EyeOfFate).Any(eyeOfFate => combatData.Any(evt => evt.IsNonZeroDamageEvent() && evt.DstMatchesAgent(eyeOfFate))))
             {
                 return new StatueOfDarkness((int)TargetID.EyeOfFate);
             }
-            if (agentData.GetNPCsByID(TargetID.EyeOfJudgement).Any(eyeOfJudgement => combatData.Any(evt => evt.IsNonZeroDamageEvent() && evt.DstMatchesAgent(eyeOfJudgement))))
+            if (agentData.GetStableSpeciesByID(TargetID.EyeOfJudgement).Any(eyeOfJudgement => combatData.Any(evt => evt.IsNonZeroDamageEvent() && evt.DstMatchesAgent(eyeOfJudgement))))
             {
                 return new StatueOfDarkness((int)TargetID.EyeOfJudgement);
             }
-            if (agentData.GetNPCsByID(TargetID.Dhuum).Any(dhuum => combatData.Any(evt => evt.IsNonZeroDamageEvent() && (evt.DstMatchesAgent(dhuum) || evt.SrcMatchesAgent(dhuum)))))
+            if (agentData.GetStableSpeciesByID(TargetID.Dhuum).Any(dhuum => combatData.Any(evt => evt.IsNonZeroDamageEvent() && (evt.DstMatchesAgent(dhuum) || evt.SrcMatchesAgent(dhuum)))))
             {
                 return new Dhuum((int)TargetID.Dhuum);
             }

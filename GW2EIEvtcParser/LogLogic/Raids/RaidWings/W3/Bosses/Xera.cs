@@ -1,18 +1,19 @@
-﻿using System;
-using System.Numerics;
+﻿using System.Numerics;
 using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.Exceptions;
 using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIEvtcParser.ParserHelpers;
 using static GW2EIEvtcParser.ArcDPSEnums;
-using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicTimeUtils;
+using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.ParserHelper;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
@@ -21,28 +22,28 @@ internal class Xera : StrongholdOfTheFaithful
 
     internal readonly MechanicGroup Mechanics = new([
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(TemporalShredOrb, new MechanicPlotlySetting(Symbols.Circle,Colors.Red), "Orb", "Temporal Shred (Hit by Red Orb)","Red Orb", 0),
-                new PlayerDstHealthDamageHitMechanic(TemporalShredAoE, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Red), "Orb Aoe", "Temporal Shred (Stood in Orb Aoe)","Orb AoE", 0),
+                new PlayerDstHealthDamageHitMechanic(TemporalShredOrb, new MechanicPlotlySetting(Symbols.Circle,Colors.Red), "Orb", "Temporal Shred (Hit by Red Orb)","Red Orb", Sev0, 0),
+                new PlayerDstHealthDamageHitMechanic(TemporalShredAoE, new MechanicPlotlySetting(Symbols.CircleOpen,Colors.Red), "Orb Aoe", "Temporal Shred (Stood in Orb Aoe)","Orb AoE", Sev0, 0),
             ]),
-            new PlayerDstBuffApplyMechanic(BloodstoneProtection, new MechanicPlotlySetting(Symbols.HourglassOpen,Colors.DarkPurple), "In Bubble", "Bloodstone Protection (Stood in Bubble)","Inside Bubble", 0),
+            new PlayerDstBuffApplyMechanic(BloodstoneProtection, new MechanicPlotlySetting(Symbols.HourglassOpen,Colors.DarkPurple), "In Bubble", "Bloodstone Protection (Stood in Bubble)","Inside Bubble", Sev2, 0),
             new MechanicGroup([
-                new EnemyCastStartMechanic(SummonFragments, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkTeal), "CC.X", "Summon Fragment (Xera Breakbar)","Breakbar", 0),
-                new EnemyCastEndMechanic(SummonFragments, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Red), "CC.X Fail", "Summon Fragment (Failed CC)","CC Fail", 0)
+                new EnemyCastStartMechanic(SummonFragments, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkTeal), "CC.X", "Summon Fragment (Xera Breakbar)","Breakbar", Sev3, 0),
+                new EnemyCastEndMechanic(SummonFragments, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Red), "CC.X Fail", "Summon Fragment (Failed CC)","CC Fail", Sev0, 0)
                     .UsingChecker( (ce,log) => ce.ActualDuration > 11940),
-                new EnemyCastEndMechanic(SummonFragments, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkGreen), "CCed.X", "Summon Fragment (Breakbar broken)","CCed", 0)
+                new EnemyCastEndMechanic(SummonFragments, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkGreen), "CCed.X", "Summon Fragment (Breakbar broken)","CCed", Sev0, 0)
                     .UsingChecker( (ce, log) => ce.ActualDuration <= 11940),
             ]),
-            new PlayerDstBuffApplyMechanic(Derangement, new MechanicPlotlySetting(Symbols.SquareOpen,Colors.LightPurple), "Stacks", "Derangement (Stacking Debuff)","Derangement", 0),
+            new PlayerDstBuffApplyMechanic(Derangement, new MechanicPlotlySetting(Symbols.SquareOpen,Colors.LightPurple), "Stacks", "Derangement (Stacking Debuff)","Derangement", Sev2, 0),
             new MechanicGroup([
-                new PlayerDstBuffApplyMechanic(BendingChaos, new MechanicPlotlySetting(Symbols.TriangleDownOpen,Colors.Yellow), "Button1", "Bending Chaos (Stood on 1st Button)","Button 1", 0),
-                new PlayerDstBuffApplyMechanic(ShiftingChaos, new MechanicPlotlySetting(Symbols.TriangleNEOpen,Colors.Yellow), "Button2", "Bending Chaos (Stood on 2nd Button)","Button 2", 0),
-                new PlayerDstBuffApplyMechanic(TwistingChaos, new MechanicPlotlySetting(Symbols.TriangleNWOpen,Colors.Yellow), "Button3", "Bending Chaos (Stood on 3rd Button)","Button 3", 0),
+                new PlayerDstBuffApplyMechanic(BendingChaos, new MechanicPlotlySetting(Symbols.TriangleDownOpen,Colors.Yellow), "Button1", "Bending Chaos (Stood on 1st Button)","Button 1", Sev1, 0),
+                new PlayerDstBuffApplyMechanic(ShiftingChaos, new MechanicPlotlySetting(Symbols.TriangleNEOpen,Colors.Yellow), "Button2", "Bending Chaos (Stood on 2nd Button)","Button 2", Sev1, 0),
+                new PlayerDstBuffApplyMechanic(TwistingChaos, new MechanicPlotlySetting(Symbols.TriangleNWOpen,Colors.Yellow), "Button3", "Bending Chaos (Stood on 3rd Button)","Button 3", Sev1, 0),
             ]),
-            new PlayerDstBuffApplyMechanic(InterventionSkillOwnerBuff, new MechanicPlotlySetting(Symbols.Square,Colors.Blue), "Shield", "Intervention (got Special Action Key)","Shield", 0),
-            new PlayerDstBuffApplyMechanic(GravityWellXera, new MechanicPlotlySetting(Symbols.CircleXOpen,Colors.Magenta), "Gravity Half", "Half-platform Gravity Well","Gravity Well", 4000),
+            new PlayerDstBuffApplyMechanic(InterventionSkillOwnerBuff, new MechanicPlotlySetting(Symbols.Square,Colors.Blue), "Shield", "Intervention (got Special Action Key)","Shield", Sev0, 0),
+            new PlayerDstBuffApplyMechanic(GravityWellXera, new MechanicPlotlySetting(Symbols.CircleXOpen,Colors.Magenta), "Gravity Half", "Half-platform Gravity Well","Gravity Well", Sev0, 4000),
             new MechanicGroup([
-                new PlayerDstBuffApplyMechanic(HerosDeparture, new MechanicPlotlySetting(Symbols.Circle,Colors.DarkGreen), "TP Out", "Hero's Departure (Teleport to Platform)","TP",0),
-                new PlayerDstBuffApplyMechanic(HerosReturn, new MechanicPlotlySetting(Symbols.Circle,Colors.Green), "TP Back", "Hero's Return (Teleport back)","TP back", 0),
+                new PlayerDstBuffApplyMechanic(HerosDeparture, new MechanicPlotlySetting(Symbols.Circle,Colors.DarkGreen), "TP Out", "Hero's Departure (Teleport to Platform)","TP", Sev1,0),
+                new PlayerDstBuffApplyMechanic(HerosReturn, new MechanicPlotlySetting(Symbols.Circle,Colors.Green), "TP Back", "Hero's Return (Teleport back)","TP back", Sev1, 0),
             ]),
             /*new Mechanic(Intervention, "Intervention", ParseEnum.BossIDS.Xera, new MechanicPlotlySetting(Symbols.Hourglass,"rgb(128,0,128)"), "Bubble",0),*/
             //new Mechanic(Disruption, "Disruption", ParseEnum.BossIDS.Xera, new MechanicPlotlySetting(Symbols.Square,Colors.DarkGreen), "TP",0), 
@@ -60,12 +61,12 @@ internal class Xera : StrongholdOfTheFaithful
         ChestID = ChestID.XeraChest;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (1000, 897),
                         (-5992, -5992, 69, -522));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayXera, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayXera, crMap, parentMap);
         return crMap;
     }
 
@@ -123,7 +124,7 @@ internal class Xera : StrongholdOfTheFaithful
 
     private static long GetMainXeraFightStart(ParsedEvtcLog log, AgentItem xera, long encounterStart)
     {
-        var fakeXera = log.AgentData.GetNPCsByID(TargetID.FakeXera).LastOrDefault(x => x.FirstAware <= xera.FirstAware);
+        var fakeXera = log.AgentData.GetStableSpeciesByID(TargetID.FakeXera).LastOrDefault(x => x.FirstAware <= xera.FirstAware);
         if (fakeXera != null)
         {
             var enterCombat = log.CombatData.GetEnterCombatEvents(xera).FirstOrDefault();
@@ -270,42 +271,37 @@ internal class Xera : StrongholdOfTheFaithful
         //
         var maxHPUpdates = combatData.Where(x => x.IsStateChange == StateChange.MaxHealthUpdate).Select(x => new MaxHealthUpdateEvent(x, agentData)).ToList();
         //
-        var bloodstoneFragments = maxHPUpdates.Where(x => x.MaxHealth == 104580).Select(x => x.Src).Where(x => x.Type == AgentItem.AgentType.Gadget);
+        var bloodstoneFragments = maxHPUpdates.Where(x => x.MaxHealth == 104580).Select(x => x.Src).Where(x => x.Type == AgentItem.AgentType.VolatileSpecies);
         foreach (AgentItem gadget in bloodstoneFragments)
         {
-            gadget.OverrideType(AgentItem.AgentType.NPC, agentData);
             gadget.OverrideID(TargetID.BloodstoneFragment, agentData);
         }
         //
-        var bloodstoneShardsMainFight = maxHPUpdates.Where(x => x.MaxHealth == 343620).Select(x => x.Src).Where(x => x.Type == AgentItem.AgentType.Gadget);
+        var bloodstoneShardsMainFight = maxHPUpdates.Where(x => x.MaxHealth == 343620).Select(x => x.Src).Where(x => x.Type == AgentItem.AgentType.VolatileSpecies);
         foreach (AgentItem gadget in bloodstoneShardsMainFight)
         {
-            gadget.OverrideType(AgentItem.AgentType.NPC, agentData);
             gadget.OverrideID(TargetID.BloodstoneShardMainFight, agentData);
         }
         //
-        var bloodstoneShardsButton = maxHPUpdates.Where(x => x.MaxHealth == 597600).Select(x => x.Src).Where(x => x.Type == AgentItem.AgentType.Gadget);
+        var bloodstoneShardsButton = maxHPUpdates.Where(x => x.MaxHealth == 597600).Select(x => x.Src).Where(x => x.Type == AgentItem.AgentType.VolatileSpecies);
         foreach (AgentItem gadget in bloodstoneShardsButton)
         {
-            gadget.OverrideType(AgentItem.AgentType.NPC, agentData);
             gadget.OverrideID(TargetID.BloodstoneShardButton, agentData);
         }
         //
-        var bloodstoneShardsRift = maxHPUpdates.Where(x => x.MaxHealth == 747000).Select(x => x.Src).Where(x => x.Type == AgentItem.AgentType.Gadget);
+        var bloodstoneShardsRift = maxHPUpdates.Where(x => x.MaxHealth == 747000).Select(x => x.Src).Where(x => x.Type == AgentItem.AgentType.VolatileSpecies);
         foreach (AgentItem gadget in bloodstoneShardsRift)
         {
-            gadget.OverrideType(AgentItem.AgentType.NPC, agentData);
             gadget.OverrideID(TargetID.BloodstoneShardRift, agentData);
         }
         //
-        var chargedBloodStones = maxHPUpdates.Where(x => x.MaxHealth == 74700).Select(x => x.Src).Where(x => x.Type == AgentItem.AgentType.Gadget);
+        var chargedBloodStones = maxHPUpdates.Where(x => x.MaxHealth == 74700).Select(x => x.Src).Where(x => x.Type == AgentItem.AgentType.VolatileSpecies);
         foreach (AgentItem gadget in chargedBloodStones)
         {
             if (!combatData.Any(x => x.IsDamageEvent() && x.DstMatchesAgent(gadget)))
             {
                 continue;
             }
-            gadget.OverrideType(AgentItem.AgentType.NPC, agentData);
             gadget.OverrideID(TargetID.ChargedBloodstone, agentData);
         }
     }
@@ -353,6 +349,22 @@ internal class Xera : StrongholdOfTheFaithful
         AgentManipulationHelper.RedirectAllEvents(combatData, extensions, agentData, secondXera, firstXera);
     }
 
+    internal override void HandleCriticalAgents(EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData, IReadOnlyDictionary<uint, ExtensionHandler> extensions)
+    {
+        var statues = agentData.GetStableSpeciesByID(TargetID.HauntingStatue);
+        if (statues.Count > 0)
+        {
+            var xeras = agentData.GetStableSpeciesByID(TargetID.Xera);
+            foreach (var maybeDeletedXera in xeras)
+            {
+                if (maybeDeletedXera.FirstAware <= statues.Max(x => x.FirstAware) || statues.Any(x => x.InAwareTimes(maybeDeletedXera)))
+                {
+                    maybeDeletedXera.OverrideID(TargetID.Unknown, agentData);
+                }
+            }
+        }
+    }
+
     internal override void EIEvtcParse(ulong gw2Build, EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData, IReadOnlyDictionary<uint, ExtensionHandler> extensions)
     {
         // find target
@@ -363,7 +375,7 @@ internal class Xera : StrongholdOfTheFaithful
         FindBloodstones(agentData, combatData);
         if (agentData.TryGetFirstAgentItem(TargetID.FakeXera, out _))
         {
-            agentData.AddCustomNPCAgent(logData.LogStart, logData.LogEnd, "Xera Pre Event", Spec.NPC, TargetID.DummyTarget, true);
+            agentData.AddCustomNPCAgent(logData.LogStart, logData.LogEnd, "Xera Pre Event", Spec.Gadget, TargetID.DummyTarget, true);
         }
         // find split
         if (agentData.TryGetFirstAgentItem(TargetID.Xera2, out var secondXera))
@@ -436,10 +448,9 @@ internal class Xera : StrongholdOfTheFaithful
                             break;
                     }
                 }
-                replay.AddHideByBuff(target, log, Determined762);
                 break;
             case (int)TargetID.ChargedBloodstone:
-                var activeXeras = log.AgentData.GetNPCsByID(TargetID.Xera).Where(x => target.AgentItem.InAwareTimes(x)).ToList();
+                var activeXeras = log.AgentData.GetStableSpeciesByID(TargetID.Xera).Where(x => target.AgentItem.InAwareTimes(x)).ToList();
                 long hiddenStart = target.FirstAware;
                 for (int i = 0; i < activeXeras.Count; i++)
                 {
@@ -457,7 +468,7 @@ internal class Xera : StrongholdOfTheFaithful
                         } 
                         else
                         {
-                            var nextFakeXera = log.AgentData.GetNPCsByID(TargetID.FakeXera).FirstOrDefault(x => x.FirstAware > hiddenEnd);
+                            var nextFakeXera = log.AgentData.GetStableSpeciesByID(TargetID.FakeXera).FirstOrDefault(x => x.FirstAware > hiddenEnd);
                             long threshold = nextFakeXera != null ? nextFakeXera.FirstAware : target.LastAware;
                             var deadEvent = log.CombatData.GetHealthUpdateEvents(target.AgentItem).LastOrDefault(x => x.HealthPercent < 1 && x.Time > activeXera.FirstAware && x.Time < threshold);
                             hiddenStart = deadEvent != null ? deadEvent.Time : threshold;
@@ -576,7 +587,7 @@ internal class Xera : StrongholdOfTheFaithful
                 (long start, long end) lifespan = (halfGravityWell.Time, halfGravityWell.Time + 7500);
                 (long start, long end) = (halfGravityWell.Time, halfGravityWell.Time + 7000);
                 bool hasFired = true;
-                var activeXera = log.AgentData.GetNPCsByID(TargetID.Xera).FirstOrDefault(x => x.FirstAware <= halfGravityWell.Time && x.LastAware >= halfGravityWell.Time);
+                var activeXera = log.AgentData.GetStableSpeciesByID(TargetID.Xera).FirstOrDefault(x => x.FirstAware <= halfGravityWell.Time && x.LastAware >= halfGravityWell.Time);
                 if (activeXera == null)
                 {
                     continue;

@@ -7,6 +7,7 @@ using GW2EIDiscord;
 using GW2EIWingman;
 using GW2EIDPSReport;
 using GW2EIDPSReport.DPSReportJsons;
+using GW2EIMistWarrior;
 using GW2EIEvtcParser;
 using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.ParsedData;
@@ -251,18 +252,30 @@ public sealed class ProgramHelper : IDisposable
 #if !DEBUG
                     try
                     {
-                        var expectedSettings = new EvtcParserSettings(Settings.Anonymous,
-                                                        Settings.SkipFailedTries,
-                                                        true,
-                                                        true,
-                                                        true,
-                                                        Settings.CustomTooShort,
-                                                        Settings.CustomTooBig,
-                                                        Settings.DetailledWvW);
+                        var expectedSettings = new EvtcParserSettings(Settings.CustomTooShort, Settings.CustomTooBig)
+                        {
+                            AnonymousPlayers = Settings.Anonymous,
+                            SkipFailedTries = Settings.SkipFailedTries,
+                            ComputeCast = true,
+                            ComputeCombatReplay = true,
+                            ComputeMechanics = true,
+                            ComputePhases = true,
+                            DetailedWvWParse = Settings.DetailledWvW,
+                            ParseExtensions = true,
+                            ComputeDamageModifiers = true,
+                            ComputeBuff = true,
+                            ComputeDamage = true,
+                        };
                         ParsedEvtcLog logToUse = originalLog;
-                        if (originalLog.ParserSettings.ComputeDamageModifiers != expectedSettings.ComputeDamageModifiers ||
-                            originalLog.ParserSettings.ParsePhases != expectedSettings.ParsePhases ||
-                            originalLog.ParserSettings.ParseCombatReplay != expectedSettings.ParseCombatReplay)
+                        var originalSettings = originalLog.ParserSettings;
+                        if (originalSettings.ComputeDamageModifiers != expectedSettings.ComputeDamageModifiers ||
+                            originalSettings.ComputeCombatReplay != expectedSettings.ComputeCombatReplay ||
+                            originalSettings.ComputePhases != expectedSettings.ComputePhases ||
+                            originalSettings.ComputeDamage != expectedSettings.ComputeDamage ||
+                            originalSettings.ComputeBuff != expectedSettings.ComputeBuff ||
+                            originalSettings.ComputeCast != expectedSettings.ComputeCast ||
+                            originalSettings.ComputeMechanics != expectedSettings.ComputeMechanics ||
+                            originalSettings.ParseExtensions != expectedSettings.ParseExtensions)
                         {
                             // We need to create a parser that matches Wingman's expected settings
                             var parser = new EvtcParser(expectedSettings, APIController);
@@ -275,7 +288,7 @@ public sealed class ProgramHelper : IDisposable
                         var uploadResult = new UploadResults();
                         {
                             var ms = new MemoryStream();
-                            var builder = new RawFormatBuilder(logToUse, new RawFormatSettings(true), ParserVersion, uploadResult);
+                            var builder = new RawFormatBuilder(logToUse, new RawFormatSettings(), ParserVersion, uploadResult);
 
                             builder.CreateJSON(ms, false);
 
@@ -286,7 +299,7 @@ public sealed class ProgramHelper : IDisposable
                         {
                             var ms = new MemoryStream();
                             var sw = new StreamWriter(ms, NoBOMEncodingUTF8);
-                            var builder = new HTMLBuilder(logToUse, new HTMLSettings(false, false, true), htmlAssets, ParserVersion, uploadResult);
+                            var builder = new HTMLBuilder(logToUse, new HTMLSettings(), htmlAssets, ParserVersion, uploadResult);
 
                             builder.CreateHTML(sw, null);
                             sw.Close();
@@ -319,6 +332,15 @@ public sealed class ProgramHelper : IDisposable
             originalController.UpdateProgressWithCancellationCheck("Wingman: Operation completed");
 
         }
+        if (Settings.UploadToMistWarrior)
+        {
+            originalController.MistWarriorUploadTentative = true;
+            originalController.UpdateProgressWithCancellationCheck("MistWarrior: Uploading");
+            bool mwResponse = MistWarriorController.Upload(fInfo, str => originalController.UpdateProgress("MistWarrior: " + str), Settings.MistWarriorUserToken);
+            string mwMessage = mwResponse ? "Upload process success" : "Upload process failed";
+            originalController.MistWarriorUploadFailed = !mwResponse;
+            originalController.UpdateProgressWithCancellationCheck("MistWarrior: " + mwMessage);
+        }
         return uploadresult;
     }
 
@@ -333,14 +355,22 @@ public sealed class ProgramHelper : IDisposable
             operation.Start();
             var fInfo = new FileInfo(operation.InputFile);
 
-            var parser = new EvtcParser(new EvtcParserSettings(Settings.Anonymous,
-                                            Settings.SkipFailedTries,
-                                            Settings.ParsePhases,
-                                            Settings.ParseCombatReplay,
-                                            Settings.ComputeDamageModifiers,
+            var parser = new EvtcParser(new EvtcParserSettings(
                                             Settings.CustomTooShort,
-                                            Settings.CustomTooBig,
-                                            Settings.DetailledWvW),
+                                            Settings.CustomTooBig)
+            {
+                AnonymousPlayers = Settings.Anonymous,
+                SkipFailedTries = Settings.SkipFailedTries,
+                ComputePhases = Settings.ComputePhases,
+                ComputeCombatReplay = Settings.ComputeCombatReplay,
+                ComputeDamageModifiers = Settings.ComputeDamageModifiers,
+                ParseExtensions = Settings.ParseExtensions,
+                ComputeBuff = Settings.ComputeBuff,
+                ComputeDamage = Settings.ComputeDamage,
+                ComputeCast = Settings.ComputeCast,
+                ComputeMechanics = Settings.ComputeMechanics,
+                DetailedWvWParse = Settings.DetailledWvW,
+            },
                                         APIController);
 
             //Process evtc here
@@ -497,12 +527,14 @@ public sealed class ProgramHelper : IDisposable
             {
                 var builder = new HTMLBuilder(log,
                     new HTMLSettings(
-                        Settings.LightTheme,
-                        Settings.HtmlExternalScripts,
                         Settings.HtmlExternalScriptsPath,
-                        Settings.HtmlExternalScriptsCdn,
-                        Settings.HtmlCompressJson || log.LogData.IsInstance
-                    ), htmlAssets, ParserVersion, uploadResults);
+                        Settings.HtmlExternalScriptsCdn
+                    )
+                    {
+                        CompressJson = Settings.HtmlCompressJson || log.LogData.IsInstance,
+                        ExternalHTMLScripts = Settings.HtmlExternalScripts,
+                        HTMLLightTheme = Settings.LightTheme,
+                    }, htmlAssets, ParserVersion, uploadResults);
                 builder.CreateHTML(sw, saveDirectory.FullName);
             }
             operation.UpdateProgressWithCancellationCheck("Program: HTML created");
@@ -526,7 +558,7 @@ public sealed class ProgramHelper : IDisposable
         }
         if (Settings.SaveOutJSON)
         {
-            var builder = new RawFormatBuilder(log, new RawFormatSettings(Settings.RawTimelineArrays), ParserVersion, uploadResults);
+            var builder = new RawFormatBuilder(log, new RawFormatSettings() { RawFormatTimelineArrays = Settings.RawTimelineArrays }, ParserVersion, uploadResults);
             if (Settings.SaveOutJSON)
             {
                 using var _t1 = new AutoTrace("Generate JSON");

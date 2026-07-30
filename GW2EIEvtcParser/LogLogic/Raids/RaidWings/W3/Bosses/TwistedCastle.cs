@@ -2,29 +2,31 @@
 using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIEvtcParser.ParserHelpers;
+using GW2EIGW2API;
 using static GW2EIEvtcParser.ArcDPSEnums;
-using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicTimeUtils;
+using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
 using static GW2EIEvtcParser.ParserHelper;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
-using GW2EIGW2API;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
 internal class TwistedCastle : StrongholdOfTheFaithful
 {
     internal readonly MechanicGroup Mechanics = new([
-            new PlayerDstBuffApplyMechanic(SpatialDistortion, new MechanicPlotlySetting(Symbols.Circle,Colors.Magenta), "Statue TP", "Teleported by Statue", "Statue Teleport", 500),
+            new PlayerDstBuffApplyMechanic(SpatialDistortion, new MechanicPlotlySetting(Symbols.Circle,Colors.Magenta), "Statue TP", "Teleported by Statue", "Statue Teleport", Sev0, 500),
             new MechanicGroup([
-                new PlayerDstBuffApplyMechanic(StillWaters, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Magenta), "Still Waters (Immunity)", "Used a fountain for immunity", "Still Waters (Immunity)", 0)
+                new PlayerDstBuffApplyMechanic(StillWaters, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Magenta), "Still Waters (Immunity)", "Used a fountain for immunity", "Still Waters (Immunity)", Sev2, 0)
                     .UsingChecker((evt, log) => log.CombatData.GetBuffDataByIDByDst(SoothingWaters, evt.To).Any(x => x is BuffApplyEvent ba && Math.Abs(ba.Time - evt.Time) < 500)),
-                new PlayerDstBuffApplyMechanic(StillWaters, new MechanicPlotlySetting(Symbols.StarDiamond,Colors.Magenta), "Still Waters (Removal)", "Used a fountain for stack removal", "Still Waters (Removal)", 0)
+                new PlayerDstBuffApplyMechanic(StillWaters, new MechanicPlotlySetting(Symbols.StarDiamond,Colors.Magenta), "Still Waters (Removal)", "Used a fountain for stack removal", "Still Waters (Removal)", Sev2, 0)
                     .UsingChecker((evt, log) => !log.CombatData.GetBuffDataByIDByDst(SoothingWaters, evt.To).Any(x => x is BuffApplyEvent ba && Math.Abs(ba.Time - evt.Time) < 500)),
             ]),
-            new PlayerDstBuffApplyMechanic(Madness, new MechanicPlotlySetting(Symbols.Square,Colors.LightPurple), "Madness", "Stacking debuff", "Madness", 0),
-            new PlayerDstBuffApplyMechanic(ChaoticHaze, new MechanicPlotlySetting(Symbols.Hexagon,Colors.Red), "Chaotic Haze", "Damaging Debuff from bombardement", "Chaotic Haze", 500),
+            new PlayerDstBuffApplyMechanic(Madness, new MechanicPlotlySetting(Symbols.Square,Colors.LightPurple), "Madness", "Stacking debuff", "Madness", Sev1, 0),
+            new PlayerDstBuffApplyMechanic(ChaoticHaze, new MechanicPlotlySetting(Symbols.Hexagon,Colors.Red), "Chaotic Haze", "Damaging Debuff from bombardement", "Chaotic Haze", Sev0, 500),
         ]);
     public TwistedCastle(int triggerID) : base(triggerID)
     {
@@ -37,12 +39,12 @@ internal class TwistedCastle : StrongholdOfTheFaithful
         LogID |= 0x000003;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
         var crMap = new CombatReplayMap(
                         (774, 1000),
                         (-8058, -4321, 819, 7143));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayTwistedCastle, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, CombatReplayTwistedCastle, crMap, parentMap);
         return crMap;
     }
 
@@ -60,7 +62,7 @@ internal class TwistedCastle : StrongholdOfTheFaithful
         CombatItem? logStartNPCUpdate = combatData.FirstOrDefault(x => x.IsStateChange == StateChange.LogNPCUpdate);
         if (logStartNPCUpdate != null)
         {
-            IReadOnlyList<AgentItem> statues = agentData.GetNPCsByID(TargetID.HauntingStatue);
+            IReadOnlyList<AgentItem> statues = agentData.GetStableSpeciesByID(TargetID.HauntingStatue);
             long start = long.MaxValue;
             foreach (AgentItem statue in statues)
             {
@@ -83,7 +85,7 @@ internal class TwistedCastle : StrongholdOfTheFaithful
 
     internal override void EIEvtcParse(ulong gw2Build, EvtcVersionEvent evtcVersion, LogData logData, AgentData agentData, List<CombatItem> combatData, IReadOnlyDictionary<uint, ExtensionHandler> extensions)
     {
-        agentData.AddCustomNPCAgent(logData.LogStart, logData.LogEnd, "Twisted Castle", Spec.NPC, TargetID.DummyTarget, true);
+        agentData.AddCustomNPCAgent(logData.LogStart, logData.LogEnd, "Twisted Castle", Spec.Gadget, TargetID.DummyTarget, true);
         base.EIEvtcParse(gw2Build, evtcVersion, logData, agentData, combatData, extensions);
     }
 

@@ -5,11 +5,11 @@ namespace GW2EIEvtcParser.EIData;
 
 internal class SpawnMechanic : IDBasedMechanic<SingleActor>
 {
-    public SpawnMechanic(long mechanicID, MechanicPlotlySetting plotlySetting, string shortName, string description, string fullName, int internalCoolDown) : this([mechanicID], plotlySetting, shortName, description, fullName, internalCoolDown)
+    public SpawnMechanic(long mechanicID, MechanicPlotlySetting plotlySetting, string shortName, string description, string fullName, MechanicSeverity severity, int internalCoolDown) : this([mechanicID], plotlySetting, shortName, description, fullName, severity, internalCoolDown)
     {
     }
 
-    public SpawnMechanic(long[] mechanicIDs, MechanicPlotlySetting plotlySetting, string shortName, string description, string fullName, int internalCoolDown) : base(mechanicIDs, plotlySetting, shortName, description, fullName, internalCoolDown)
+    public SpawnMechanic(long[] mechanicIDs, MechanicPlotlySetting plotlySetting, string shortName, string description, string fullName, MechanicSeverity severity, int internalCoolDown) : base(mechanicIDs, plotlySetting, shortName, description, fullName, severity, internalCoolDown)
     {
         IsEnemyMechanic = true;
     }
@@ -18,7 +18,7 @@ internal class SpawnMechanic : IDBasedMechanic<SingleActor>
     {
         foreach (long mechanicID in MechanicIDs)
         {
-            foreach (AgentItem a in log.AgentData.GetNPCsByID((int)mechanicID))
+            foreach (AgentItem a in log.AgentData.GetStableSpeciesByID((int)mechanicID))
             {
                 SingleActor? amp = MechanicHelper.FindEnemyActor(log, a, regroupedMobs);
                 if (amp != null && Keep(amp, log))

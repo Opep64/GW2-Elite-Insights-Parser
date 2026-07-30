@@ -1,10 +1,11 @@
-﻿using System.Collections.Generic;
-using GW2EIEvtcParser.EIData;
+﻿using GW2EIEvtcParser.EIData;
 using GW2EIEvtcParser.Exceptions;
 using GW2EIEvtcParser.Extensions;
 using GW2EIEvtcParser.ParsedData;
 using GW2EIEvtcParser.ParserHelpers;
+using static GW2EIEvtcParser.AchievementEligibilityIDs;
 using static GW2EIEvtcParser.ArcDPSEnums;
+using static GW2EIEvtcParser.EIData.Mechanic;
 using static GW2EIEvtcParser.LogLogic.LogLogicPhaseUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicTimeUtils;
 using static GW2EIEvtcParser.LogLogic.LogLogicUtils;
@@ -12,7 +13,7 @@ using static GW2EIEvtcParser.ParserHelper;
 using static GW2EIEvtcParser.ParserHelpers.LogImages;
 using static GW2EIEvtcParser.SkillIDs;
 using static GW2EIEvtcParser.SpeciesIDs;
-using static GW2EIEvtcParser.AchievementEligibilityIDs;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.LogLogic;
 
@@ -20,22 +21,22 @@ internal class Sabir : TheKeyOfAhdashim
 {
     internal readonly MechanicGroup Mechanics = new([
             new MechanicGroup([
-                new PlayerDstHealthDamageMechanic(DireDrafts, new MechanicPlotlySetting(Symbols.Circle,Colors.Orange), "B.Tornado", "Hit by big tornado", "Big Tornado Hit", 500)
+                new PlayerDstHealthDamageMechanic(DireDrafts, new MechanicPlotlySetting(Symbols.Circle,Colors.Orange), "B.Tornado", "Hit by big tornado", "Big Tornado Hit", Sev0, 500)
                     .UsingChecker((de, log) => de.HasDowned || de.HasKilled),
-                new PlayerDstHealthDamageMechanic(UnbridledTempest, new MechanicPlotlySetting(Symbols.Hexagon,Colors.Pink), "Shockwave", "Hit by Shockwave", "Shockwave Hit", 0)
+                new PlayerDstHealthDamageMechanic(UnbridledTempest, new MechanicPlotlySetting(Symbols.Hexagon,Colors.Pink), "Shockwave", "Hit by Shockwave", "Shockwave Hit", Sev0, 0)
                     .UsingChecker((de, log) => de.HasDowned || de.HasKilled),
-                new PlayerDstHealthDamageMechanic(FuryOfTheStorm, new MechanicPlotlySetting(Symbols.Circle,Colors.Purple), "Arena AoE", "Hit by Arena wide AoE", "Arena AoE hit", 0)
+                new PlayerDstHealthDamageMechanic(FuryOfTheStorm, new MechanicPlotlySetting(Symbols.Circle,Colors.Purple), "Arena AoE", "Hit by Arena wide AoE", "Arena AoE hit", Sev0, 0)
                     .UsingChecker( (de, log) => de.HasDowned || de.HasKilled ),
             ]),
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic([ DynamicDeterrentNM, DynamicDeterrentCM ], new MechanicPlotlySetting(Symbols.YUpOpen,Colors.Pink), "Rot.KB", "Pushed by rotating breakbar", "Pushed", 0)
+                new PlayerDstHealthDamageHitMechanic([ DynamicDeterrentNM, DynamicDeterrentCM ], new MechanicPlotlySetting(Symbols.YUpOpen,Colors.Pink), "Rot.KB", "Pushed by rotating breakbar", "Pushed", Sev0, 0)
                     .UsingBuffChecker(Stability, false),
-                new EnemyCastStartMechanic([ DynamicDeterrentNM, DynamicDeterrentCM ], new MechanicPlotlySetting(Symbols.Star, Colors.Yellow), "Dynamic Deterrent", "Casted Dynamic Deterrent", "Cast Dynamic Deterrent", 0),
+                new EnemyCastStartMechanic([ DynamicDeterrentNM, DynamicDeterrentCM ], new MechanicPlotlySetting(Symbols.Star, Colors.Yellow), "Dynamic Deterrent", "Casted Dynamic Deterrent", "Cast Dynamic Deterrent", Sev3, 0),
             ]),
-            new PlayerDstHealthDamageHitMechanic([ StormsEdgeLeftHand, StormsEdgeRightHand ], new MechanicPlotlySetting(Symbols.BowtieOpen, Colors.Blue), "Storm's Edge", "Hit by Storm's Edge", "Storm's Edge", 0),
-            new PlayerDstHealthDamageHitMechanic(ChainLightning, new MechanicPlotlySetting(Symbols.HexagonOpen, Colors.White), "Chain Lightning", "Hit by Chain Lightning", "Chain Lightning Hit", 0),
+            new PlayerDstHealthDamageHitMechanic([ StormsEdgeLeftHand, StormsEdgeRightHand ], new MechanicPlotlySetting(Symbols.BowtieOpen, Colors.Blue), "Storm's Edge", "Hit by Storm's Edge", "Storm's Edge", Sev2, 0),
+            new PlayerDstHealthDamageHitMechanic(ChainLightning, new MechanicPlotlySetting(Symbols.HexagonOpen, Colors.White), "Chain Lightning", "Hit by Chain Lightning", "Chain Lightning Hit", Sev2, 0),
             new MechanicGroup([
-                new PlayerDstHealthDamageHitMechanic(Electrospark, new MechanicPlotlySetting(Symbols.CircleCross, Colors.Orange), "Electrospark", "Hit by Electrospark", "Electrospark", 0),
+                new PlayerDstHealthDamageHitMechanic(Electrospark, new MechanicPlotlySetting(Symbols.CircleCross, Colors.Orange), "Electrospark", "Hit by Electrospark", "Electrospark", Sev1, 0),
                 new MechanicGroup([
                     new AchievementEligibilityMechanic(Ach_ChargedWinds, new MechanicPlotlySetting(Symbols.CircleCrossOpen, Colors.Orange), "Charged Winds L", "Achievement Elegibility: Charged Winds Lost", "Charged Winds Lost", 0)
                         .UsingChecker((evt, log) => evt.Lost),
@@ -45,12 +46,12 @@ internal class Sabir : TheKeyOfAhdashim
             ]),
             new MechanicGroup([
                 new MechanicGroup([
-                    new EnemyCastStartMechanic(RegenerativeBreakbar, new MechanicPlotlySetting(Symbols.DiamondWide,Colors.Magenta), "Reg.Breakbar", "Regenerating Breakbar","Regenerative Breakbar", 0),
-                    new EnemyDstBuffRemoveMechanic(IonShield, new MechanicPlotlySetting(Symbols.DiamondWide,Colors.DarkTeal), "Reg.Breakbar Brkn", "Regenerative Breakbar Broken", "Regenerative Breakbar Broken", 2000),
+                    new EnemyCastStartMechanic(RegenerativeBreakbar, new MechanicPlotlySetting(Symbols.DiamondWide,Colors.Magenta), "Reg.Breakbar", "Regenerating Breakbar","Regenerative Breakbar", Sev3, 0),
+                    new EnemyDstBuffRemoveMechanic(IonShield, new MechanicPlotlySetting(Symbols.DiamondWide,Colors.DarkTeal), "Reg.Breakbar Brkn", "Regenerative Breakbar Broken", "Regenerative Breakbar Broken", Sev0, 2000),
                 ]),
                 new MechanicGroup([
-                    new EnemyDstBuffApplyMechanic(RepulsionField, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Magenta), "Rot.Breakbar", "Rotating Breakbar","Rotating Breakbar", 0),
-                    new EnemyDstBuffRemoveMechanic(RepulsionField, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkTeal), "Rot.Breakbar Brkn", "Rotating Breakbar Broken","Rotating Breakbar Broken", 0),
+                    new EnemyDstBuffApplyMechanic(RepulsionField, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.Magenta), "Rot.Breakbar", "Rotating Breakbar","Rotating Breakbar", Sev3, 0),
+                    new EnemyDstBuffRemoveMechanic(RepulsionField, new MechanicPlotlySetting(Symbols.DiamondTall,Colors.DarkTeal), "Rot.Breakbar Brkn", "Rotating Breakbar Broken","Rotating Breakbar Broken", Sev0, 0),
                 ]),
             ]),
         ]);
@@ -86,7 +87,7 @@ internal class Sabir : TheKeyOfAhdashim
         // Handle potentially wrongly associated logs
         if (logStartNPCUpdate != null)
         {
-            if (agentData.GetNPCsByID(TargetID.Adina).Any(adina => combatData.Any(evt => evt.IsNonZeroDamageEvent() && evt.DstMatchesAgent(adina) && agentData.GetAgent(evt.SrcAgent, evt.Time).GetFinalMaster().IsPlayer)))
+            if (agentData.GetStableSpeciesByID(TargetID.Adina).Any(adina => combatData.Any(evt => evt.IsNonZeroDamageEvent() && evt.DstMatchesAgent(adina) && agentData.GetAgent(evt.SrcAgent, evt.Time).GetFinalMaster().IsPlayer)))
             {
                 return new Adina((int)TargetID.Adina);
             }
@@ -159,17 +160,17 @@ internal class Sabir : TheKeyOfAhdashim
         return phases;
     }
 
-    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations)
+    internal override CombatReplayMap GetCombatMapInternal(ParsedEvtcLog log, CombatReplayDecorationContainer arenaDecorations, CombatReplayMap? parentMap = null)
     {
-        string mapUrl = log.AgentData.GetNPCsByID(TargetID.SabirMainPlateform).Count > 0 &&
-            log.AgentData.GetNPCsByID(TargetID.SabirSquarePlateform).Count > 0 &&
-            log.AgentData.GetNPCsByID(TargetID.SabirBigRectanglePlateform).Count > 0 &&
-            log.AgentData.GetNPCsByID(TargetID.SabirRectanglePlateform).Count > 0 ?
+        string mapUrl = log.AgentData.GetStableSpeciesByID(TargetID.SabirMainPlateform).Count > 0 &&
+            log.AgentData.GetStableSpeciesByID(TargetID.SabirSquarePlateform).Count > 0 &&
+            log.AgentData.GetStableSpeciesByID(TargetID.SabirBigRectanglePlateform).Count > 0 &&
+            log.AgentData.GetStableSpeciesByID(TargetID.SabirRectanglePlateform).Count > 0 ?
                 CombatReplayNoImage : CombatReplaySabir;
         var crMap = new CombatReplayMap(
                         (1000, 910),
                         (-14122, 142, -9199, 4640));
-        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, mapUrl, crMap);
+        AddArenaDecorationsPerEncounter(log, arenaDecorations, LogID, mapUrl, crMap, parentMap);
         return crMap;
     }
 
@@ -248,7 +249,7 @@ internal class Sabir : TheKeyOfAhdashim
             case (int)TargetID.SabirMainPlateform:
                 var mainPlateformOpacities = new List<ParametricPoint1D> { new(0, target.FirstAware) };
                 var plateformPosition = replay.Positions.Last();
-                foreach (var sabir in log.AgentData.GetNPCsByID(TargetID.Sabir))
+                foreach (var sabir in log.AgentData.GetStableSpeciesByID(TargetID.Sabir))
                 {
                     var positions = log.FindActor(sabir).GetCombatReplayNonPolledPositions(log);
                     foreach (var position in positions)
@@ -321,25 +322,21 @@ internal class Sabir : TheKeyOfAhdashim
     {
         // Disabled until we get nice looking assets for them
         //return;
-        foreach (var candidate in agentData.GetAgentByType(AgentItem.AgentType.Gadget))
+        foreach (var candidate in agentData.GetAgentByType(AgentItem.AgentType.VolatileSpecies))
         {
             switch (candidate.HitboxWidth)
             {
                 case 2350:
                     candidate.OverrideID(TargetID.SabirMainPlateform, agentData);
-                    candidate.OverrideType(AgentItem.AgentType.NPC, agentData);
                     break;
                 case 806:
                     candidate.OverrideID(TargetID.SabirSquarePlateform, agentData);
-                    candidate.OverrideType(AgentItem.AgentType.NPC, agentData);
                     break;
                 case 950:
                     candidate.OverrideID(TargetID.SabirRectanglePlateform, agentData);
-                    candidate.OverrideType(AgentItem.AgentType.NPC, agentData);
                     break;
                 case 1752:
                     candidate.OverrideID(TargetID.SabirBigRectanglePlateform, agentData);
-                    candidate.OverrideType(AgentItem.AgentType.NPC, agentData);
                     break;
             }
         }

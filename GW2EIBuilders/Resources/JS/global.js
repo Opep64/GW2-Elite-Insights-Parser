@@ -1,6 +1,10 @@
 /*jshint esversion: 6 */
 "use strict";
 
+
+const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
+
+
 let apiRenderServiceOkay = true;
 let useDarthmaim = false;
 let replaceImgur = false;
@@ -20,7 +24,6 @@ const normalColor = {
     g: 125,
     b: 125
 };
-
 const DamageType = {
     All: 0,
     Power: 1,
@@ -34,6 +37,28 @@ const GraphType = {
     CenteredDPS: 2
 };
 
+const MechanicSeverity = {
+    Sev0: 0,
+    Sev1: 1,
+    Sev2: 2,
+    Sev3: 3,
+    Sev4: 4,
+
+    SeverityMask: 0 | 1 | 2 | 3 | 4,
+
+    Success: 8,
+    Failure: 16,
+    Neutral: 32,
+}
+
+const MechanicSeverityToName = {
+    0: "Critical",
+    1: "High",
+    2: "Medium",
+    3: "Low",
+    4: "Informational",
+};
+
 const reactiveLogdata = {
     phases: [],
     players: [],
@@ -41,9 +66,10 @@ const reactiveLogdata = {
     encounters: [],
     activeEncounterPhaseData: [],
 };
+
 let IsMultiEncounterLog = false;
 const mainComponentWidth =  Math.max(Math.min(0.9 * window.screen.width, 1600), 1450);
-const maxMechColumns = Math.floor((mainComponentWidth - 150) / 120);
+const maxMechColumns = Math.floor((mainComponentWidth - 150) / 210);
 const maxBuffColumns = Math.floor((mainComponentWidth - 150) / 80);
 
 
@@ -289,4 +315,17 @@ const PhaseTypes = {
     TIMEFRAME: 3,
 };
 
-const EIUrlParams = new URLSearchParams(window.location.search);
+let EIUrlParams = new URLSearchParams(window.location.search);
+if (EIUrlParams.size === 0) {
+    if (window.location.hash.length > 0) {
+        EIUrlParams = new URLSearchParams(window.location.hash.slice(1));
+    } else {
+        try {
+            if (window.parent.location.hash.length > 0) {         
+                EIUrlParams = new URLSearchParams(window.parent.location.hash.slice(1));
+            }
+        } catch(e) {
+            // nothing
+        }
+    }
+}

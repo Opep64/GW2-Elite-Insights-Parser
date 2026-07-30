@@ -66,6 +66,7 @@ internal static class CommonBuffs
             .WithBuilds(GW2Builds.StartOfLife, GW2Builds.June2021Balance),
         new Buff("Superspeed", Superspeed, Source.Common, BuffStackType.Queue, 9, BuffClassification.Support, BuffImages.Superspeed)
             .WithBuilds(GW2Builds.June2021Balance),
+        new Buff("Minion Command", MinionCommandBuff, Source.Common, BuffClassification.Hidden, BuffImages.Unknown),
         new Buff("Determined (762)", Determined762, Source.Common, BuffClassification.Other, BuffImages.Determined),
         new Buff("Determined (785)", Determined785, Source.Common, BuffClassification.Other, BuffImages.Determined),
         new Buff("Determined (788)", Determined788, Source.Common, BuffClassification.Other, BuffImages.Determined),
@@ -80,9 +81,9 @@ internal static class CommonBuffs
         new Buff("Spawn Protection?", SpawnProtection, Source.Common, BuffClassification.Other, BuffImages.Determined),
         new Buff("Stun", Stun, Source.Common, BuffClassification.Other, BuffImages.Stun),
         new Buff("Daze", Daze, Source.Common, BuffClassification.Other, BuffImages.Daze),
-        new Buff("Exposed (48209)", Exposed48209, Source.Common, BuffClassification.Other, BuffImages.Exposed),
-        new Buff("Exposed (31589)", Exposed31589, Source.Common, BuffClassification.Other, BuffImages.Exposed),
-        new Buff("Old Exposed", OldExposed, Source.Common, BuffClassification.Other, BuffImages.Exposed),
+        new Buff("Exposed (48209)", Exposed48209, Source.Common, BuffClassification.Debuff, BuffImages.Exposed),
+        new Buff("Exposed (31589)", Exposed31589, Source.Common, BuffClassification.Debuff, BuffImages.Exposed),
+        new Buff("Old Exposed", OldExposed, Source.Common, BuffClassification.Debuff, BuffImages.Exposed),
         new Buff("Unblockable", Unblockable, Source.Common, BuffStackType.StackingConditionalLoss, 25, BuffClassification.Offensive, BuffImages.Unblockable)
             .WithBuilds(GW2Builds.February2020Balance),
         new Buff("Encumbered", Encumbered, Source.Common, BuffStackType.Queue, 9, BuffClassification.Debuff, BuffImages.Encumbered),
@@ -226,6 +227,9 @@ internal static class CommonBuffs
         new Buff("Relic of Fog", RelicOfFogBuff, Source.Gear, BuffStackType.StackingConditionalLoss, 3, BuffClassification.Gear, ItemImages.RelicOfFog),
         new Buff("Relic of the Forest Dweller (Float)", RelicOfTheForestDwellerFloatBuff, Source.Gear, BuffClassification.Gear, ItemImages.RelicOfTheForestDweller),
         new Buff("Relic of Shackles (Application)", RelicOfShacklesApplicationBuff, Source.Gear, BuffClassification.Gear, ItemImages.RelicOfShackles),
+        new Buff("Relic of the Director", RelicOfTheDirector, Source.Gear, BuffClassification.Gear, ItemImages.RelicOfTheDirector),
+        new Buff("Kuda's Cruelty (Stacks)", KudasCrueltyStacksBuff, Source.Gear, BuffStackType.StackingConditionalLoss, 10, BuffClassification.Gear, ItemImages.RelicOfTheCruelOverseer),
+        new Buff("Kuda's Cruelty (Modifier)", KudasCrueltyModifierBuff, Source.Gear, BuffClassification.Gear, ItemImages.RelicOfTheCruelOverseer),
     ];
 
 }

@@ -81,6 +81,10 @@ For every input, CLI will consistently output a JSON like object, preceded by "P
 
 -__wingmanUploadFailed__: boolean, if true, wingman accepted the file but the upload failed.
 
+-__mistWarriorUploadTentative__: boolean, if true, the application tried to upload to mist warrior.
+
+-__mistWarriorUploadFailed__: boolean, if true, the application could not upload to mist warrior.
+
 
 ### For UI
 
@@ -130,7 +134,17 @@ Note it may take some time for each file to parse and they will not be ready to 
 
 -__ParseCombatReplay__: if true, combat replay will be computed.
 
--__ComputeDamageModifiers__: if true, damage modifiers will be computed.
+-__ComputeBuff__: if true, buff related stats will be computed.
+
+-__ComputeDamage__: if true, damage related stats will be computed.
+
+-__ComputeCast__: if true, skill cast related stats will be computed.
+
+-__ComputeMechanics__: if true,mechanics will be computed.
+
+-__ComputeDamageModifiers__: if true, damage modifiers will be computed. This also requires all three ComputeBuff, ComputeDamage and ComputeCast to be true.
+
+-__ParseExtensions__: if true, extension events present in the evtc will be processed.
 
 -__DetailledWvW__: if true, enemy players will not be merged into one in WvW logs and they'll appear as standard targets. Warning: the generated files and the generation time will grow exponentially, use it only on organized sorties (Guild zergs, GvG, ...).
 
@@ -173,6 +187,10 @@ Note it may take some time for each file to parse and they will not be ready to 
 -__DPSReportUserToken__: dps.report user token.
 
 -__UploadToWingman__: if true, the log will be uploaded to Wingman via the "uploadProcessed" endpoint.
+
+-__UploadToMistWarrior__: if true, the log will be uploaded to Mist Warrior, user token is mandatory.
+
+-__MistWarriorUserToken__: Mist Warrior user token.
 
 -__WebhookURL__: Webhook URL to send an embed or simple message to.
 

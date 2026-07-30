@@ -1,13 +1,12 @@
-﻿using System.Diagnostics.CodeAnalysis;
-using System.Diagnostics.Metrics;
-using GW2EIEvtcParser.ParsedData;
+﻿using GW2EIEvtcParser.ParsedData;
+using static GW2EIEvtcParser.EIData.Mechanic.MechanicSeverity;
 
 namespace GW2EIEvtcParser.EIData;
 
 
 internal class AchievementEligibilityMechanic : IDBasedMechanic<AchievementEligibilityEvent>
 {
-     public AchievementEligibilityMechanic(long achievementID, MechanicPlotlySetting plotlySetting, string shortName, string description, string fullName, int internalCoolDown) : base([achievementID], plotlySetting, shortName, description, fullName, internalCoolDown)
+     public AchievementEligibilityMechanic(long achievementID, MechanicPlotlySetting plotlySetting, string shortName, string description, string fullName, int internalCoolDown) : base([achievementID], plotlySetting, shortName, description, fullName, Sev4, internalCoolDown)
     {
         IsEnemyMechanic = false;
     }

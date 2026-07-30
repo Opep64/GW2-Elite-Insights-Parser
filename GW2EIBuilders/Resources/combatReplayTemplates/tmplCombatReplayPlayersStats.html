@@ -9,7 +9,7 @@
             <li class="nav-item">
                 <a class="nav-link" :class="{active: rotation}" @click="rotation = !rotation">Show Rotation</a>
             </li>
-        </ul>                    
+        </ul>
         <ul v-if="!analysis" class="nav nav-pills d-flex flex-row justify-content-center mb-1 scale65">
             <li v-for="(buffType, index) in possibleBuffs" class="ml-1 mr-1">
                 <input :id="'crpl-possibleBuffs-' + index" type="checkbox" :value="buffType" v-model="buffsToShow" />
@@ -22,7 +22,7 @@
                     <legend v-if="!singleGroup" style="font-size: 0.80rem; width: auto; padding: 0 5px; margin-left: 5px;">Group {{id}}</legend>
                     <div class="d-flex flex-row align-items-center ml-1 mr-1" :class="getGroupMembersClass(id)">
                         <div v-for="playerData in group" class="player-data" :class="[playerDataClass, {active: selectedplayerid === playerData.player.uniqueID, 'combat-replay-analysis-selected-card': analysis && selectedplayerid === playerData.player.uniqueID}]">
-                            <combat-replay-player-stats-component :time="time" :buffs="buffs" :rotation="rotationEnabled" :playerindex="playerData.player.id" :buffstoshow="buffsToShow" :compact="analysis"></combat-replay-player-stats-component>
+                            <combat-replay-actor-stats-component :actorIndex="playerData.player.id" :time="time" :buffstoshow="buffsToShow" :isTarget="false" :buffs="buffs" :rotation="rotationEnabled" :compact="analysis" />
                         </div>
                     </div>
                 </fieldset>

@@ -11,6 +11,8 @@ public class ProgramSettings
     public bool UploadToDPSReports { get; set; } = false;
     public string DPSReportUserToken { get; set; }
     public bool UploadToWingman { get; set; } = false;
+    public bool UploadToMistWarrior { get; set; } = false;
+    public string MistWarriorUserToken { get; set; }
     // Format
     public bool SaveOutCSV { get; set; } = false;
     public bool SaveOutHTML { get; set; } = true;
@@ -26,9 +28,14 @@ public class ProgramSettings
     public long CustomTooShort { get; set; } = ParserHelper.MinimumInCombatDuration;
     public int CustomTooBig { get; set; } = 400;
     public bool DetailledWvW { get; set; } = false;
-    public bool ParsePhases { get; set; } = true;
-    public bool ParseCombatReplay { get; set; } = true;
+    public bool ComputePhases { get; set; } = true;
+    public bool ComputeCombatReplay { get; set; } = true;
     public bool ComputeDamageModifiers { get; set; } = true;
+    public bool ParseExtensions { get; set; } = true;
+    public bool ComputeDamage { get; set; } = true;
+    public bool ComputeBuff { get; set; } = true;
+    public bool ComputeCast { get; set; } = true;
+    public bool ComputeMechanics { get; set; } = true;
     // Save Location
     public bool SaveAtOut { get; set; }
     public string OutLocation { get; set; }
@@ -55,7 +62,7 @@ public class ProgramSettings
     public int GetMaxParallelRunning()
     {
         int count;
-        if (SendEmbedToWebhook || UploadToDPSReports || UploadToWingman)
+        if (SendEmbedToWebhook || UploadToDPSReports || UploadToWingman || UploadToMistWarrior)
         {
             count = Math.Max(Environment.ProcessorCount / 2, 1);
         }

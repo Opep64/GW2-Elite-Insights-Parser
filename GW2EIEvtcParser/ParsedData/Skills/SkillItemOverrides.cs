@@ -1,5 +1,4 @@
 ﻿using GW2EIEvtcParser.ParserHelpers;
-using static GW2EIEvtcParser.ArcDPSEnums;
 using static GW2EIEvtcParser.SkillIDs;
 
 namespace GW2EIEvtcParser.ParsedData;
@@ -13,6 +12,8 @@ public static class SkillItemOverrides
         { Resurrect, "Resurrect" },
         { Resurrect2, "Resurrect" },
         { Bandage, "Bandage" },
+        { WeaponStow, "Weapon Stow" },
+        { WeaponDraw, "Weapon Draw" },
 #region ArcDPS
         { ArcDPSDodge, "Dodge" },
         { ArcDPSDodge20220307, "Dodge" },
@@ -95,6 +96,8 @@ public static class SkillItemOverrides
         { RelicPrivateerSpawn, "Relic of the Privateer (Spawn Minion)" },
         { RelicOfTheSteamshrieker, "Relic of the Steamshrieker" },
         { RelicOfShacklesDamageSkill, "Relic of Shackles (Damage)" },
+        { RelicOfGaldraSkill, "Relic of Galdra" },
+        { RelicOfTheCruelOverseer, "Relic of the Cruel Overseer" },
         #endregion Relics
         #region Elementalist
         { ShatteringIceDamage, "Shattering Ice (Hit)" },
@@ -306,6 +309,7 @@ public static class SkillItemOverrides
         { BigMagmaDrop, "Big Magma Drop" },
         // Ura
         { UraDispelSAK, "Dispel" },
+        { UraBloodstoneShardPickUp, "Bloodstone Shard Pick Up" },
         // Kela
         { KelaBurrow, "Burrow" },
         { KelaAura, "Aura (Kela)" },
@@ -576,6 +580,8 @@ public static class SkillItemOverrides
         { RelicOfTheNauticalBeastDamageHealing, ItemImages.RelicOfTheNauticalBeast },
         { RelicOfShacklesDamageSkill, ItemImages.RelicOfShackles },
         { RelicOfTheForestDwellerMissileDamage, ItemImages.RelicOfTheForestDweller },
+        { RelicOfGaldraSkill, ItemImages.RelicOfGaldra },
+        { RelicOfTheCruelOverseer, ItemImages.RelicOfTheCruelOverseer },
 #endregion RelicIcons
         #region ElementalistIcons
         { EarthenBlast, TraitImages.EarthenBlast },
@@ -609,6 +615,7 @@ public static class SkillItemOverrides
         { ElutriateSecondaryAttack, SkillImages.Elutriate },
         { SoothingBurstSecondaryAttack, SkillImages.SoothingBurst },
         { ShaleStormSecondaryAttack, SkillImages.ShaleStorm },
+        { MastersFortitudeBarrier, TraitImages.MastersFortitude },
 #endregion  ElementalistIcons
         #region EngineerIcons
         { ShredderGyroHit, SkillImages.ShredderGyro },
@@ -788,7 +795,7 @@ public static class SkillItemOverrides
             { SandstormShroudDetonation, SkillImages.SandstormShroud },
             { SandFlareSharedBarrier, SkillImages.SandFlare },
             { DesertEmpowerment, TraitImages.DesertEmpowerment },
-            { CascadingCorruption, TraitImages.CascadingCorruption },
+            { CascadingCorruptionDamage, TraitImages.CascadingCorruption },
             { DeathlyHaste, TraitImages.DeathlyHaste },
             { ApproachingDoom, TraitImages.DoomApproaches },
             { UnstableExplosion, SkillImages.SummonMadness },
@@ -936,7 +943,7 @@ public static class SkillItemOverrides
             { EvilEye, SkillImages.EvilEyeDemon },
             { TormentingVisionSpinegazer, SkillImages.TormentingVisionSpinegazer },
             { WolfsOnslaughtFollowUp, SkillImages.WolfsOnslaught },
-            { EletroctuteSkyChak, SkillImages.EletroctuteJuvenileSkyChak },
+            { Electrocute_SkyChak, SkillImages.Electrocute_JuvenileSkyChak },
             { EvasivePurity, TraitImages.EvasivePurity },
             { SpitGoopSkyChak, SkillImages.SpitGoopSkyChak },
             { UnleashEnergySkyChak, SkillImages.UnleashEnergySkyChak },
@@ -952,6 +959,10 @@ public static class SkillItemOverrides
             { LeyLineVortexAetherHunterPet, SkillImages.LeylineVortexAetherHunter },
             { LungeAetherHunterPet, SkillImages.LungeVortexAetherHunter },
             { BumbleJanthiriBee, SkillImages.BumbleJanthiriBee },
+            { JetJuvenileRiverOtter, SkillImages.JetOtter },
+            { ScratchJuvenileRiverOtter, SkillImages.ScratchOtter },
+            { TailWhipJuvenileRiverOtter, SkillImages.TailWhipOtter  },
+            { VerdantEtchingHeal, TraitImages.VerdantEtching  },
             #endregion RangerIcons
             #region RevenantIcons
             { RiftSlashRiftHit, SkillImages.RiftSlash },
@@ -1136,6 +1147,7 @@ public static class SkillItemOverrides
             { OnYourKneesEcho, SkillImages.OnYourKnees },
             { ChantOfRecuperationHealing, SkillImages.ChantOfRecuperation },
             { ChantOfRecuperationBarrier, SkillImages.ChantOfRecuperation },
+            { UnshakableMountainBarrier, TraitImages.UnshakableMountain },
         #endregion WarriorIcons
             #region EncounterIcons
             { KickHeavyBomb, SkillImages.Kick },

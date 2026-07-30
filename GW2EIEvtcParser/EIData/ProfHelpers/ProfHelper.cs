@@ -150,7 +150,8 @@ internal static class ProfHelper
             .UsingOrigin(InstantCastFinder.InstantCastOrigin.Gear),
         new BuffGainCastFinder(RelicOfTheClaw, RelicOfTheClaw)
             .UsingChecker((ba, combatData, agentData, skillData) => {
-                return !combatData.GetBuffRemoveSingleDataByIDByDst(RelicOfTheClaw, ba.To).Any(x => Math.Abs(x.Time - ba.Time) < ServerDelayConstant);
+                return !combatData.GetBuffRemoveSingleDataByIDByDst(RelicOfTheClaw, ba.To)
+                    .Any(x => x.Time >= ba.Time && x.Time - ba.Time < ServerDelayConstant && x.BuffInstance != ba.BuffInstance);
             })
             .UsingOrigin(InstantCastFinder.InstantCastOrigin.Gear),
         new EffectCastFinder(RelicOfPeithaBlade, EffectGUIDs.RelicOfPeitha)
@@ -229,6 +230,13 @@ internal static class ProfHelper
         new MissileCastFinder(RelicOfTheForestDwellerMissileDamage, RelicOfTheForestDwellerMissileDamage)
             .UsingICD(100)
             .UsingOrigin(InstantCastFinder.InstantCastOrigin.Gear),
+        new MissileCastFinder(RelicOfGaldraSkill, RelicOfGaldraSkill)
+            .UsingICD(100)
+            .UsingOrigin(InstantCastFinder.InstantCastOrigin.Gear),
+        new BuffGainCastFinder(RelicOfTheCruelOverseer, KudasCrueltyModifierBuff)
+            .UsingOrigin(InstantCastFinder.InstantCastOrigin.Gear),
+        new BuffGainCastFinder(RelicOfTheDirector, RelicOfTheDirector)
+            .UsingOrigin(InstantCastFinder.InstantCastOrigin.Gear),
         #endregion Relics
         #region Mounts
         new BuffGainCastFinder(BondOfLifeSkill, BondOfLifeBuff),
@@ -303,7 +311,7 @@ internal static class ProfHelper
         {
             // dst must no be a gadget nor a friendly player
             // src must be a masterless gadget
-            if (!playerAgents.Any(evt.To.IsMaster) && evt.To.Type != AgentItem.AgentType.Gadget && evt.From.Type == AgentItem.AgentType.Gadget && evt.From.Master == null)
+            if (!playerAgents.Any(evt.To.IsMaster) && evt.To.Type != AgentItem.AgentType.VolatileSpecies && evt.From.Type == AgentItem.AgentType.VolatileSpecies && evt.From.Master == null)
             {
                 res.Add(evt.From);
             }

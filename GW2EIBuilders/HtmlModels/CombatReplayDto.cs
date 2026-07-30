@@ -9,6 +9,7 @@ internal class CombatReplayDto
     public List<CombatReplayRenderingDescription> DecorationRenderings { get; set; }
     public List<CombatReplayMetadataDescription> DecorationMetadata { get; set; }
     public List<SingleActorCombatReplayDescription> Actors { get; set; }
+    public List<List<double>>? DefaultViewpoints { get; set; }
     public int[] Sizes { get; set; }
     public float InchToPixel { get; set; }
     public int PollingRate { get; set; }
@@ -23,5 +24,13 @@ internal class CombatReplayDto
         InchToPixel = map.GetInchToPixel();
         PollingRate = ParserHelper.CombatReplayPollingRate;
         Analysis = CombatReplayAnalysisBuilder.Build(log, usedSkills);
+        if (map.DefaultViewpoints != null)
+        {
+            DefaultViewpoints = new(map.DefaultViewpoints.Count);
+            foreach (var defaultViewpoint in map.DefaultViewpoints)
+            {
+                DefaultViewpoints.Add([defaultViewpoint.XTranslatePercent, defaultViewpoint.YTranslatePercent, defaultViewpoint.Scale, defaultViewpoint.EncounterID]);
+            }
+        }
     }
 }

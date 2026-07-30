@@ -72,9 +72,10 @@ const Types = {
     Target: 18,
     TargetPlayer: 19,
     Text: 20,
-    Polygon: 21,
+    RegularPolygon: 21,
     TextOverhead: 22,
     Arena: 23,
+    CustomPolygon: 24,
 };
 
 function getDefaultCombatReplayTime() {
@@ -85,7 +86,8 @@ function getDefaultCombatReplayTime() {
     return Math.max(parseFloat(time), 0.0) * 1000;
 }
 
-var animator = null;
+let animator = null;
+let animationControlComponent = null;
 // reactive structures
 const reactiveAnimationData = {
     time: getDefaultCombatReplayTime(),
@@ -102,6 +104,12 @@ const reactiveAnimationData = {
         max: 1e12
     },
     selectedExtraDecorations: false,
+    selectedMechanic: {
+        actorId: null,
+        actorName: null,
+        name: null,
+        times: [],
+    }
 };
 
 var sliderDelimiter = {
@@ -275,6 +283,7 @@ class Animator {
         // time
         this.prevTime = 0;
         this.times = [];
+        this.defaultViewpoints = [];
         // simulation params
         this.speed = 1;
         this.backwards = false;
@@ -346,6 +355,16 @@ class Animator {
             }
             if (options.actors) {
                 this._initActors(options.actors, options.decorationRenderings, options.decorationMetadata);
+            }
+            if (options.defaultViewpoints) {
+                for (let i = 0; i < options.defaultViewpoints.length; i++) {
+                    this.defaultViewpoints.push({
+                        tx: options.defaultViewpoints[i][0],
+                        ty: options.defaultViewpoints[i][1],
+                        s: options.defaultViewpoints[i][2],
+                        eiid: options.defaultViewpoints[i][3]
+                    });
+                }
             }
             if (!replaceImgur) {
                 downEnemyIcon.crossOrigin = "Anonymous";
@@ -425,8 +444,11 @@ class Animator {
                 case Types.Circle:
                     MetadataClass = CircleMetadata;
                     break;
-                case Types.Polygon:
-                    MetadataClass = PolygonMetadata;
+                case Types.RegularPolygon:
+                    MetadataClass = RegularPolygonMetadata;
+                    break;
+                case Types.CustomPolygon:
+                    MetadataClass = CustomPolygonMetadata;
                     break;
                 case Types.Doughnut:
                     MetadataClass = DoughnutMetadata;
@@ -567,8 +589,11 @@ class Animator {
                     case Types.Circle:
                         DecorationClass = CircleMechanicDrawable;
                         break;
-                    case Types.Polygon:
-                        DecorationClass = PolygonMechanicDrawable;
+                    case Types.RegularPolygon:
+                        DecorationClass = RegularPolygonMechanicDrawable;
+                        break;
+                    case Types.CustomPolygon:
+                        DecorationClass = CustomPolygonMechanicDrawable;
                         break;
                     case Types.Rectangle:
                         DecorationClass = RectangleMechanicDrawable;
@@ -639,14 +664,14 @@ class Animator {
         this.reactiveDataStatus.viewRevision++;
     }
 
-    updateInputTime(value) {
+    updateInputTime(value, offset) {
         try {
             const cleanedString = value.replace(",", ".");
             const parsedTime = parseFloat(cleanedString);
             if (isNaN(parsedTime) || !isFinite(parsedTime)) {
                 return;
             }
-            const ms = Math.round(parsedTime * 1000.0);
+            const ms = Math.round(parsedTime * 1000.0) + offset;
             const min = this.reactiveDataStatus.range.min;
             const max = this.reactiveDataStatus.range.max;
             this.reactiveDataStatus.time = Math.min(Math.max(ms, min), max);
@@ -1187,23 +1212,57 @@ class Animator {
         if (!this.selectedExtraDecorations) {
             return;
         }
-        this.selectedExtraDecorations.openingAngle.radius = value;
+        this.selectedExtraDecorations.coneControl.openingAngle = value;
         animateCanvas(noUpdateTime);
     }
 
-    resetViewpoint() {
+    resetViewpoint(eiid = 0) {
         var canvas = this.mainCanvas;
         var ctx = this.mainContext;
         var bgCtx = this.bgContext;
 
-        this.lastX = canvas.width / 2;
-        this.lastY = canvas.height / 2;
         this.mouseDown = null;
         this.dragged = false;
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+        let defaultViewpoint = this.defaultViewpoints.filter(x => x.eiid === eiid)[0];
+        this.lastX = canvas.width / 2;
+        this.lastY = canvas.height / 2;
+        if (defaultViewpoint) {
+            var x = -canvas.width * defaultViewpoint.tx / 100;
+            var y = -canvas.height * defaultViewpoint.ty / 100;
+            
+            ctx.setTransform(1, 0, 0, 1, x, y);
+            bgCtx.setTransform(1, 0, 0, 1, x, y);
+        } else {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+        }
         ctx.scale(resolutionMultiplier, resolutionMultiplier);
-        bgCtx.setTransform(1, 0, 0, 1, 0, 0);
         bgCtx.scale(resolutionMultiplier, resolutionMultiplier);
+        if (defaultViewpoint) {
+            this._setScaleOnPoint(defaultViewpoint.s, 0, 0);
+        }
+        this.needBGUpdate = true;
+        this._bumpViewRevision();
+        if (this.animation === null) {
+            animateCanvas(noUpdateTime);
+        }
+    }
+    _setScaleOnPoint(factor, ptX, ptY) {
+        const ctx = this.mainContext;
+        const bgCtx = this.bgContext;
+
+        const pt = ctx.transformedPoint(ptX, ptY);
+        ctx.translate(pt.x, pt.y);
+        bgCtx.translate(pt.x, pt.y);
+        ctx.scale(factor, factor);
+        if ((50 / (InchToPixel * this.scale) < 10)) {
+            ctx.scale(1.0 / factor, 1.0 / factor);
+            factor = 1.0;
+        }
+        ctx.translate(-pt.x, -pt.y);
+        bgCtx.scale(factor, factor);
+        bgCtx.translate(-pt.x, -pt.y);
         this.needBGUpdate = true;
         this._bumpViewRevision();
         if (this.animation === null) {
@@ -1391,10 +1450,10 @@ class Animator {
     }
 
     _initMouseEvents() {
-        var _this = this;
-        var canvas = this.mainCanvas;
-        var ctx = this.mainContext;
-        var bgCtx = this.bgContext;
+        const _this = this;
+        const canvas = this.mainCanvas;
+        const ctx = this.mainContext;
+        const bgCtx = this.bgContext;
 
         canvas.addEventListener('mousedown', function (evt) {
             evt.preventDefault();
@@ -1413,8 +1472,8 @@ class Animator {
             _this.lastY = evt.offsetY || (evt.pageY - canvas.offsetTop);
             _this.dragged = true;
             if (_this.mouseDown) {
-                var pt = ctx.transformedPoint(_this.lastX, _this.lastY);
-                var downPt = _this.mouseDown.pt;
+                const pt = ctx.transformedPoint(_this.lastX, _this.lastY);
+                const downPt = _this.mouseDown.pt;
                 ctx.translate(pt.x - downPt.x, pt.y - downPt.y);
                 bgCtx.translate(pt.x - downPt.x, pt.y - downPt.y);
                 _this.needBGUpdate = true;
@@ -1443,25 +1502,10 @@ class Animator {
 
         var zoom = function (evt) {
             evt.preventDefault();
-            var delta = evt.wheelDelta ? evt.wheelDelta / 40 : evt.detail ? -evt.detail : 0;
+            const delta = evt.wheelDelta ? evt.wheelDelta / 40 : evt.detail ? -evt.detail : 0;
             if (delta) {
-                var pt = ctx.transformedPoint(_this.lastX, _this.lastY);
-                ctx.translate(pt.x, pt.y);
-                bgCtx.translate(pt.x, pt.y);
-                var factor = Math.pow(1.1, delta);
-                ctx.scale(factor, factor);
-                if ((50 / (InchToPixel * _this.scale) < 10)) {            
-                    ctx.scale( 1.0 / factor, 1.0 / factor);
-                    factor = 1.0;
-                }
-                ctx.translate(-pt.x, -pt.y);
-                bgCtx.scale(factor, factor);
-                bgCtx.translate(-pt.x, -pt.y);
-                _this.needBGUpdate = true;
-                _this._bumpViewRevision();
-                if (_this.animation === null) {
-                    animateCanvas(noUpdateTime);
-                }
+                const factor = Math.pow(1.1, delta);
+                _this._setScaleOnPoint(factor, _this.lastX, _this.lastY);
             }
         };
 

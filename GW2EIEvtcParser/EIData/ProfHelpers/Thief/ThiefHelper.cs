@@ -92,7 +92,11 @@ internal static class ThiefHelper
         // Marauder's Resilience
         new DamageLogDamageModifier(Mod_MaraudersResilience, "Marauder's Resilience", "-10% from foes within 360 range", DamageSource.Incoming, -10.0, DamageType.Strike, DamageType.All, Source.Thief, TraitImages.MaraudersResilience, (x, log) => TargetOutsideRangeChecker(x, log, 360, true), DamageModifierMode.All)
             .UsingApproximate()
-            .WithBuilds(GW2Builds.April2019Balance)
+            .WithBuilds(GW2Builds.April2019Balance),
+        //
+        new BuffOnActorDamageModifier(Mod_ShadowRefuge, ShadowRefugeBuff, "Shadow Refuge", "-20%", DamageSource.Incoming, -20.0, DamageType.StrikeAndCondition, DamageType.All, Source.Thief, ByPresence, SkillImages.ShadowRefuge, DamageModifierMode.All)
+            .UsingSpecSpecificShared()
+            .WithBuilds(GW2Builds.July2026Balance),
     ];
 
 
@@ -103,6 +107,7 @@ internal static class ThiefHelper
         new Buff("Shadow Portal (Open)", ShadowPortalOpenedBuff, Source.Thief, BuffStackType.Stacking, 25, BuffClassification.Other, SkillImages.ShadowPortal),
         new Buff("Kneeling", Kneeling, Source.Thief, BuffClassification.Other, SkillImages.Kneel)
             .WithBuilds(GW2Builds.June2023BalanceAndSOTOBetaAndSilentSurfNM),
+        new Buff("Shadow Refuge", ShadowRefugeBuff, Source.Thief, BuffClassification.Defensive, SkillImages.ShadowRefuge),
         // Signets
         new Buff("Signet of Malice", SignetOfMalice, Source.Thief, BuffClassification.Other, SkillImages.SignetOfMalice),
         new Buff("Assassin's Signet (Passive)", AssassinsSignetPassive, Source.Thief, BuffClassification.Other, SkillImages.AssassinsSignet),
@@ -118,8 +123,8 @@ internal static class ThiefHelper
         new Buff("Spider Venom", SpiderVenomBuff, Source.Thief, BuffStackType.StackingConditionalLoss, 6, BuffClassification.Offensive, SkillImages.SpiderVenom),
         new Buff("Soul Stone Venom", SoulStoneVenomBuff, Source.Thief, BuffStackType.Stacking, 25, BuffClassification.Offensive, SkillImages.SoulStoneVenom),
         new Buff("Basilisk Venom", BasiliskVenomBuff, Source.Thief, BuffStackType.StackingConditionalLoss, 2, BuffClassification.Support, SkillImages.BasiliskVenom),
-        new Buff("Petrified 1", Petrified1, Source.Thief, BuffClassification.Other, BuffImages.Stun),
-        new Buff("Petrified 2", Petrified2, Source.Thief, BuffClassification.Other, BuffImages.Stun),
+        new Buff("Petrified 1", Petrified1, Source.Thief, BuffClassification.Debuff, BuffImages.Stun),
+        new Buff("Petrified 2", Petrified2, Source.Thief, BuffClassification.Debuff, BuffImages.Stun),
         new Buff("Infiltration", Infiltration, Source.Thief, BuffClassification.Other, SkillImages.Shadowstep),
         // Transforms
         new Buff("Dagger Storm", DaggerStorm, Source.Thief, BuffClassification.Other, SkillImages.DaggerStorm),
@@ -216,7 +221,7 @@ internal static class ThiefHelper
         // Shadow Refuge
         if (log.CombatData.TryGetEffectEventsBySrcWithGUID(player.AgentItem, EffectGUIDs.ThiefShadowRefuge, out var shadowRefuges))
         {
-            var skill = new SkillModeDescriptor(player, Spec.Thief, ShadowRefuge, SkillModeCategory.ImportantBuffs | SkillModeCategory.Heal);
+            var skill = new SkillModeDescriptor(player, Spec.Thief, ShadowRefugeSkill, SkillModeCategory.ImportantBuffs | SkillModeCategory.Heal);
             foreach (EffectEvent effect in shadowRefuges)
             {
                 (long, long) lifespan = effect.ComputeLifespan(log, 4000);
