@@ -599,6 +599,7 @@
                                 <th>Baseline avg</th>
                                 <th>Lift</th>
                                 <th>Coverage</th>
+                                <th>Evidence score</th>
                                 <th>Confidence</th>
                                 <th>Ranking result</th>
                             </tr>
@@ -611,6 +612,7 @@
                                 <td>{{formatEffectAverage(entry.controlMean)}}</td>
                                 <td>{{entry.liftLabel}}</td>
                                 <td>{{entry.coverageLabel}}</td>
+                                <td>{{entry.scoreLabel}}</td>
                                 <td>
                                     <span class="combat-replay-wvw-analysis-pill" :class="confidencePillClass(entry.confidenceLabel)">
                                         {{entry.confidenceLabel}}
@@ -650,6 +652,8 @@
                         <ul class="combat-replay-overview-help-list">
                             <li>Down-creation signals group cascading downs into independent engagement windows, then compare their final three seconds with ordinary pressure from the same fight</li>
                             <li>The score combines percentile lift with how consistently the signal was elevated</li>
+                            <li>Equal values use the midpoint of their percentile tie, so matching a zero-heavy baseline is neutral rather than treated as a top-percentile result</li>
+                            <li>The five highest evidence scores are retained separately for named conditions and named CCs</li>
                             <li>Kill conversion compares enemy deaths with enemy downs that recovered; squad recovery compares successful recoveries with squad downs that ended in death</li>
                             <li>If a fight has no failed comparison outcomes, those modes fall back to direct coverage and say so explicitly</li>
                             <li>The All Conditions/CCs table shows every evaluated named effect and explains whether it ranked, missed the top-five cutoff, stayed at or below baseline, or lacked outcome evidence</li>
@@ -938,7 +942,7 @@
                     ...specificConditionAnalysis.drivers,
                     ...specificCrowdControlAnalysis.drivers,
                 ].filter(driver => driver != null && driver.score > 0)
-                    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label));
+                    .sort(this.compareDrivers);
 
                 return {
                     label: againstEnemy ? "Enemy Downs Created" : "Squad Downs Taken",
@@ -1028,7 +1032,7 @@
                     }),
                     this.buildSpecificConditionDriver(events),
                 ].filter(driver => driver != null && driver.score > 0)
-                    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label));
+                    .sort(this.compareDrivers);
                 return {
                     label: "Enemy Kill Conversion",
                     description: "Successful enemy-down conversions compared with enemy downs that recovered.",
@@ -1112,7 +1116,7 @@
                         detail: "Squad recoveries completed within five seconds of downstate.",
                     }),
                 ].filter(driver => driver != null && driver.score > 0)
-                    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label));
+                    .sort(this.compareDrivers);
                 return {
                     label: "Squad Recovery",
                     description: "Successful squad recoveries compared with squad downs that ended in death.",
@@ -1212,7 +1216,7 @@
                 });
                 const drivers = analyses.map(analysis => analysis.driver)
                     .filter(driver => driver != null && driver.score > 0)
-                    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label))
+                    .sort(this.compareDrivers)
                     .slice(0, 5);
                 const rankedKeys = new Set(drivers.map(driver => driver.key));
                 const audits = analyses.map(analysis => this.buildEffectAuditEntry({
@@ -1266,7 +1270,12 @@
                         eventValues.length,
                         controlValues.length,
                         config.observability || "Observed"),
-                    score: config.driver ? config.driver.score : 0,
+                    score: config.driver
+                        ? Number(config.driver.rankingScore === undefined ? config.driver.score : config.driver.rankingScore)
+                        : 0,
+                    scoreLabel: config.driver
+                        ? Number(config.driver.rankingScore === undefined ? config.driver.score : config.driver.rankingScore).toFixed(1)
+                        : "\u2014",
                     status: status,
                 };
             },
@@ -1285,6 +1294,11 @@
                     || Number(right.score || 0) - Number(left.score || 0)
                     || left.type.localeCompare(right.type)
                     || left.label.localeCompare(right.label);
+            },
+            compareDrivers: function (left, right) {
+                const leftScore = Number(left.rankingScore === undefined ? left.score : left.rankingScore);
+                const rightScore = Number(right.rankingScore === undefined ? right.score : right.rankingScore);
+                return rightScore - leftScore || left.label.localeCompare(right.label);
             },
             buildRollingEffectSeries: function (times, timeline, entriesKey, idKey, effectKey, nameKey, effectName, valueKey) {
                 return (times || []).map(time => {
@@ -1320,7 +1334,8 @@
                 const consistentCount = eventValues.filter(value => value > 0 && value >= upperQuartile).length;
                 const percentileScore = this.average(eventValues.map(value => this.percentileRank(controlValues, value)));
                 const consistencyScore = consistentCount * 100.0 / eventValues.length;
-                const score = Math.round(Math.min(100, Math.max(0, percentileScore * 0.65 + consistencyScore * 0.35)));
+                const rankingScore = Math.min(100, Math.max(0, percentileScore * 0.65 + consistencyScore * 0.35));
+                const score = Math.round(rankingScore);
                 const effectLabel = controlMean > 0
                     ? `${this.signedNumber((eventMean - controlMean) * 100.0 / controlMean, 0)}% vs ${config.comparisonName}`
                     : `${this.formatAverageDriverValue(eventMean, config.format)} average; ${config.comparisonName} near zero`;
@@ -1339,6 +1354,7 @@
                     label: config.label,
                     category: config.category,
                     score: score,
+                    rankingScore: rankingScore,
                     observability: "Observed",
                     confidenceLabel: this.driverConfidence(config.events.length, config.controls.length, "Observed"),
                     effectLabel: effectLabel,
@@ -1361,10 +1377,11 @@
                 const consistentCount = eventValues.filter(value => value > 0 && value >= upperQuartile).length;
                 const percentileScore = this.average(eventValues.map(value => this.percentileRank(controlValues, value)));
                 const consistencyScore = eventValues.length > 0 ? consistentCount * 100.0 / eventValues.length : 0.0;
-                let score = Math.round(Math.min(100, Math.max(0, percentileScore * 0.65 + consistencyScore * 0.35)));
+                let rankingScore = Math.min(100, Math.max(0, percentileScore * 0.65 + consistencyScore * 0.35));
                 if (config.observability === "Supporting") {
-                    score = Math.min(score, 85);
+                    rankingScore = Math.min(rankingScore, 85);
                 }
+                const score = Math.round(rankingScore);
                 const effectLabel = config.format === "binary"
                     ? `${Math.round(eventMean * 100)}% of outcomes vs ${Math.round(controlMean * 100)}% of ordinary windows`
                     : config.format === "percent"
@@ -1393,6 +1410,7 @@
                     label: config.label,
                     category: config.category,
                     score: score,
+                    rankingScore: rankingScore,
                     observability: config.observability,
                     confidenceLabel: this.driverConfidence(config.events.length, config.controlIndices.length, config.observability),
                     effectLabel: effectLabel,
@@ -1583,7 +1601,9 @@
                 if (finite.length === 0) {
                     return 0;
                 }
-                return finite.filter(entry => entry <= value).length * 100.0 / finite.length;
+                const belowCount = finite.filter(entry => entry < value).length;
+                const tiedCount = finite.filter(entry => entry === value).length;
+                return (belowCount + tiedCount * 0.5) * 100.0 / finite.length;
             },
             average: function (values) {
                 const finite = (values || []).filter(Number.isFinite);
