@@ -283,7 +283,17 @@ internal class CombatReplayIncomingConditionAnalysisDto
     public int TotalEffectiveCount { get; set; }
     public double TotalDuration { get; set; }
     public List<CombatReplayIncomingConditionDto> Conditions { get; set; } = [];
+    public List<CombatReplayConditionTimelineBucketDto> ConditionTimeline { get; set; } = [];
     public List<CombatReplayCrowdControlTimelineBucketDto> Timeline { get; set; } = [];
+}
+
+internal class CombatReplayConditionTimelineBucketDto
+{
+    public long Time { get; set; }
+    public int ApplyCount { get; set; }
+    public int ExtensionCount { get; set; }
+    public string TopConditionName { get; set; } = "";
+    public string TopSourceName { get; set; } = "";
 }
 
 internal class CombatReplayCrowdControlTimelineBucketDto
@@ -1665,6 +1675,41 @@ internal static class CombatReplayAnalysisBuilder
         public int EffectiveCount { get; set; }
         public int TotalDuration { get; set; }
         public HashSet<int> RelatedActorIds { get; } = [];
+    }
+    private sealed class ConditionTimelineBucketAccumulator(long time)
+    {
+        public long Time { get; } = time;
+        public int ApplyCount { get; private set; }
+        public int ExtensionCount { get; private set; }
+        public Dictionary<long, (Buff Condition, int Count)> Conditions { get; } = [];
+        public Dictionary<int, (SingleActor Actor, int Count)> Sources { get; } = [];
+
+        public void Add(Buff condition, SingleActor source, bool extension)
+        {
+            ApplyCount++;
+            if (extension)
+            {
+                ExtensionCount++;
+            }
+
+            if (Conditions.TryGetValue(condition.ID, out var conditionEntry))
+            {
+                Conditions[condition.ID] = (conditionEntry.Condition, conditionEntry.Count + 1);
+            }
+            else
+            {
+                Conditions[condition.ID] = (condition, 1);
+            }
+
+            if (Sources.TryGetValue(source.UniqueID, out var sourceEntry))
+            {
+                Sources[source.UniqueID] = (sourceEntry.Actor, sourceEntry.Count + 1);
+            }
+            else
+            {
+                Sources[source.UniqueID] = (source, 1);
+            }
+        }
     }
     private sealed class CrowdControlTimelineBucketAccumulator(long time)
     {
@@ -6861,6 +6906,7 @@ internal static class CombatReplayAnalysisBuilder
             .GroupBy(entry => entry.FinalAgent)
             .ToDictionary(group => group.Key, group => group.First().Target);
         var conditionAccumulators = new Dictionary<long, IncomingConditionAccumulator>();
+        var timelineBuckets = new Dictionary<long, ConditionTimelineBucketAccumulator>();
 
         foreach (SingleActor recipient in recipientPlayers)
         {
@@ -6901,7 +6947,15 @@ internal static class CombatReplayAnalysisBuilder
                     }
 
                     IncomingConditionAccumulator accumulator = GetOrCreateIncomingConditionAccumulator(conditionAccumulators, condition);
-                    AddIncomingConditionApply(accumulator, resolvedSource, recipient, applyEvent is BuffExtensionEvent);
+                    bool extension = applyEvent is BuffExtensionEvent;
+                    AddIncomingConditionApply(accumulator, resolvedSource, recipient, extension);
+                    long bucketTime = Math.Max(0, applyEvent.Time / BucketSize * BucketSize);
+                    if (!timelineBuckets.TryGetValue(bucketTime, out ConditionTimelineBucketAccumulator? timelineBucket))
+                    {
+                        timelineBucket = new ConditionTimelineBucketAccumulator(bucketTime);
+                        timelineBuckets[bucketTime] = timelineBucket;
+                    }
+                    timelineBucket.Add(condition, resolvedSource, extension);
                 }
             }
 
@@ -6941,7 +6995,31 @@ internal static class CombatReplayAnalysisBuilder
         result.TotalApplyCount = conditionDtos.Sum(condition => condition.ApplyCount);
         result.TotalExtensionCount = conditionDtos.Sum(condition => condition.ExtensionCount);
         result.TotalConditionDamage = conditionDtos.Sum(condition => condition.ConditionDamage);
+        result.ConditionTimeline = [.. timelineBuckets.Values
+            .OrderBy(bucket => bucket.Time)
+            .Select(BuildConditionTimelineBucketDto)];
         return result;
+    }
+
+    private static CombatReplayConditionTimelineBucketDto BuildConditionTimelineBucketDto(
+        ConditionTimelineBucketAccumulator accumulator)
+    {
+        (Buff Condition, int Count) topCondition = accumulator.Conditions.Values
+            .OrderByDescending(entry => entry.Count)
+            .ThenBy(entry => entry.Condition.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+        (SingleActor Actor, int Count) topSource = accumulator.Sources.Values
+            .OrderByDescending(entry => entry.Count)
+            .ThenBy(entry => entry.Actor.Character, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+        return new CombatReplayConditionTimelineBucketDto
+        {
+            Time = accumulator.Time,
+            ApplyCount = accumulator.ApplyCount,
+            ExtensionCount = accumulator.ExtensionCount,
+            TopConditionName = topCondition.Condition?.Name ?? "",
+            TopSourceName = topSource.Actor?.Character ?? "",
+        };
     }
 
     private static IncomingConditionAccumulator GetOrCreateIncomingConditionAccumulator(

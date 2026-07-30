@@ -697,11 +697,15 @@
                     <a class="nav-link" :class="{active: comparisonMode === 'strips'}" @click="comparisonMode = 'strips'">Strips</a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" :class="{active: comparisonMode === 'conditions'}" @click="comparisonMode = 'conditions'">Conditions</a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" :class="{active: comparisonMode === 'cc'}" @click="comparisonMode = 'cc'">Crowd Control</a>
                 </li>
             </ul>
             <div class="combat-replay-wvw-analysis-detail text-center mb-2">
                 <template v-if="comparisonMode === 'cc'">Three-second rolling damage uses the left scale; one-second hard-CC events use the right scale.</template>
+                <template v-else-if="comparisonMode === 'conditions'">Three-second rolling damage uses the left scale; one-second condition applications use the right scale.</template>
                 <template v-else>Three-second rolling damage uses the left scale; boon strips use the right scale.</template>
                 Event lanes show downs and kills credited to each side. Click the graph to jump the replay.
             </div>
@@ -715,16 +719,18 @@
                     <div class="combat-replay-wvw-analysis-value">{{formatCount(enemyDamageNow)}}</div>
                 </div>
                 <div class="combat-replay-wvw-analysis-metric">
-                    <div class="combat-replay-wvw-analysis-label">{{comparisonMode === "cc" ? "Squad Hard CC" : "Squad Strips"}}</div>
+                    <div class="combat-replay-wvw-analysis-label">{{secondaryMetricLabel(true)}}</div>
                     <div class="combat-replay-wvw-analysis-value">
                         <template v-if="comparisonMode === 'cc'">{{formatCrowdControlBucket(squadCrowdControlNow)}}</template>
+                        <template v-else-if="comparisonMode === 'conditions'">{{formatConditionBucket(squadConditionNow)}}</template>
                         <template v-else>{{formatStripCount(squadStripsNow, squadCorruptsNow)}}</template>
                     </div>
                 </div>
                 <div class="combat-replay-wvw-analysis-metric">
-                    <div class="combat-replay-wvw-analysis-label">{{comparisonMode === "cc" ? "Enemy Hard CC" : "Enemy Strips"}}</div>
+                    <div class="combat-replay-wvw-analysis-label">{{secondaryMetricLabel(false)}}</div>
                     <div class="combat-replay-wvw-analysis-value">
                         <template v-if="comparisonMode === 'cc'">{{formatCrowdControlBucket(enemyCrowdControlNow)}}</template>
+                        <template v-else-if="comparisonMode === 'conditions'">{{formatConditionBucket(enemyConditionNow)}}</template>
                         <template v-else>{{formatStripCount(enemyStripsNow, enemyCorruptsNow)}}</template>
                     </div>
                 </div>
@@ -770,6 +776,22 @@
             enemyCorruptsNow: function () {
                 return this.getSeriesValue(this.enemyAnalysis ? this.enemyAnalysis.corrupts : null, this.snapshotIndex);
             },
+            squadConditionTimeline: function () {
+                return this.crAnalysis && this.crAnalysis.squadConditions && this.crAnalysis.squadConditions.conditionTimeline
+                    ? this.crAnalysis.squadConditions.conditionTimeline
+                    : [];
+            },
+            enemyConditionTimeline: function () {
+                return this.crAnalysis && this.crAnalysis.incomingConditions && this.crAnalysis.incomingConditions.conditionTimeline
+                    ? this.crAnalysis.incomingConditions.conditionTimeline
+                    : [];
+            },
+            squadConditionNow: function () {
+                return this.getTimelineBucketAtTime(this.squadConditionTimeline, this.time);
+            },
+            enemyConditionNow: function () {
+                return this.getTimelineBucketAtTime(this.enemyConditionTimeline, this.time);
+            },
             squadCrowdControlTimeline: function () {
                 return this.crAnalysis && this.crAnalysis.squadCrowdControl && this.crAnalysis.squadCrowdControl.timeline
                     ? this.crAnalysis.squadCrowdControl.timeline
@@ -781,10 +803,10 @@
                     : [];
             },
             squadCrowdControlNow: function () {
-                return this.getCrowdControlBucketAtTime(this.squadCrowdControlTimeline, this.time);
+                return this.getTimelineBucketAtTime(this.squadCrowdControlTimeline, this.time);
             },
             enemyCrowdControlNow: function () {
-                return this.getCrowdControlBucketAtTime(this.enemyCrowdControlTimeline, this.time);
+                return this.getTimelineBucketAtTime(this.enemyCrowdControlTimeline, this.time);
             },
         },
         mounted: function () {
@@ -839,6 +861,11 @@
                     traces.push(
                         this.buildCrowdControlBarTrace(this.squadCrowdControlTimeline, true, squadColor),
                         this.buildCrowdControlBarTrace(this.enemyCrowdControlTimeline, false, enemyColor)
+                    );
+                } else if (this.comparisonMode === "conditions") {
+                    traces.push(
+                        this.buildConditionBarTrace(this.squadConditionTimeline, true, squadColor),
+                        this.buildConditionBarTrace(this.enemyConditionTimeline, false, enemyColor)
                     );
                 } else {
                     traces.push(
@@ -921,7 +948,7 @@
                         zeroline: false,
                     },
                     yaxis2: {
-                        title: this.comparisonMode === "cc" ? "Hard CC Events (1s)" : "Boon Strips (last 3s)",
+                        title: this.secondaryAxisTitle(),
                         color: textColor,
                         overlaying: "y",
                         side: "right",
@@ -965,13 +992,81 @@
                     bindChartClick();
                 }
             },
-            getCrowdControlBucketAtTime: function (timeline, time) {
+            getTimelineBucketAtTime: function (timeline, time) {
                 const bucketTime = Math.max(0, Math.floor(Number(time || 0) / 1000.0) * 1000);
                 return (timeline || []).find(bucket => Number(bucket && bucket.time || 0) === bucketTime) || null;
+            },
+            secondaryMetricLabel: function (isSquad) {
+                const sideLabel = isSquad ? "Squad" : "Enemy";
+                if (this.comparisonMode === "cc") {
+                    return sideLabel + " Hard CC";
+                }
+                if (this.comparisonMode === "conditions") {
+                    return sideLabel + " Conditions";
+                }
+                return sideLabel + " Strips";
+            },
+            secondaryAxisTitle: function () {
+                if (this.comparisonMode === "cc") {
+                    return "Hard CC Events (1s)";
+                }
+                if (this.comparisonMode === "conditions") {
+                    return "Condition Applications (1s)";
+                }
+                return "Boon Strips (last 3s)";
+            },
+            formatConditionBucket: function (bucket) {
+                return this.formatCount(bucket && bucket.applyCount || 0) +
+                    " (" + this.formatCount(bucket && bucket.extensionCount || 0) + " extensions)";
             },
             formatCrowdControlBucket: function (bucket) {
                 return this.formatCount(bucket && bucket.eventCount || 0) +
                     " (" + this.formatCount(bucket && bucket.effectiveCount || 0) + " effective)";
+            },
+            buildConditionBarTrace: function (timeline, isSquadEvent, color) {
+                const sideLabel = isSquadEvent ? "Squad" : "Enemy";
+                const bucketsBySecond = new Map();
+                (timeline || []).forEach(bucket => {
+                    const second = Math.max(0, Math.floor(Number(bucket && bucket.time || 0) / 1000.0));
+                    bucketsBySecond.set(second, bucket);
+                });
+                const fightEnd = this.crAnalysis && this.crAnalysis.times && this.crAnalysis.times.length > 0
+                    ? Number(this.crAnalysis.times[this.crAnalysis.times.length - 1] || 0)
+                    : 0;
+                const bucketCount = Math.max(1, Math.ceil(fightEnd / 1000.0));
+                const x = [];
+                const y = [];
+                const customdata = [];
+                for (let second = 0; second < bucketCount; second++) {
+                    const bucket = bucketsBySecond.get(second) || null;
+                    const applyCount = Number(bucket && bucket.applyCount || 0);
+                    x.push(second + 0.5);
+                    y.push(applyCount > 0 ? applyCount : null);
+                    customdata.push([
+                        applyCount,
+                        Number(bucket && bucket.extensionCount || 0),
+                        bucket && bucket.topConditionName ? bucket.topConditionName : "None",
+                        bucket && bucket.topSourceName ? bucket.topSourceName : "None",
+                        second.toFixed(0) + ".0\u2013" + (second + 1).toFixed(0) + ".0s",
+                    ]);
+                }
+                return {
+                    type: "bar",
+                    name: sideLabel + " Conditions Applied",
+                    x: x,
+                    y: y,
+                    yaxis: "y2",
+                    customdata: customdata,
+                    marker: { color: color },
+                    opacity: 0.38,
+                    hovertemplate:
+                        "<b>" + sideLabel + " conditions applied</b><br>" +
+                        "%{customdata[4]}<br>" +
+                        "%{customdata[0]} applications \u00b7 %{customdata[1]} extensions<br>" +
+                        "Top condition: %{customdata[2]}<br>" +
+                        "Top source: %{customdata[3]}" +
+                        "<extra></extra>",
+                };
             },
             buildCrowdControlBarTrace: function (timeline, isSquadEvent, color) {
                 const sideLabel = isSquadEvent ? "Squad" : "Enemy";
@@ -1493,7 +1588,7 @@
                         <ul class="combat-replay-overview-help-list">
                             <li><strong>Our Squad</strong> shows outgoing pressure from your squad onto hostile players</li>
                             <li><strong>Enemy Team</strong> flips the same view to hostile players pressuring your squad</li>
-                            <li><strong>Comparison</strong> overlays squad and enemy damage with either boon strips or hard crowd control across the full fight</li>
+                            <li><strong>Comparison</strong> overlays squad and enemy damage with boon strips, condition applications, or hard crowd control across the full fight</li>
                             <li>The selected-actor card follows the currently chosen side</li>
                         </ul>
                     </div>
@@ -1501,9 +1596,11 @@
                         <div class="combat-replay-overview-help-heading">Comparison graph</div>
                         <ul class="combat-replay-overview-help-list">
                             <li><strong>Strips</strong> mode compares three-second rolling damage with three-second rolling boon strips</li>
+                            <li><strong>Conditions</strong> mode compares the same damage with condition applications grouped into one-second buckets</li>
                             <li><strong>Crowd Control</strong> mode compares the same damage with hard-CC event counts grouped into one-second buckets</li>
                             <li>Damage lines use the left axis and the selected comparison bars use the right axis so both scales remain readable</li>
                             <li>Teal represents the squad and red represents the enemy team</li>
+                            <li>Hover a Conditions bar to see applications, extensions, the top condition, and the top source</li>
                             <li>Hover a CC bar to see its event count, effective count, recorded duration, top skill, and top source</li>
                             <li>The two event lanes use hollow circles for downs and solid diamonds for kills credited to each side</li>
                             <li>Hover an event marker to see its timestamp and victim; legend entries can hide individual series</li>
