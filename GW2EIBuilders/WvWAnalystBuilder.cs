@@ -2058,6 +2058,10 @@ public sealed class WvWAnalystBuilder
             BuildOutcomeEvent("kill", evt, engagementIds)));
         events.AddRange(analysis.Events.Recovered.Events.Select(evt =>
             BuildOutcomeEvent("recovery", evt, engagementIds)));
+        events = events
+            .GroupBy(evt => evt.EventId, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToList();
         events.Sort((left, right) =>
         {
             int timeComparison = left.TimeMs.CompareTo(right.TimeMs);
@@ -2090,7 +2094,7 @@ public sealed class WvWAnalystBuilder
 
         return new WvWAnalystOutcomeAnalysisDto
         {
-            MethodVersion = "1.0.0",
+            MethodVersion = "1.0.1",
             SampleIntervalMs = ParserHelper.CombatReplayPollingRate,
             PressureWindowMs = analysis.Lookback,
             EngagementMergeGapMs = 3000,
