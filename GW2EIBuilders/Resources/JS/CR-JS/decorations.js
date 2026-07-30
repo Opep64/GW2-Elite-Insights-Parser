@@ -121,11 +121,11 @@ class ArenaMetadata extends GenericAttachedMetadata {
         super(params);
         this.imageUrl = params.image;
         this.image = new Image();
-        this.image.src = _buildFallBackURL(this.imageUrl);
         this.image.onload = () => {
             animator.needBGUpdate = true;
             animateCanvas(noUpdateTime);
         };
+        this.image.src = _buildFallBackURL(this.imageUrl);
         this.width = InchToPixel * params.width;
         this.height = InchToPixel * params.height;
     }
@@ -136,8 +136,8 @@ class GenericIconMetadata extends GenericAttachedMetadata{
         super(params);
         this.imageUrl = params.image;
         this.image = new Image();
-        this.image.src = _buildFallBackURL(this.imageUrl);
         this.image.onload = () => animateCanvas(noUpdateTime);
+        this.image.src = _buildFallBackURL(this.imageUrl);
         this.pixelSize = params.pixelSize;
         this.worldSize = InchToPixel * params.worldSize;
     }
@@ -173,8 +173,8 @@ class MovingPlatformMetadata extends BackgroundMetadata{
         super(params);
         this.imageUrl = params.image;
         this.image = new Image();
-        this.image.src = _buildFallBackURL(this.imageUrl);
         this.image.onload = () => animateCanvas(noUpdateTime);
+        this.image.src = _buildFallBackURL(this.imageUrl);
         this.width = InchToPixel * params.width;
         this.height = InchToPixel * params.height;
     }
@@ -742,7 +742,9 @@ class RegularPolygonMechanicDrawable extends FormMechanicDrawable {
 class CustomPolygonMechanicDrawable extends FormMechanicDrawable {
     constructor(params) {
         super(params);
-        this.points = params.points;
+        this.points = Array.isArray(params.points)
+            ? params.points.filter(point => Array.isArray(point) && point.length >= 2 && Number.isFinite(point[0]) && Number.isFinite(point[1]))
+            : [];
         for (let i = 0; i < this.points.length; i++) {
             this.points[i][0] *= InchToPixel;
             this.points[i][1] *= InchToPixel;
@@ -757,7 +759,7 @@ class CustomPolygonMechanicDrawable extends FormMechanicDrawable {
     }
 
     draw() {
-        if (!this.canDraw()) {
+        if (this.points.length < 3 || !this.canDraw()) {
             return;
         }
         const pos = this.getPosition();

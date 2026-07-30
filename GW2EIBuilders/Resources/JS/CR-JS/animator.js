@@ -40,6 +40,7 @@ function ToDegrees(radians) {
 }
 
 const resolutionMultiplier = 2.0;
+const minimumCombatReplayScale = 0.25;
 
 const maxOverheadAnimationFrame = 50;
 let overheadAnimationFrame = maxOverheadAnimationFrame / 2;
@@ -832,8 +833,8 @@ class Animator {
         const canvas = this.mainCanvas;
         const ctx = this.mainContext;
         const bgCtx = this.bgContext;
-        this.lastX = canvas.width / 2;
-        this.lastY = canvas.height / 2;
+        this.lastX = canvas.width / (2 * resolutionMultiplier);
+        this.lastY = canvas.height / (2 * resolutionMultiplier);
         this.mouseDown = null;
         this.dragged = false;
         if (this.selectedExtraDecorations && this.selectedExtraDecorations.coneControl) {
@@ -1225,22 +1226,36 @@ class Animator {
         this.dragged = false;
 
         let defaultViewpoint = this.defaultViewpoints.filter(x => x.eiid === eiid)[0];
-        this.lastX = canvas.width / 2;
-        this.lastY = canvas.height / 2;
-        if (defaultViewpoint) {
-            var x = -canvas.width * defaultViewpoint.tx / 100;
-            var y = -canvas.height * defaultViewpoint.ty / 100;
-            
-            ctx.setTransform(1, 0, 0, 1, x, y);
-            bgCtx.setTransform(1, 0, 0, 1, x, y);
-        } else {
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            bgCtx.setTransform(1, 0, 0, 1, 0, 0);
-        }
+        this.lastX = canvas.width / (2 * resolutionMultiplier);
+        this.lastY = canvas.height / (2 * resolutionMultiplier);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        bgCtx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.scale(resolutionMultiplier, resolutionMultiplier);
         bgCtx.scale(resolutionMultiplier, resolutionMultiplier);
         if (defaultViewpoint) {
-            this._setScaleOnPoint(defaultViewpoint.s, 0, 0);
+            const maximumScale = 50 / (InchToPixel * 10);
+            const defaultScale = Math.min(maximumScale, Math.max(minimumCombatReplayScale, defaultViewpoint.s));
+            const x = -canvas.width / resolutionMultiplier * defaultViewpoint.tx / 100;
+            const y = -canvas.height / resolutionMultiplier * defaultViewpoint.ty / 100;
+            ctx.scale(defaultScale, defaultScale);
+            bgCtx.scale(defaultScale, defaultScale);
+            ctx.translate(x, y);
+            bgCtx.translate(x, y);
+        } else {
+            const currentTime = this.reactiveDataStatus.time;
+            const arena = this.backgroundImages._allRenderables.find(x => x.start <= currentTime && x.end >= currentTime);
+            const position = arena ? arena.getPosition() : null;
+            if (arena && position && Number.isFinite(arena.width) && arena.width > 0 && Number.isFinite(arena.height) && arena.height > 0) {
+                const canvasWidth = canvas.width / resolutionMultiplier;
+                const canvasHeight = canvas.height / resolutionMultiplier;
+                const fitScale = Math.min(canvasWidth / arena.width, canvasHeight / arena.height);
+                const centeredX = (canvasWidth / fitScale - arena.width) * 0.5 - position.x;
+                const centeredY = (canvasHeight / fitScale - arena.height) * 0.5 - position.y;
+                ctx.scale(fitScale, fitScale);
+                bgCtx.scale(fitScale, fitScale);
+                ctx.translate(centeredX, centeredY);
+                bgCtx.translate(centeredX, centeredY);
+            }
         }
         this.needBGUpdate = true;
         this._bumpViewRevision();
@@ -1252,14 +1267,19 @@ class Animator {
         const ctx = this.mainContext;
         const bgCtx = this.bgContext;
 
+        if (!Number.isFinite(factor) || factor <= 0 || !Number.isFinite(ptX) || !Number.isFinite(ptY)) {
+            return;
+        }
+        const maximumScale = 50 / (InchToPixel * 10);
+        const targetScale = Math.min(maximumScale, Math.max(minimumCombatReplayScale, this.scale * factor));
+        factor = targetScale / this.scale;
+        if (!Number.isFinite(factor) || Math.abs(factor - 1) < 0.000001) {
+            return;
+        }
         const pt = ctx.transformedPoint(ptX, ptY);
         ctx.translate(pt.x, pt.y);
         bgCtx.translate(pt.x, pt.y);
         ctx.scale(factor, factor);
-        if ((50 / (InchToPixel * this.scale) < 10)) {
-            ctx.scale(1.0 / factor, 1.0 / factor);
-            factor = 1.0;
-        }
         ctx.translate(-pt.x, -pt.y);
         bgCtx.scale(factor, factor);
         bgCtx.translate(-pt.x, -pt.y);
@@ -1502,15 +1522,30 @@ class Animator {
 
         var zoom = function (evt) {
             evt.preventDefault();
-            const delta = evt.wheelDelta ? evt.wheelDelta / 40 : evt.detail ? -evt.detail : 0;
-            if (delta) {
+            const pointX = Number.isFinite(evt.offsetX) ? evt.offsetX : _this.lastX;
+            const pointY = Number.isFinite(evt.offsetY) ? evt.offsetY : _this.lastY;
+            let delta = 0;
+            if (Number.isFinite(evt.deltaY)) {
+                let deltaPixels = evt.deltaY;
+                if (evt.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+                    deltaPixels *= 16;
+                } else if (evt.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+                    deltaPixels *= canvas.clientHeight;
+                }
+                delta = -deltaPixels / 100;
+            } else if (Number.isFinite(evt.wheelDelta)) {
+                delta = evt.wheelDelta / 120;
+            }
+            delta = Math.max(-3, Math.min(3, delta));
+            if (Math.abs(delta) >= 0.001) {
+                _this.lastX = pointX;
+                _this.lastY = pointY;
                 const factor = Math.pow(1.1, delta);
-                _this._setScaleOnPoint(factor, _this.lastX, _this.lastY);
+                _this._setScaleOnPoint(factor, pointX, pointY);
             }
         };
 
-        canvas.addEventListener('DOMMouseScroll', zoom, false);
-        canvas.addEventListener('mousewheel', zoom, false);
+        canvas.addEventListener('wheel', zoom, { passive: false });
     }
 
     _initTouchEvents() {

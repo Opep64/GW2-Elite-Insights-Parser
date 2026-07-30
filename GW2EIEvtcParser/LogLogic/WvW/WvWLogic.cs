@@ -148,7 +148,15 @@ internal class WvWLogic : LogLogic
         }
         var boundingCRMap = new CombatReplayMap((800, 800), (0, 0, 0, 0));
         boundingCRMap.ComputeBoundingBox(log);
-        LogLogicUtils.AddDefaultViewpointOnParentFromChild(boundingCRMap, crMap, LogID);
+        bool boundingBoxIsInsideMap =
+            boundingCRMap.TopX >= crMap.TopX &&
+            boundingCRMap.TopY >= crMap.TopY &&
+            boundingCRMap.BottomX <= crMap.BottomX &&
+            boundingCRMap.BottomY <= crMap.BottomY;
+        if (boundingBoxIsInsideMap)
+        {
+            LogLogicUtils.AddDefaultViewpointOnParentFromChild(boundingCRMap, crMap, LogID);
+        }
         return crMap;
     }
     internal override string GetLogicName(CombatData combatData, AgentData agentData, GW2APIController apiController)

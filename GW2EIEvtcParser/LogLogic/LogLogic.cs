@@ -544,6 +544,10 @@ public abstract class LogLogic
                     else
                     {
                         relativePositions = gadgetCapture.GetRelativePoints(position.Value);
+                        if (relativePositions.Count < 3)
+                        {
+                            continue;
+                        }
                         barSize = (uint)(relativePositions.Sum(x => x.Length()) / (1.5 * relativePositions.Count));
                     }
                     // Initial state to first progress
@@ -608,7 +612,10 @@ public abstract class LogLogic
                     else
                     {
                         var relativePositions = gadgetCapture.GetRelativePoints(position.Value);
-                        environmentDecorations.Add(new CustomPolygonDecoration(relativePositions, lifespan, color, 0.3, positionConnector).UsingFilled(false));
+                        if (relativePositions.Count >= 3)
+                        {
+                            environmentDecorations.Add(new CustomPolygonDecoration(relativePositions, lifespan, color, 0.3, positionConnector).UsingFilled(false));
+                        }
                     }
                 }
             }

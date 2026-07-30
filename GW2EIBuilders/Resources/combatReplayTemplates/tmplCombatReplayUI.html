@@ -1,7 +1,7 @@
 <template>
     <div v-if="analysisview" class="combat-replay-analysis-layout d-flex mt-2 justify-content-center align-items-start">
         <div class="combat-replay-analysis-replay-column d-flex flex-column align-items-center">
-            <combat-replay-animation-control-component :key="'analysis-animation-control'" :light="light" :range="animationStatus.range" :animated="animationStatus.animated">
+            <combat-replay-animation-control-component :key="'analysis-animation-control'" :time="animationStatus.time / 1000.0" :light="light" :range="animationStatus.range" :animated="animationStatus.animated">
             </combat-replay-animation-control-component>
             <combat-replay-extra-decorations-component :light="light"></combat-replay-extra-decorations-component>
         </div>
