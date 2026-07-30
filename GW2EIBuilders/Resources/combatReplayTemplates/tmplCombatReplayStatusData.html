@@ -686,6 +686,265 @@
         },
     });
 
+    Vue.component("combat-replay-wvw-burst-comparison-chart", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time"],
+        template: `
+        <div>
+            <div class="combat-replay-wvw-analysis-card-title">Team Pressure Comparison</div>
+            <div class="combat-replay-wvw-analysis-detail text-center mb-2">
+                Three-second rolling damage uses the left scale; boon strips use the right scale. Click the graph to jump the replay.
+            </div>
+            <div class="combat-replay-wvw-analysis-grid mb-2" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Squad Damage</div>
+                    <div class="combat-replay-wvw-analysis-value">{{formatCount(squadDamageNow)}}</div>
+                </div>
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Enemy Damage</div>
+                    <div class="combat-replay-wvw-analysis-value">{{formatCount(enemyDamageNow)}}</div>
+                </div>
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Squad Strips</div>
+                    <div class="combat-replay-wvw-analysis-value">{{formatStripCount(squadStripsNow, squadCorruptsNow)}}</div>
+                </div>
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Enemy Strips</div>
+                    <div class="combat-replay-wvw-analysis-value">{{formatStripCount(enemyStripsNow, enemyCorruptsNow)}}</div>
+                </div>
+            </div>
+            <div v-if="chartUnavailable" class="combat-replay-wvw-analysis-helper">
+                The comparison graph could not be initialized.
+            </div>
+            <div v-else ref="chart" style="width: 100%; height: 460px;"></div>
+        </div>
+        `,
+        data: function () {
+            return {
+                chartUnavailable: false,
+                cursorUpdateTimer: null,
+            };
+        },
+        computed: {
+            squadAnalysis: function () {
+                return this.getTeamAnalysis("squad");
+            },
+            enemyAnalysis: function () {
+                return this.getTeamAnalysis("enemy");
+            },
+            squadDamageNow: function () {
+                return this.getSeriesValue(this.squadAnalysis ? this.squadAnalysis.damage : null, this.snapshotIndex);
+            },
+            enemyDamageNow: function () {
+                return this.getSeriesValue(this.enemyAnalysis ? this.enemyAnalysis.damage : null, this.snapshotIndex);
+            },
+            squadStripsNow: function () {
+                return this.getSeriesValue(this.squadAnalysis ? this.squadAnalysis.strips : null, this.snapshotIndex);
+            },
+            enemyStripsNow: function () {
+                return this.getSeriesValue(this.enemyAnalysis ? this.enemyAnalysis.strips : null, this.snapshotIndex);
+            },
+            squadCorruptsNow: function () {
+                return this.getSeriesValue(this.squadAnalysis ? this.squadAnalysis.corrupts : null, this.snapshotIndex);
+            },
+            enemyCorruptsNow: function () {
+                return this.getSeriesValue(this.enemyAnalysis ? this.enemyAnalysis.corrupts : null, this.snapshotIndex);
+            },
+        },
+        mounted: function () {
+            this.$nextTick(this.renderChart);
+            if (typeof window !== "undefined") {
+                window.addEventListener("resize", this.handleResize);
+            }
+        },
+        beforeDestroy: function () {
+            if (typeof window !== "undefined") {
+                window.removeEventListener("resize", this.handleResize);
+            }
+            if (this.cursorUpdateTimer != null) {
+                clearTimeout(this.cursorUpdateTimer);
+                this.cursorUpdateTimer = null;
+            }
+            if (typeof Plotly !== "undefined" && this.$refs && this.$refs.chart) {
+                Plotly.purge(this.$refs.chart);
+            }
+        },
+        watch: {
+            time: function () {
+                this.scheduleReplayCursorUpdate();
+            },
+        },
+        methods: {
+            renderChart: function () {
+                if (typeof Plotly === "undefined" || !this.$refs || !this.$refs.chart || !this.crAnalysis || !this.squadAnalysis || !this.enemyAnalysis) {
+                    this.chartUnavailable = true;
+                    return;
+                }
+
+                const chart = this.$refs.chart;
+                const times = (this.crAnalysis.times || []).map(time => Number(time || 0) / 1000.0);
+                const computedStyle = typeof window !== "undefined" && window.getComputedStyle
+                    ? window.getComputedStyle(chart)
+                    : null;
+                const textColor = computedStyle && computedStyle.color ? computedStyle.color : "#c9d1d9";
+                const squadColor = "#56d6c9";
+                const enemyColor = "#ff7272";
+                const traces = [
+                    {
+                        type: "bar",
+                        name: "Squad Strips",
+                        x: times,
+                        y: this.squadAnalysis.strips || [],
+                        yaxis: "y2",
+                        marker: { color: squadColor },
+                        opacity: 0.34,
+                        hovertemplate: "Squad strips<br>%{x:.1f}s: %{y:,.0f}<extra></extra>",
+                    },
+                    {
+                        type: "bar",
+                        name: "Enemy Strips",
+                        x: times,
+                        y: this.enemyAnalysis.strips || [],
+                        yaxis: "y2",
+                        marker: { color: enemyColor },
+                        opacity: 0.34,
+                        hovertemplate: "Enemy strips<br>%{x:.1f}s: %{y:,.0f}<extra></extra>",
+                    },
+                    {
+                        type: "scatter",
+                        mode: "lines",
+                        name: "Squad Damage",
+                        x: times,
+                        y: this.squadAnalysis.damage || [],
+                        line: { color: squadColor, width: 2.5 },
+                        hovertemplate: "Squad damage<br>%{x:.1f}s: %{y:,.0f}<extra></extra>",
+                    },
+                    {
+                        type: "scatter",
+                        mode: "lines",
+                        name: "Enemy Damage",
+                        x: times,
+                        y: this.enemyAnalysis.damage || [],
+                        line: { color: enemyColor, width: 2.5 },
+                        hovertemplate: "Enemy damage<br>%{x:.1f}s: %{y:,.0f}<extra></extra>",
+                    },
+                ];
+                const layout = {
+                    height: 460,
+                    margin: { t: 42, r: 72, b: 50, l: 78 },
+                    paper_bgcolor: "rgba(0,0,0,0)",
+                    plot_bgcolor: "rgba(0,0,0,0)",
+                    font: { color: textColor },
+                    hovermode: "x unified",
+                    barmode: "group",
+                    bargap: 0.08,
+                    legend: {
+                        orientation: "h",
+                        x: 0.5,
+                        xanchor: "center",
+                        y: 1.12,
+                    },
+                    xaxis: {
+                        title: "Fight Time",
+                        ticksuffix: "s",
+                        color: textColor,
+                        gridcolor: "rgba(160, 170, 180, 0.16)",
+                        zeroline: false,
+                    },
+                    yaxis: {
+                        title: "Damage (last 3s)",
+                        color: textColor,
+                        gridcolor: "rgba(160, 170, 180, 0.16)",
+                        rangemode: "tozero",
+                        tickformat: ",d",
+                        zeroline: false,
+                    },
+                    yaxis2: {
+                        title: "Boon Strips (last 3s)",
+                        color: textColor,
+                        overlaying: "y",
+                        side: "right",
+                        rangemode: "tozero",
+                        tickformat: ",d",
+                        showgrid: false,
+                        zeroline: false,
+                    },
+                    shapes: [this.replayCursorShape()],
+                };
+
+                const renderResult = Plotly.react(chart, traces, layout, {
+                    displayModeBar: false,
+                    responsive: true,
+                });
+                const bindChartClick = () => {
+                    if (!this.$refs || !this.$refs.chart) {
+                        return;
+                    }
+                    if (typeof chart.removeAllListeners === "function") {
+                        chart.removeAllListeners("plotly_click");
+                    }
+                    if (typeof chart.on === "function") {
+                        chart.on("plotly_click", this.handleChartClick);
+                    }
+                };
+                if (renderResult && typeof renderResult.then === "function") {
+                    renderResult.then(bindChartClick);
+                } else {
+                    bindChartClick();
+                }
+            },
+            replayCursorShape: function () {
+                const replaySeconds = Number(this.time || 0) / 1000.0;
+                return {
+                    type: "line",
+                    xref: "x",
+                    yref: "paper",
+                    x0: replaySeconds,
+                    x1: replaySeconds,
+                    y0: 0,
+                    y1: 1,
+                    line: {
+                        color: "#ffd166",
+                        width: 2,
+                        dash: "dot",
+                    },
+                };
+            },
+            updateReplayCursor: function () {
+                if (typeof Plotly === "undefined" || !this.$refs || !this.$refs.chart) {
+                    return;
+                }
+                Plotly.relayout(this.$refs.chart, {
+                    shapes: [this.replayCursorShape()],
+                });
+            },
+            scheduleReplayCursorUpdate: function () {
+                if (this.cursorUpdateTimer != null) {
+                    return;
+                }
+                this.cursorUpdateTimer = setTimeout(() => {
+                    this.cursorUpdateTimer = null;
+                    this.updateReplayCursor();
+                }, 100);
+            },
+            handleChartClick: function (eventData) {
+                if (!eventData || !eventData.points || eventData.points.length === 0) {
+                    return;
+                }
+                const seconds = Number(eventData.points[0].x);
+                if (!Number.isFinite(seconds)) {
+                    return;
+                }
+                this.jumpToBurst(Math.round(seconds * 1000.0));
+            },
+            handleResize: function () {
+                if (typeof Plotly !== "undefined" && Plotly.Plots && this.$refs && this.$refs.chart) {
+                    Plotly.Plots.resize(this.$refs.chart);
+                }
+            },
+        },
+    });
+
     Vue.component("combat-replay-wvw-analysis-squad-card", {
         mixins: [combatReplayWvWAnalysisMixin],
         props: ["time", "teamkey"],
@@ -698,20 +957,25 @@
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: teamkey === 'enemy'}" @click="$emit('update:teamkey', 'enemy')">Enemy Team</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: teamkey === 'comparison'}" @click="$emit('update:teamkey', 'comparison')">Comparison</a>
+                </li>
             </ul>
-            <div v-if="topBursts.length > 0" class="combat-replay-wvw-analysis-bursts">
-                <div class="combat-replay-wvw-analysis-card-title">Top 5 {{teamLabel}} Bursts</div>
-                <button v-for="(burst, index) in topBursts" :key="teamkey + '-burst-' + burst.time + '-' + index" type="button" class="combat-replay-wvw-analysis-burst-entry" @click="jumpToBurst(burst.time)">
-                    <span class="combat-replay-wvw-analysis-burst-rank">{{index + 1}}.</span>
-                    <span class="combat-replay-wvw-analysis-burst-time">{{formatTime(burst.time)}}</span>
-                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatCount(burst.damage)}} damage</span>
-                    <span class="combat-replay-wvw-analysis-burst-detail">{{burst.downs}} ({{burst.downsTotal}}) downs</span>
-                    <span class="combat-replay-wvw-analysis-burst-detail">{{burst.kills}} ({{burst.killsTotal}}) kills</span>
-                    <span class="combat-replay-wvw-analysis-burst-detail">{{formatStripCount(burst.strips, burst.corrupts)}} strips</span>
-                </button>
-            </div>
-            <div class="combat-replay-wvw-analysis-card-title">{{teamLabel}} Now (last 3s)</div>
-            <div class="combat-replay-wvw-analysis-grid">
+            <combat-replay-wvw-burst-comparison-chart v-if="teamkey === 'comparison'" :time="time"></combat-replay-wvw-burst-comparison-chart>
+            <template v-else>
+                <div v-if="topBursts.length > 0" class="combat-replay-wvw-analysis-bursts">
+                    <div class="combat-replay-wvw-analysis-card-title">Top 5 {{teamLabel}} Bursts</div>
+                    <button v-for="(burst, index) in topBursts" :key="teamkey + '-burst-' + burst.time + '-' + index" type="button" class="combat-replay-wvw-analysis-burst-entry" @click="jumpToBurst(burst.time)">
+                        <span class="combat-replay-wvw-analysis-burst-rank">{{index + 1}}.</span>
+                        <span class="combat-replay-wvw-analysis-burst-time">{{formatTime(burst.time)}}</span>
+                        <span class="combat-replay-wvw-analysis-burst-detail">{{formatCount(burst.damage)}} damage</span>
+                        <span class="combat-replay-wvw-analysis-burst-detail">{{burst.downs}} ({{burst.downsTotal}}) downs</span>
+                        <span class="combat-replay-wvw-analysis-burst-detail">{{burst.kills}} ({{burst.killsTotal}}) kills</span>
+                        <span class="combat-replay-wvw-analysis-burst-detail">{{formatStripCount(burst.strips, burst.corrupts)}} strips</span>
+                    </button>
+                </div>
+                <div class="combat-replay-wvw-analysis-card-title">{{teamLabel}} Now (last 3s)</div>
+                <div class="combat-replay-wvw-analysis-grid">
                 <div class="combat-replay-wvw-analysis-metric">
                     <div class="combat-replay-wvw-analysis-label">Burst strength</div>
                     <div class="combat-replay-wvw-analysis-value">
@@ -722,7 +986,10 @@
                     <div v-if="topDamageEntries.length > 0" class="combat-replay-wvw-analysis-top-actors">
                         <button v-for="(entry, index) in topDamageEntries" :key="teamkey + '-top-damage-' + entry.uniqueId + '-' + index" type="button" class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button" @click="selectReplayActor(entry.uniqueId)">
                             <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
-                            <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                            <span class="combat-replay-wvw-analysis-top-actor-name">
+                                <img v-if="entry.icon" :src="entry.icon" :alt="entry.profession || entry.name" style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem;">
+                                {{entry.name}}
+                            </span>
                             <span class="combat-replay-wvw-analysis-top-actor-value">{{formatCount(entry.value)}} damage</span>
                         </button>
                     </div>
@@ -739,7 +1006,10 @@
                     <div v-if="topStripEntries.length > 0" class="combat-replay-wvw-analysis-top-actors">
                         <button v-for="(entry, index) in topStripEntries" :key="teamkey + '-top-strip-' + entry.uniqueId + '-' + index" type="button" class="combat-replay-wvw-analysis-top-actor-entry combat-replay-wvw-analysis-top-actor-button" @click="selectReplayActor(entry.uniqueId)">
                             <span class="combat-replay-wvw-analysis-top-actor-rank">{{index + 1}}.</span>
-                            <span class="combat-replay-wvw-analysis-top-actor-name">{{entry.name}}</span>
+                            <span class="combat-replay-wvw-analysis-top-actor-name">
+                                <img v-if="entry.icon" :src="entry.icon" :alt="entry.profession || entry.name" style="width: 1rem; height: 1rem; object-fit: contain; margin-right: 0.35rem;">
+                                {{entry.name}}
+                            </span>
                             <span class="combat-replay-wvw-analysis-top-actor-value">{{formatStripCount(entry.value, entry.corrupts)}} strips</span>
                         </button>
                     </div>
@@ -764,7 +1034,8 @@
                     </div>
                     <div class="combat-replay-wvw-analysis-detail">Counts players hit in the current 3s window</div>
                 </div>
-            </div>
+                </div>
+            </template>
         </div>
         `,
         computed: {
@@ -815,6 +1086,8 @@
                     return {
                         uniqueId: uniqueId,
                         name: actor.name,
+                        icon: actor.icon,
+                        profession: actor.profession,
                         value: values[index] || 0,
                     };
                 }).filter(entry => entry != null);
@@ -840,6 +1113,8 @@
                     return {
                         uniqueId: uniqueId,
                         name: actor.name,
+                        icon: actor.icon,
+                        profession: actor.profession,
                         value: values[index] || 0,
                         corrupts: corruptValues[index] || 0,
                     };
@@ -1044,7 +1319,7 @@
                 <button type="button" class="combat-replay-overview-help-button" title="Burst tab help" aria-label="Show burst tab help" @click="showBurstHelp = true">?</button>
             </div>
             <combat-replay-wvw-analysis-squad-card :time="time" :teamkey="teamKey" @update:teamkey="teamKey = $event"></combat-replay-wvw-analysis-squad-card>
-            <combat-replay-wvw-analysis-selected-card :time="time" :selectedactorid="selectedactorid" :teamkey="teamKey"></combat-replay-wvw-analysis-selected-card>
+            <combat-replay-wvw-analysis-selected-card v-if="teamKey !== 'comparison'" :time="time" :selectedactorid="selectedactorid" :teamkey="teamKey"></combat-replay-wvw-analysis-selected-card>
             <div v-if="showBurstHelp" class="wvw-summary-modal-backdrop" @click.self="showBurstHelp = false">
                 <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay burst tab help">
                     <button type="button" class="wvw-summary-modal-close" aria-label="Close burst tab help" @click="showBurstHelp = false">&times;</button>
@@ -1055,9 +1330,19 @@
                     <div class="combat-replay-overview-help-section">
                         <div class="combat-replay-overview-help-heading">Team toggle</div>
                         <ul class="combat-replay-overview-help-list">
-                                <li><strong>Our Squad</strong> shows outgoing pressure from your squad onto hostile players</li>
+                            <li><strong>Our Squad</strong> shows outgoing pressure from your squad onto hostile players</li>
                             <li><strong>Enemy Team</strong> flips the same view to hostile players pressuring your squad</li>
+                            <li><strong>Comparison</strong> overlays squad and enemy damage with squad and enemy boon strips across the full fight</li>
                             <li>The selected-actor card follows the currently chosen side</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Comparison graph</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li>Damage lines use the left axis and boon-strip bars use the right axis so both scales remain readable</li>
+                            <li>Teal represents the squad and red represents the enemy team</li>
+                            <li>The dotted yellow line tracks the current combat replay time</li>
+                            <li>Click anywhere on a plotted series to jump the replay to that timestamp</li>
                         </ul>
                     </div>
                     <div class="combat-replay-overview-help-section">
