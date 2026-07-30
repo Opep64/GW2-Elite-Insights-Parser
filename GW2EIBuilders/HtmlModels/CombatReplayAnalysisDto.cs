@@ -25,6 +25,9 @@ internal class CombatReplayAnalysisDto
     public CombatReplayEventAnalysisDto Events { get; set; } = new();
     public CombatReplayDefenseAnalysisDto Defense { get; set; } = new();
     public CombatReplayIncomingConditionAnalysisDto IncomingConditions { get; set; } = new();
+    public CombatReplayIncomingConditionAnalysisDto SquadConditions { get; set; } = new();
+    public CombatReplayIncomingConditionAnalysisDto EnemyCrowdControl { get; set; } = new();
+    public CombatReplayIncomingConditionAnalysisDto SquadCrowdControl { get; set; } = new();
     public CombatReplayFightDemandDto FightDemand { get; set; } = new();
     public CombatReplayFightDiagnosisDto Diagnosis { get; set; } = new();
     public CombatReplayDamageOverlayDto DamageOverlay { get; set; } = new();
@@ -265,14 +268,20 @@ internal class CombatReplayDefenseAnalysisDto
 internal class CombatReplayIncomingConditionAnalysisDto
 {
     public bool Available { get; set; }
+    public bool DataAvailable { get; set; }
+    public bool IsCrowdControl { get; set; }
     public int SquadPlayerCount { get; set; }
     public int EnemyPlayerCount { get; set; }
     public int ConditionCount { get; set; }
+    public int EffectCount { get; set; }
     public double TotalPressure { get; set; }
     public double AveragePressure { get; set; }
     public int TotalApplyCount { get; set; }
     public int TotalExtensionCount { get; set; }
     public long TotalConditionDamage { get; set; }
+    public int TotalEventCount { get; set; }
+    public int TotalEffectiveCount { get; set; }
+    public double TotalDuration { get; set; }
     public List<CombatReplayIncomingConditionDto> Conditions { get; set; } = [];
 }
 
@@ -293,6 +302,9 @@ internal class CombatReplayIncomingConditionDto
     public int ApplyCount { get; set; }
     public int ExtensionCount { get; set; }
     public long ConditionDamage { get; set; }
+    public int EventCount { get; set; }
+    public int EffectiveCount { get; set; }
+    public double TotalDuration { get; set; }
     public List<CombatReplayIncomingConditionActorDto> Sources { get; set; } = [];
     public List<CombatReplayIncomingConditionActorDto> Recipients { get; set; } = [];
 }
@@ -310,6 +322,9 @@ internal class CombatReplayIncomingConditionActorDto
     public int ExtensionCount { get; set; }
     public int RelatedActorCount { get; set; }
     public long ConditionDamage { get; set; }
+    public int EventCount { get; set; }
+    public int EffectiveCount { get; set; }
+    public double TotalDuration { get; set; }
     public double Percent { get; set; }
 }
 
@@ -1623,6 +1638,23 @@ internal static class CombatReplayAnalysisBuilder
         public long ConditionDamage { get; set; }
         public HashSet<int> RelatedActorIds { get; } = [];
     }
+    private sealed class CrowdControlAccumulator(SkillItem skill)
+    {
+        public SkillItem Skill { get; } = skill;
+        public int EventCount { get; set; }
+        public int EffectiveCount { get; set; }
+        public int TotalDuration { get; set; }
+        public Dictionary<int, CrowdControlActorAccumulator> Sources { get; } = [];
+        public Dictionary<int, CrowdControlActorAccumulator> Recipients { get; } = [];
+    }
+    private sealed class CrowdControlActorAccumulator(SingleActor actor)
+    {
+        public SingleActor Actor { get; } = actor;
+        public int EventCount { get; set; }
+        public int EffectiveCount { get; set; }
+        public int TotalDuration { get; set; }
+        public HashSet<int> RelatedActorIds { get; } = [];
+    }
 
     public static CombatReplayAnalysisDto? Build(ParsedEvtcLog log, Dictionary<long, SkillItem>? usedSkills = null)
     {
@@ -1666,7 +1698,30 @@ internal static class CombatReplayAnalysisBuilder
         var positioningAnalysis = BuildPositioningAnalysis(log, squadPlayers, hostileTargets, commander, times);
         CombatReplayEventAnalysisDto eventAnalysis = BuildEventAnalysis(log, squadPlayers, hostileTargets);
         CombatReplayDefenseAnalysisDto defenseAnalysis = BuildDefenseAnalysis(log, squadPlayers, hostileTargets, enemyAnalysis, times);
-        CombatReplayIncomingConditionAnalysisDto incomingConditionAnalysis = BuildIncomingConditionAnalysis(log, squadPlayers, hostileTargets);
+        CombatReplayIncomingConditionAnalysisDto incomingConditionAnalysis = BuildConditionAnalysis(
+            log,
+            hostileTargets,
+            squadPlayers,
+            squadPlayers.Count,
+            hostileTargets.Count);
+        CombatReplayIncomingConditionAnalysisDto squadConditionAnalysis = BuildConditionAnalysis(
+            log,
+            squadPlayers,
+            hostileTargets,
+            squadPlayers.Count,
+            hostileTargets.Count);
+        CombatReplayIncomingConditionAnalysisDto enemyCrowdControlAnalysis = BuildCrowdControlAnalysis(
+            log,
+            hostileTargets,
+            squadPlayers,
+            squadPlayers.Count,
+            hostileTargets.Count);
+        CombatReplayIncomingConditionAnalysisDto squadCrowdControlAnalysis = BuildCrowdControlAnalysis(
+            log,
+            squadPlayers,
+            hostileTargets,
+            squadPlayers.Count,
+            hostileTargets.Count);
         CombatReplayFightDemandDto fightDemand = BuildFightDemand(squadAnalysis, enemyAnalysis, eventAnalysis, defenseAnalysis, threatAnalysis, times);
         string winnerSideId = InferFightDiagnosisWinnerSide(eventAnalysis);
         CombatReplayFightDiagnosisDto diagnosis = BuildFightDiagnosis(
@@ -1703,6 +1758,9 @@ internal static class CombatReplayAnalysisBuilder
             Events = eventAnalysis,
             Defense = defenseAnalysis,
             IncomingConditions = incomingConditionAnalysis,
+            SquadConditions = squadConditionAnalysis,
+            EnemyCrowdControl = enemyCrowdControlAnalysis,
+            SquadCrowdControl = squadCrowdControlAnalysis,
             FightDemand = fightDemand,
             Diagnosis = diagnosis,
             DamageOverlay = damageOverlay,
@@ -6722,15 +6780,18 @@ internal static class CombatReplayAnalysisBuilder
         return summary;
     }
 
-    private static CombatReplayIncomingConditionAnalysisDto BuildIncomingConditionAnalysis(
+    private static CombatReplayIncomingConditionAnalysisDto BuildConditionAnalysis(
         ParsedEvtcLog log,
-        IReadOnlyList<SingleActor> squadPlayers,
-        IReadOnlyList<SingleActor> hostileTargets)
+        IReadOnlyList<SingleActor> sourcePlayers,
+        IReadOnlyList<SingleActor> recipientPlayers,
+        int squadPlayerCount,
+        int enemyPlayerCount)
     {
         var result = new CombatReplayIncomingConditionAnalysisDto
         {
-            SquadPlayerCount = squadPlayers.Count,
-            EnemyPlayerCount = hostileTargets.Count,
+            DataAvailable = true,
+            SquadPlayerCount = squadPlayerCount,
+            EnemyPlayerCount = enemyPlayerCount,
         };
 
         long start = log.LogData.LogStart;
@@ -6746,14 +6807,14 @@ internal static class CombatReplayAnalysisBuilder
         Dictionary<long, Buff> conditionsById = conditions
             .GroupBy(condition => condition.ID)
             .ToDictionary(group => group.Key, group => group.First());
-        Dictionary<AgentItem, SingleActor> hostileActorsByFinalAgent = hostileTargets
+        Dictionary<AgentItem, SingleActor> sourceActorsByFinalAgent = sourcePlayers
             .Select(target => (FinalAgent: target.AgentItem.GetFinalMaster(), Target: target))
             .Where(entry => !entry.FinalAgent.IsUnknown)
             .GroupBy(entry => entry.FinalAgent)
             .ToDictionary(group => group.Key, group => group.First().Target);
         var conditionAccumulators = new Dictionary<long, IncomingConditionAccumulator>();
 
-        foreach (SingleActor recipient in squadPlayers)
+        foreach (SingleActor recipient in recipientPlayers)
         {
             IReadOnlyDictionary<long, BuffByActorStatistics> generatedByActor = recipient.GetBuffsDictionary(log, start, end);
             foreach (Buff condition in conditions)
@@ -6762,7 +6823,7 @@ internal static class CombatReplayAnalysisBuilder
                 {
                     foreach ((SingleActor sourceActor, double pressure) in conditionStats.GeneratedBy)
                     {
-                        if (!TryResolveHostileActor(hostileActorsByFinalAgent, sourceActor, out SingleActor hostileActor))
+                        if (!TryResolveActor(sourceActorsByFinalAgent, sourceActor, out SingleActor resolvedSource))
                         {
                             continue;
                         }
@@ -6776,13 +6837,13 @@ internal static class CombatReplayAnalysisBuilder
                         }
 
                         IncomingConditionAccumulator accumulator = GetOrCreateIncomingConditionAccumulator(conditionAccumulators, condition);
-                        AddIncomingConditionPressure(accumulator, hostileActor, recipient, pressure, presence, extension, wasted);
+                        AddIncomingConditionPressure(accumulator, resolvedSource, recipient, pressure, presence, extension, wasted);
                     }
                 }
 
                 foreach (AbstractBuffApplyEvent applyEvent in recipient.GetBuffApplyEventsOnByID(log, start, end, condition.ID, null))
                 {
-                    if (!TryResolveHostileActor(hostileActorsByFinalAgent, applyEvent.CreditedBy, out SingleActor hostileActor))
+                    if (!TryResolveActor(sourceActorsByFinalAgent, applyEvent.CreditedBy, out SingleActor resolvedSource))
                     {
                         continue;
                     }
@@ -6792,7 +6853,7 @@ internal static class CombatReplayAnalysisBuilder
                     }
 
                     IncomingConditionAccumulator accumulator = GetOrCreateIncomingConditionAccumulator(conditionAccumulators, condition);
-                    AddIncomingConditionApply(accumulator, hostileActor, recipient, applyEvent is BuffExtensionEvent);
+                    AddIncomingConditionApply(accumulator, resolvedSource, recipient, applyEvent is BuffExtensionEvent);
                 }
             }
 
@@ -6803,19 +6864,19 @@ internal static class CombatReplayAnalysisBuilder
                     !damageEvent.ConditionDamageBased(log) ||
                     !conditionIds.Contains(damageEvent.SkillID) ||
                     !conditionsById.TryGetValue(damageEvent.SkillID, out Buff? condition) ||
-                    !TryResolveHostileActor(hostileActorsByFinalAgent, damageEvent.CreditedFrom, out SingleActor hostileActor))
+                    !TryResolveActor(sourceActorsByFinalAgent, damageEvent.CreditedFrom, out SingleActor resolvedSource))
                 {
                     continue;
                 }
 
                 IncomingConditionAccumulator accumulator = GetOrCreateIncomingConditionAccumulator(conditionAccumulators, condition);
-                AddIncomingConditionDamage(accumulator, hostileActor, recipient, damageEvent.HealthDamage);
+                AddIncomingConditionDamage(accumulator, resolvedSource, recipient, damageEvent.HealthDamage);
             }
         }
 
         List<CombatReplayIncomingConditionDto> conditionDtos = [.. conditionAccumulators.Values
             .Where(accumulator => accumulator.TotalPressure > 0.0 || accumulator.ApplyCount > 0 || accumulator.ExtensionCount > 0 || accumulator.ConditionDamage > 0)
-            .Select(accumulator => BuildIncomingConditionDto(accumulator, squadPlayers.Count))
+            .Select(accumulator => BuildIncomingConditionDto(accumulator, recipientPlayers.Count))
             .OrderByDescending(condition => condition.TotalPressure)
             .ThenByDescending(condition => condition.ConditionDamage)
             .ThenByDescending(condition => condition.ApplyCount)
@@ -6824,9 +6885,10 @@ internal static class CombatReplayAnalysisBuilder
         result.Conditions = conditionDtos;
         result.Available = conditionDtos.Count > 0;
         result.ConditionCount = conditionDtos.Count;
+        result.EffectCount = conditionDtos.Count;
         result.TotalPressure = Math.Round(conditionDtos.Sum(condition => condition.TotalPressure), 1);
-        result.AveragePressure = squadPlayers.Count > 0
-            ? Math.Round(result.TotalPressure / squadPlayers.Count, 1)
+        result.AveragePressure = recipientPlayers.Count > 0
+            ? Math.Round(result.TotalPressure / recipientPlayers.Count, 1)
             : 0.0;
         result.TotalApplyCount = conditionDtos.Sum(condition => condition.ApplyCount);
         result.TotalExtensionCount = conditionDtos.Sum(condition => condition.ExtensionCount);
@@ -6983,27 +7045,177 @@ internal static class CombatReplayAnalysisBuilder
             })];
     }
 
-    private static bool TryResolveHostileActor(
-        IReadOnlyDictionary<AgentItem, SingleActor> hostileActorsByFinalAgent,
-        SingleActor sourceActor,
-        out SingleActor hostileActor)
+    private static CombatReplayIncomingConditionAnalysisDto BuildCrowdControlAnalysis(
+        ParsedEvtcLog log,
+        IReadOnlyList<SingleActor> sourcePlayers,
+        IReadOnlyList<SingleActor> recipientPlayers,
+        int squadPlayerCount,
+        int enemyPlayerCount)
     {
-        return TryResolveHostileActor(hostileActorsByFinalAgent, sourceActor.AgentItem, out hostileActor);
+        var result = new CombatReplayIncomingConditionAnalysisDto
+        {
+            DataAvailable = log.CombatData.HasCrowdControlData,
+            IsCrowdControl = true,
+            SquadPlayerCount = squadPlayerCount,
+            EnemyPlayerCount = enemyPlayerCount,
+        };
+        if (!result.DataAvailable || sourcePlayers.Count == 0 || recipientPlayers.Count == 0)
+        {
+            return result;
+        }
+
+        long start = log.LogData.LogStart;
+        long end = log.LogData.LogEnd;
+        Dictionary<AgentItem, SingleActor> sourceActorsByFinalAgent = sourcePlayers
+            .Select(source => (FinalAgent: source.AgentItem.GetFinalMaster(), Source: source))
+            .Where(entry => !entry.FinalAgent.IsUnknown)
+            .GroupBy(entry => entry.FinalAgent)
+            .ToDictionary(group => group.Key, group => group.First().Source);
+        var accumulators = new Dictionary<long, CrowdControlAccumulator>();
+
+        foreach (SingleActor recipient in recipientPlayers)
+        {
+            foreach (CrowdControlEvent crowdControlEvent in recipient.GetIncomingCrowdControlEvents(null, log, start, end))
+            {
+                if (!TryResolveActor(sourceActorsByFinalAgent, crowdControlEvent.From, out SingleActor resolvedSource))
+                {
+                    continue;
+                }
+
+                if (!accumulators.TryGetValue(crowdControlEvent.SkillID, out CrowdControlAccumulator? accumulator))
+                {
+                    accumulator = new CrowdControlAccumulator(crowdControlEvent.Skill);
+                    accumulators[crowdControlEvent.SkillID] = accumulator;
+                }
+
+                bool effective = IsCrowdControlEffective(log, recipient, crowdControlEvent);
+                int duration = Math.Max(0, crowdControlEvent.Duration);
+                accumulator.EventCount++;
+                accumulator.TotalDuration += duration;
+                if (effective)
+                {
+                    accumulator.EffectiveCount++;
+                }
+
+                CrowdControlActorAccumulator sourceAccumulator = GetOrCreateCrowdControlActorAccumulator(accumulator.Sources, resolvedSource);
+                sourceAccumulator.EventCount++;
+                sourceAccumulator.TotalDuration += duration;
+                sourceAccumulator.RelatedActorIds.Add(recipient.UniqueID);
+                if (effective)
+                {
+                    sourceAccumulator.EffectiveCount++;
+                }
+
+                CrowdControlActorAccumulator recipientAccumulator = GetOrCreateCrowdControlActorAccumulator(accumulator.Recipients, recipient);
+                recipientAccumulator.EventCount++;
+                recipientAccumulator.TotalDuration += duration;
+                recipientAccumulator.RelatedActorIds.Add(resolvedSource.UniqueID);
+                if (effective)
+                {
+                    recipientAccumulator.EffectiveCount++;
+                }
+            }
+        }
+
+        List<CombatReplayIncomingConditionDto> effects = [.. accumulators.Values
+            .Where(accumulator => accumulator.EventCount > 0)
+            .Select(BuildCrowdControlDto)
+            .OrderByDescending(effect => effect.EventCount)
+            .ThenByDescending(effect => effect.EffectiveCount)
+            .ThenByDescending(effect => effect.TotalDuration)
+            .ThenBy(effect => effect.Name, StringComparer.OrdinalIgnoreCase)];
+
+        result.Conditions = effects;
+        result.Available = effects.Count > 0;
+        result.ConditionCount = effects.Count;
+        result.EffectCount = effects.Count;
+        result.TotalEventCount = effects.Sum(effect => effect.EventCount);
+        result.TotalEffectiveCount = effects.Sum(effect => effect.EffectiveCount);
+        result.TotalDuration = Math.Round(effects.Sum(effect => effect.TotalDuration), 1);
+        return result;
     }
 
-    private static bool TryResolveHostileActor(
-        IReadOnlyDictionary<AgentItem, SingleActor> hostileActorsByFinalAgent,
+    private static CrowdControlActorAccumulator GetOrCreateCrowdControlActorAccumulator(
+        Dictionary<int, CrowdControlActorAccumulator> accumulators,
+        SingleActor actor)
+    {
+        if (!accumulators.TryGetValue(actor.UniqueID, out CrowdControlActorAccumulator? accumulator))
+        {
+            accumulator = new CrowdControlActorAccumulator(actor);
+            accumulators[actor.UniqueID] = accumulator;
+        }
+        return accumulator;
+    }
+
+    private static CombatReplayIncomingConditionDto BuildCrowdControlDto(CrowdControlAccumulator accumulator)
+    {
+        double totalDuration = Math.Round(accumulator.TotalDuration / 1000.0, 1);
+        return new CombatReplayIncomingConditionDto
+        {
+            BuffId = accumulator.Skill.ID,
+            Name = GetSkillDisplayName(accumulator.Skill),
+            Icon = accumulator.Skill.Icon,
+            AffectedPlayers = accumulator.Recipients.Count,
+            SourceCount = accumulator.Sources.Count,
+            EventCount = accumulator.EventCount,
+            EffectiveCount = accumulator.EffectiveCount,
+            TotalDuration = totalDuration,
+            Sources = BuildCrowdControlActorDtos(accumulator.Sources.Values, accumulator.EventCount, accumulator.TotalDuration),
+            Recipients = BuildCrowdControlActorDtos(accumulator.Recipients.Values, accumulator.EventCount, accumulator.TotalDuration),
+        };
+    }
+
+    private static List<CombatReplayIncomingConditionActorDto> BuildCrowdControlActorDtos(
+        IEnumerable<CrowdControlActorAccumulator> accumulators,
+        int totalEventCount,
+        int totalDuration)
+    {
+        return [.. accumulators
+            .Where(accumulator => accumulator.EventCount > 0)
+            .OrderByDescending(accumulator => accumulator.EventCount)
+            .ThenByDescending(accumulator => accumulator.EffectiveCount)
+            .ThenByDescending(accumulator => accumulator.TotalDuration)
+            .ThenBy(accumulator => accumulator.Actor.Character, StringComparer.OrdinalIgnoreCase)
+            .Select(accumulator => new CombatReplayIncomingConditionActorDto
+            {
+                ActorId = accumulator.Actor.UniqueID,
+                Name = accumulator.Actor.Character,
+                Icon = accumulator.Actor.GetIcon(),
+                EventCount = accumulator.EventCount,
+                EffectiveCount = accumulator.EffectiveCount,
+                TotalDuration = Math.Round(accumulator.TotalDuration / 1000.0, 1),
+                RelatedActorCount = accumulator.RelatedActorIds.Count,
+                Percent = totalEventCount > 0
+                    ? Math.Round(accumulator.EventCount * 100.0 / totalEventCount, 1)
+                    : totalDuration > 0
+                        ? Math.Round(accumulator.TotalDuration * 100.0 / totalDuration, 1)
+                        : 0.0,
+            })];
+    }
+
+    private static bool TryResolveActor(
+        IReadOnlyDictionary<AgentItem, SingleActor> actorsByFinalAgent,
+        SingleActor sourceActor,
+        out SingleActor resolvedActor)
+    {
+        return TryResolveActor(actorsByFinalAgent, sourceActor.AgentItem, out resolvedActor);
+    }
+
+    private static bool TryResolveActor(
+        IReadOnlyDictionary<AgentItem, SingleActor> actorsByFinalAgent,
         AgentItem sourceAgent,
-        out SingleActor hostileActor)
+        out SingleActor resolvedActor)
     {
         AgentItem finalAgent = sourceAgent.GetFinalMaster();
-        if (!finalAgent.IsUnknown && hostileActorsByFinalAgent.TryGetValue(finalAgent, out SingleActor resolvedActor))
+        if (!finalAgent.IsUnknown &&
+            actorsByFinalAgent.TryGetValue(finalAgent, out SingleActor? actor) &&
+            actor != null)
         {
-            hostileActor = resolvedActor;
+            resolvedActor = actor;
             return true;
         }
 
-        hostileActor = null!;
+        resolvedActor = null!;
         return false;
     }
 
