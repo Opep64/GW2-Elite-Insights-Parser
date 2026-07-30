@@ -459,6 +459,1055 @@
         },
     });
 
+    Vue.component("combat-replay-outcome-drivers-component", {
+        mixins: [combatReplayWvWAnalysisMixin],
+        props: ["time"],
+        template: `
+        <div class="combat-replay-wvw-analysis-panel combat-replay-outcome-drivers">
+            <div class="combat-replay-wvw-analysis-card" style="position: relative;">
+                <button type="button" class="combat-replay-overview-help-button" title="Outcome Drivers help" aria-label="Show Outcome Drivers help" @click="showHelp = true">?</button>
+                <div class="combat-replay-wvw-analysis-card-title">Fight Outcome Drivers</div>
+                <div class="combat-replay-wvw-analysis-detail text-center mb-2">
+                    Descriptive evidence from the windows around this fight's outcomes. Rankings show repeated timing and lift inside this log; they do not claim universal causation.
+                </div>
+                <ul class="nav nav-pills d-flex flex-row justify-content-center mb-2 scale85 combat-replay-outcome-driver-tabs">
+                    <li v-for="option in outcomeOptions" :key="option.key" class="nav-item">
+                        <a class="nav-link" :class="{active: outcomeKey === option.key}" @click="outcomeKey = option.key">
+                            {{option.label}} <span class="combat-replay-outcome-driver-tab-count">{{option.count}}</span>
+                        </a>
+                    </li>
+                </ul>
+                <div class="combat-replay-wvw-analysis-grid">
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Outcome</div>
+                        <div class="combat-replay-wvw-analysis-value">{{activeAnalysis.label}}</div>
+                        <div class="combat-replay-wvw-analysis-detail">{{activeAnalysis.description}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Recorded Outcomes</div>
+                        <div class="combat-replay-wvw-analysis-value">{{formatCount(activeAnalysis.outcomeCount)}}</div>
+                        <div class="combat-replay-wvw-analysis-detail">{{activeAnalysis.comparisonLabel}}</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Evidence Confidence</div>
+                        <div class="combat-replay-wvw-analysis-value">
+                            <span class="combat-replay-wvw-analysis-pill" :class="confidencePillClass(activeAnalysis.confidenceLabel)">{{activeAnalysis.confidenceLabel}}</span>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail">Based on event count, comparison coverage, and observability.</div>
+                    </div>
+                    <div class="combat-replay-wvw-analysis-metric">
+                        <div class="combat-replay-wvw-analysis-label">Strongest Signal</div>
+                        <div class="combat-replay-wvw-analysis-value">{{topDriver ? topDriver.label : "Insufficient evidence"}}</div>
+                        <div class="combat-replay-wvw-analysis-detail">{{topDriver ? topDriver.effectLabel : "No repeatable signal could be ranked."}}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="activeAnalysis.eventCount === 0" class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">No Outcomes Available</div>
+                <div class="combat-replay-wvw-analysis-helper">This fight does not contain an event of the selected outcome type.</div>
+            </div>
+
+            <div v-else class="combat-replay-outcome-driver-layout">
+                <div class="combat-replay-wvw-analysis-card">
+                    <div class="combat-replay-wvw-analysis-card-title">Ranked Evidence</div>
+                    <div class="combat-replay-wvw-analysis-detail mb-2">
+                        {{activeAnalysis.rankingDescription}}
+                        Select a row to inspect the strongest supporting moments.
+                    </div>
+                    <div v-if="activeAnalysis.drivers.length === 0" class="combat-replay-wvw-analysis-helper">
+                        No observable driver had enough data to rank.
+                    </div>
+                    <div v-else class="combat-replay-outcome-driver-list">
+                        <button v-for="(driver, index) in activeAnalysis.drivers"
+                                :key="driver.key"
+                                type="button"
+                                class="combat-replay-outcome-driver-row"
+                                :class="{active: selectedDriver && selectedDriver.key === driver.key}"
+                                @click="selectedDriverKey = driver.key">
+                            <span class="combat-replay-outcome-driver-rank">{{index + 1}}</span>
+                            <span class="combat-replay-outcome-driver-copy">
+                                <span class="combat-replay-outcome-driver-heading">
+                                    <span>{{driver.label}}</span>
+                                    <span class="combat-replay-outcome-driver-score">{{driver.score}}</span>
+                                </span>
+                                <span class="combat-replay-outcome-driver-pills">
+                                    <span class="combat-replay-wvw-analysis-pill" :class="observabilityPillClass(driver.observability)">{{driver.observability}}</span>
+                                    <span class="combat-replay-wvw-analysis-pill" :class="confidencePillClass(driver.confidenceLabel)">{{driver.confidenceLabel}}</span>
+                                </span>
+                                <span class="combat-replay-outcome-driver-bar"><span :style="{width: driver.score + '%'}"></span></span>
+                                <span class="combat-replay-outcome-driver-effect">{{driver.effectLabel}}</span>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="combat-replay-wvw-analysis-card combat-replay-outcome-driver-evidence-card">
+                    <template v-if="selectedDriver">
+                        <div class="combat-replay-outcome-driver-selected-header">
+                            <div>
+                                <div class="combat-replay-wvw-analysis-label">{{selectedDriver.category}}</div>
+                                <div class="combat-replay-wvw-analysis-card-title">{{selectedDriver.label}}</div>
+                            </div>
+                            <div class="combat-replay-outcome-driver-selected-score">{{selectedDriver.score}}</div>
+                        </div>
+                        <div class="combat-replay-wvw-analysis-detail">{{selectedDriver.detail}}</div>
+                        <div class="combat-replay-outcome-driver-selected-effect">{{selectedDriver.effectLabel}}</div>
+                        <div class="combat-replay-wvw-analysis-label mt-3 mb-1">Strongest Event Evidence</div>
+                        <div v-if="selectedDriver.evidence.length > 0" class="combat-replay-wvw-analysis-bursts">
+                            <button v-for="entry in selectedDriver.evidence"
+                                    :key="selectedDriver.key + '-' + entry.time + '-' + entry.actorName"
+                                    type="button"
+                                    class="combat-replay-wvw-analysis-burst-entry combat-replay-outcome-driver-evidence"
+                                    :title="'Jump replay to ' + entry.timeLabel"
+                                    @click="jumpToBurst(entry.time)">
+                                <span class="combat-replay-wvw-analysis-burst-time">{{entry.timeLabel}}</span>
+                                <span class="combat-replay-outcome-driver-evidence-copy">
+                                    <span class="combat-replay-outcome-driver-evidence-name">{{entry.actorName}}</span>
+                                    <span class="combat-replay-outcome-driver-evidence-detail">{{entry.valueLabel}} &middot; {{entry.detail}}</span>
+                                </span>
+                            </button>
+                        </div>
+                        <div v-else class="combat-replay-wvw-analysis-helper">No individual event met this signal's evidence threshold.</div>
+                    </template>
+                </div>
+            </div>
+
+            <div class="combat-replay-wvw-analysis-card">
+                <div class="combat-replay-wvw-analysis-card-title">Important Data Limits</div>
+                <div class="combat-replay-outcome-driver-limit-grid">
+                    <div v-for="limit in activeAnalysis.caveats" :key="limit.title" class="combat-replay-outcome-driver-limit">
+                        <span class="combat-replay-wvw-analysis-pill" :class="observabilityPillClass(limit.observability)">{{limit.observability}}</span>
+                        <span>
+                            <strong>{{limit.title}}</strong>
+                            <span>{{limit.detail}}</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="showHelp" class="wvw-summary-modal-backdrop" @click.self="showHelp = false">
+                <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Outcome Drivers help">
+                    <button type="button" class="wvw-summary-modal-close" aria-label="Close Outcome Drivers help" @click="showHelp = false">&times;</button>
+                    <div class="wvw-summary-modal-title">Outcome Drivers Help</div>
+                    <div class="wvw-summary-modal-subtitle">How the report ranks evidence without pretending incomplete combat data is exact.</div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Evidence score</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li>Down-creation signals group cascading downs into independent engagement windows, then compare their final three seconds with ordinary pressure from the same fight</li>
+                            <li>The score combines percentile lift with how consistently the signal was elevated</li>
+                            <li>Kill conversion compares enemy deaths with enemy downs that recovered; squad recovery compares successful recoveries with squad downs that ended in death</li>
+                            <li>If a fight has no failed comparison outcomes, those modes fall back to direct coverage and say so explicitly</li>
+                            <li>A high score describes this fight only; it is not proof that the signal caused the outcome</li>
+                        </ul>
+                    </div>
+                    <div class="combat-replay-overview-help-section">
+                        <div class="combat-replay-overview-help-heading">Observability</div>
+                        <ul class="combat-replay-overview-help-list">
+                            <li><strong>Observed</strong> uses directly recorded events or replay positions</li>
+                            <li><strong>Supporting</strong> combines observed signals into a plausible timing relationship</li>
+                            <li><strong>Unavailable</strong> is shown as a limit and never treated as zero</li>
+                            <li>Enemy condition entries describe applications or recorded damage, not exact current stacks or remaining duration</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `,
+        data: function () {
+            return {
+                outcomeKey: "enemy-downs",
+                selectedDriverKey: null,
+                showHelp: false,
+            };
+        },
+        computed: {
+            eventAnalysis: function () {
+                return this.getEventAnalysis() || {};
+            },
+            outcomeOptions: function () {
+                const downs = this.eventAnalysis.downs && this.eventAnalysis.downs.events ? this.eventAnalysis.downs.events : [];
+                const kills = this.eventAnalysis.kills && this.eventAnalysis.kills.events ? this.eventAnalysis.kills.events : [];
+                const recovered = this.eventAnalysis.recovered && this.eventAnalysis.recovered.events ? this.eventAnalysis.recovered.events : [];
+                return [
+                    { key: "enemy-downs", label: "Enemy Downs", count: downs.filter(event => event && event.isEnemy).length },
+                    { key: "squad-downs", label: "Squad Downs", count: downs.filter(event => event && !event.isEnemy).length },
+                    { key: "kill-conversion", label: "Kill Conversion", count: kills.filter(event => event && event.isEnemy).length },
+                    { key: "squad-recovery", label: "Squad Recovery", count: recovered.filter(event => event && !event.isEnemy && event.usesSupportView).length },
+                ];
+            },
+            activeAnalysis: function () {
+                if (this.outcomeKey === "kill-conversion") {
+                    return this.buildKillConversionAnalysis();
+                }
+                if (this.outcomeKey === "squad-recovery") {
+                    return this.buildSquadRecoveryAnalysis();
+                }
+                return this.buildDownAnalysis(this.outcomeKey === "enemy-downs");
+            },
+            selectedDriver: function () {
+                const drivers = this.activeAnalysis.drivers || [];
+                return drivers.find(driver => driver.key === this.selectedDriverKey) || drivers[0] || null;
+            },
+            topDriver: function () {
+                return this.activeAnalysis.drivers && this.activeAnalysis.drivers.length > 0
+                    ? this.activeAnalysis.drivers[0]
+                    : null;
+            },
+        },
+        watch: {
+            outcomeKey: function () {
+                this.selectedDriverKey = null;
+            },
+        },
+        methods: {
+            buildDownAnalysis: function (againstEnemy) {
+                const allEvents = this.eventAnalysis.downs && this.eventAnalysis.downs.events
+                    ? this.eventAnalysis.downs.events
+                    : [];
+                const rawEvents = allEvents.filter(event => event && Boolean(event.isEnemy) === againstEnemy);
+                const events = this.clusterOutcomeEvents(rawEvents);
+                const team = this.getTeamAnalysis(againstEnemy ? "squad" : "enemy") || {};
+                const conditionAnalysis = againstEnemy
+                    ? this.crAnalysis && this.crAnalysis.squadConditions
+                    : this.crAnalysis && this.crAnalysis.incomingConditions;
+                const crowdControlAnalysis = againstEnemy
+                    ? this.crAnalysis && this.crAnalysis.squadCrowdControl
+                    : this.crAnalysis && this.crAnalysis.enemyCrowdControl;
+                const times = this.crAnalysis && this.crAnalysis.times ? this.crAnalysis.times : [];
+                const eventIndices = events.map(event => this.getTimelineIndex(times, event.time));
+                const controlIndices = this.buildControlIndices(times, team.damage || [], events.map(event => Number(event.time || 0)));
+                const conditionSeries = this.buildRollingBucketSeries(
+                    times,
+                    conditionAnalysis && conditionAnalysis.conditionTimeline ? conditionAnalysis.conditionTimeline : [],
+                    "applyCount");
+                const crowdControlSeries = this.buildRollingBucketSeries(
+                    times,
+                    crowdControlAnalysis && crowdControlAnalysis.timeline ? crowdControlAnalysis.timeline : [],
+                    "effectiveCount");
+                const specificConditionDrivers = this.buildSpecificTimelineDrivers({
+                    times: times,
+                    timeline: conditionAnalysis && conditionAnalysis.conditionTimeline ? conditionAnalysis.conditionTimeline : [],
+                    entriesKey: "applications",
+                    idKey: "buffId",
+                    nameKey: "name",
+                    valueKey: "applyCount",
+                    category: "Specific Condition",
+                    keyPrefix: "specific-condition",
+                    valueLabel: "condition applications",
+                    singularValueLabel: "condition application",
+                    events: events,
+                    eventIndices: eventIndices,
+                    controlIndices: controlIndices,
+                    detail: "Attributed applications of this condition in the final three seconds. This does not reconstruct exact active stacks, cleanses, or remaining duration.",
+                });
+                const specificCrowdControlDrivers = this.buildSpecificTimelineDrivers({
+                    times: times,
+                    timeline: crowdControlAnalysis && crowdControlAnalysis.timeline ? crowdControlAnalysis.timeline : [],
+                    entriesKey: "effects",
+                    idKey: "skillId",
+                    nameKey: "name",
+                    valueKey: "effectiveCount",
+                    category: "Specific CC",
+                    keyPrefix: "specific-cc",
+                    valueLabel: "effective events",
+                    singularValueLabel: "effective event",
+                    events: events,
+                    eventIndices: eventIndices,
+                    controlIndices: controlIndices,
+                    detail: "Directly recorded effective hard-control events in the final three seconds. Exact Stability state is not inferred.",
+                });
+                const stripSeries = times.map((_, index) =>
+                    Number(team.strips && team.strips[index] || 0) + Number(team.corrupts && team.corrupts[index] || 0));
+                const damageSeries = (team.damage || []).map(value => Number(value || 0));
+                const focusSeries = (team.topTargetShare || []).map(value => Number(value || 0));
+                const contributorSeries = (team.topTargetContributors || []).map(value => Number(value || 0));
+                const stripSyncSeries = times.map((_, index) => team.stripSynced && team.stripSynced[index] ? 1 : 0);
+                const damageThreshold = this.percentile(controlIndices.map(index => damageSeries[index]), 0.75);
+                const ccBurstSeries = times.map((_, index) =>
+                    crowdControlSeries[index] > 0 && damageSeries[index] >= damageThreshold ? 1 : 0);
+                const positioning = this.getPositioningAnalysis() || {};
+                const positioningAvailable = Number(positioning.summaryEvaluatedSamples || 0) > 0;
+                const positioningSeries = times.map((_, index) => {
+                    if (!positioning.eligiblePlayerCount || Number(positioning.eligiblePlayerCount[index] || 0) <= 0) {
+                        return 0;
+                    }
+                    const inPosition = Number(positioning.inPositionRate && positioning.inPositionRate[index] || 0);
+                    return againstEnemy ? inPosition : Math.max(0, 100.0 - inPosition);
+                });
+                const drivers = [
+                    this.buildSeriesDriver({
+                        key: "burst-damage",
+                        label: "Three-second burst damage",
+                        category: "Pressure",
+                        series: damageSeries,
+                        eventIndices: eventIndices,
+                        controlIndices: controlIndices,
+                        events: events,
+                        format: "count",
+                        observability: "Observed",
+                        detail: "Damage against living targets in the final three seconds before each down.",
+                    }),
+                    this.buildSeriesDriver({
+                        key: "strips",
+                        label: "Boon removal pressure",
+                        category: "Boon Removal",
+                        series: stripSeries,
+                        eventIndices: eventIndices,
+                        controlIndices: controlIndices,
+                        events: events,
+                        format: "count",
+                        observability: "Observed",
+                        detail: "Recorded strips and corrupts in the final three-second pressure window. Exact enemy boon identity is not assumed.",
+                    }),
+                    this.buildSeriesDriver({
+                        key: "condition-applications",
+                        label: "Condition applications",
+                        category: "Conditions",
+                        series: conditionSeries,
+                        eventIndices: eventIndices,
+                        controlIndices: controlIndices,
+                        events: events,
+                        format: "count",
+                        observability: "Observed",
+                        detail: "Attributed condition applications in the final three seconds. This does not claim exact active stacks or remaining duration.",
+                    }),
+                    this.buildSeriesDriver({
+                        key: "hard-cc",
+                        label: "Effective hard CC",
+                        category: "Control",
+                        series: crowdControlSeries,
+                        eventIndices: eventIndices,
+                        controlIndices: controlIndices,
+                        events: events,
+                        format: "count",
+                        observability: "Observed",
+                        detail: "Recorded effective hard-control events in the final three seconds before the down.",
+                    }),
+                    this.buildSeriesDriver({
+                        key: "focus-fire",
+                        label: "Target focus",
+                        category: "Coordination",
+                        series: focusSeries,
+                        eventIndices: eventIndices,
+                        controlIndices: controlIndices,
+                        events: events,
+                        format: "percent",
+                        observability: "Observed",
+                        detail: "Share of team damage concentrated on the leading target during the pressure window.",
+                    }),
+                    this.buildSeriesDriver({
+                        key: "burst-participation",
+                        label: "Burst participation",
+                        category: "Coordination",
+                        series: contributorSeries,
+                        eventIndices: eventIndices,
+                        controlIndices: controlIndices,
+                        events: events,
+                        format: "count",
+                        observability: "Observed",
+                        detail: "Number of players contributing damage to the leading target in the final three seconds.",
+                    }),
+                    positioningAvailable ? this.buildSeriesDriver({
+                        key: againstEnemy ? "squad-positioning" : "positioning-risk",
+                        label: againstEnemy ? "Squad positioning" : "Squad positioning risk",
+                        category: "Positioning",
+                        series: positioningSeries,
+                        eventIndices: eventIndices,
+                        controlIndices: controlIndices,
+                        events: events,
+                        format: "percent",
+                        observability: "Observed",
+                        detail: againstEnemy
+                            ? "Share of eligible squad players classified in position near the commander before enemy downs."
+                            : "Share of eligible squad players classified outside the desired commander-relative position before squad downs.",
+                    }) : null,
+                    this.buildSeriesDriver({
+                        key: "strip-burst",
+                        label: "Strip-to-burst alignment",
+                        category: "Interaction",
+                        series: stripSyncSeries,
+                        eventIndices: eventIndices,
+                        controlIndices: controlIndices,
+                        events: events,
+                        format: "binary",
+                        observability: "Supporting",
+                        detail: "Observed strip pressure aligned with an elevated burst window. The timing relationship is descriptive, not proof of causation.",
+                    }),
+                    this.buildSeriesDriver({
+                        key: "cc-burst",
+                        label: "CC into burst",
+                        category: "Interaction",
+                        series: ccBurstSeries,
+                        eventIndices: eventIndices,
+                        controlIndices: controlIndices,
+                        events: events,
+                        format: "binary",
+                        observability: "Supporting",
+                        detail: "Effective hard CC and upper-quartile burst damage appeared in the same final three-second window.",
+                    }),
+                    ...specificConditionDrivers,
+                    ...specificCrowdControlDrivers,
+                ].filter(driver => driver != null && driver.score > 0)
+                    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label));
+
+                return {
+                    label: againstEnemy ? "Enemy Downs Created" : "Squad Downs Taken",
+                    description: againstEnemy
+                        ? "Signals immediately preceding enemy players entering downstate."
+                        : "Enemy pressure and squad-state signals immediately preceding squad downstate.",
+                    outcomeCount: rawEvents.length,
+                    eventCount: events.length,
+                    controlCount: controlIndices.length,
+                    confidenceLabel: this.confidenceForSampleCount(events.length, controlIndices.length),
+                    comparisonLabel: `${this.formatCount(events.length)} independent engagement windows \u00b7 ${this.formatCount(controlIndices.length)} matched pressure samples`,
+                    rankingDescription: "Evidence score combines engagement-window lift and consistency against ordinary pressure in this fight.",
+                    drivers: drivers,
+                    caveats: this.buildDriverCaveats(againstEnemy),
+                };
+            },
+            buildKillConversionAnalysis: function () {
+                const events = this.eventAnalysis.kills && this.eventAnalysis.kills.events
+                    ? this.eventAnalysis.kills.events.filter(event => event && event.isEnemy)
+                    : [];
+                const failures = this.eventAnalysis.recovered && this.eventAnalysis.recovered.events
+                    ? this.eventAnalysis.recovered.events.filter(event => event && event.isEnemy && !event.usesSupportView)
+                    : [];
+                const drivers = [
+                    this.buildContrastDriver({
+                        key: "conversion-damage",
+                        label: "Damage on downed targets",
+                        category: "Conversion",
+                        events: events,
+                        controls: failures,
+                        value: event => Number(event.totalDamageTaken || 0),
+                        format: "count",
+                        comparisonName: "recovered enemy downs",
+                        detail: "Recorded health damage between enemy downstate and its kill or recovery outcome.",
+                    }),
+                    this.buildContrastDriver({
+                        key: "finish-participation",
+                        label: "Finish participation",
+                        category: "Coordination",
+                        events: events,
+                        controls: failures,
+                        value: event => Number(event.contributorCount || 0),
+                        format: "count",
+                        comparisonName: "recovered enemy downs",
+                        detail: "Recorded damage contributors during successful and failed enemy-down conversions.",
+                    }),
+                    this.buildCoverageDriver({
+                        key: "conversion-speed",
+                        label: "Fast conversion",
+                        category: "Timing",
+                        events: events,
+                        value: event => Math.max(0, Number(event.time || 0) - Number(event.windowStart || 0)) / 1000.0,
+                        present: value => value > 0 && value <= 5.0,
+                        format: "seconds",
+                        lowerBetter: true,
+                        observability: "Supporting",
+                        scoreCap: 85,
+                        detail: "Enemy downs converted within five seconds, limiting the recovery opportunity.",
+                    }),
+                    this.buildContrastDriver({
+                        key: "conversion-condition-damage",
+                        label: "Condition damage during conversion",
+                        category: "Conditions",
+                        events: events,
+                        controls: failures,
+                        value: event => Number(event.conditionDamageTaken || 0),
+                        format: "count",
+                        comparisonName: "recovered enemy downs",
+                        detail: "Directly recorded condition-damage ticks after downstate; exact condition stacks are not inferred.",
+                    }),
+                    this.buildContrastDriver({
+                        key: "conversion-barrier-pressure",
+                        label: "Barrier pressure during conversion",
+                        category: "Pressure",
+                        events: events,
+                        controls: failures,
+                        value: event => Number(event.barrierDamageTaken || 0),
+                        format: "count",
+                        comparisonName: "recovered enemy downs",
+                        detail: "Recorded damage absorbed by barrier while the enemy was downed.",
+                    }),
+                    this.buildSpecificConditionDriver(events),
+                ].filter(driver => driver != null && driver.score > 0)
+                    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label));
+                return {
+                    label: "Enemy Kill Conversion",
+                    description: "Successful enemy-down conversions compared with enemy downs that recovered.",
+                    outcomeCount: events.length,
+                    eventCount: events.length,
+                    controlCount: failures.length,
+                    confidenceLabel: this.confidenceForSampleCount(events.length, failures.length),
+                    comparisonLabel: failures.length > 0
+                        ? `${this.formatCount(failures.length)} recovered enemy downs for comparison`
+                        : "No recovered enemy downs available for comparison",
+                    rankingDescription: failures.length > 0
+                        ? "Evidence score compares successful kill conversions with enemy downs that recovered."
+                        : "Only direct coverage can be ranked because this fight has no failed enemy-down conversions.",
+                    drivers: drivers,
+                    caveats: this.buildDriverCaveats(true),
+                };
+            },
+            buildSquadRecoveryAnalysis: function () {
+                const events = this.eventAnalysis.recovered && this.eventAnalysis.recovered.events
+                    ? this.eventAnalysis.recovered.events.filter(event => event && !event.isEnemy && event.usesSupportView)
+                    : [];
+                const failures = this.eventAnalysis.kills && this.eventAnalysis.kills.events
+                    ? this.eventAnalysis.kills.events.filter(event => event && !event.isEnemy)
+                    : [];
+                const drivers = [
+                    this.buildContrastDriver({
+                        key: "downed-healing",
+                        label: "Downed healing",
+                        category: "Recovery",
+                        events: events,
+                        controls: failures,
+                        value: event => Number(event.totalDownedHealing || 0),
+                        format: "count",
+                        comparisonName: "squad deaths",
+                        detail: "Directly recorded healing delivered during successful recoveries and failed recovery attempts.",
+                    }),
+                    this.buildContrastDriver({
+                        key: "rez-casts",
+                        label: "Resurrection casts",
+                        category: "Recovery",
+                        events: events,
+                        controls: failures,
+                        value: event => Number(event.rezCastCount || 0),
+                        format: "count",
+                        comparisonName: "squad deaths",
+                        detail: "Recorded resurrection casts during successful and failed squad recovery windows.",
+                    }),
+                    this.buildContrastDriver({
+                        key: "recovery-coordination",
+                        label: "Recovery participation",
+                        category: "Coordination",
+                        events: events,
+                        controls: failures,
+                        value: event => Number(event.supportContributorCount || 0),
+                        format: "count",
+                        comparisonName: "squad deaths",
+                        detail: "Number of recorded support contributors during successful and failed recoveries.",
+                    }),
+                    this.buildContrastDriver({
+                        key: "recovery-actions",
+                        label: "Class recovery actions",
+                        category: "Recovery",
+                        events: events,
+                        controls: failures,
+                        value: event => event.supportActions ? event.supportActions.length : 0,
+                        format: "count",
+                        comparisonName: "squad deaths",
+                        detail: "Profession-specific support actions during successful and failed recovery windows.",
+                    }),
+                    this.buildCoverageDriver({
+                        key: "recovery-speed",
+                        label: "Fast recovery",
+                        category: "Timing",
+                        events: events,
+                        value: event => Math.max(0, Number(event.time || 0) - Number(event.windowStart || 0)) / 1000.0,
+                        present: value => value > 0 && value <= 5.0,
+                        format: "seconds",
+                        lowerBetter: true,
+                        observability: "Supporting",
+                        scoreCap: 75,
+                        detail: "Squad recoveries completed within five seconds of downstate.",
+                    }),
+                ].filter(driver => driver != null && driver.score > 0)
+                    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label));
+                return {
+                    label: "Squad Recovery",
+                    description: "Successful squad recoveries compared with squad downs that ended in death.",
+                    outcomeCount: events.length,
+                    eventCount: events.length,
+                    controlCount: failures.length,
+                    confidenceLabel: this.confidenceForSampleCount(events.length, failures.length),
+                    comparisonLabel: failures.length > 0
+                        ? `${this.formatCount(failures.length)} squad deaths for comparison`
+                        : "No squad deaths available for comparison",
+                    rankingDescription: failures.length > 0
+                        ? "Evidence score compares support recorded in successful recoveries with squad downs that ended in death."
+                        : "Only direct coverage can be ranked because this fight has no failed squad recoveries.",
+                    drivers: drivers,
+                    caveats: this.buildDriverCaveats(false),
+                };
+            },
+            clusterOutcomeEvents: function (events) {
+                const sorted = (events || []).slice().sort((left, right) =>
+                    Number(left.time || 0) - Number(right.time || 0));
+                const clusters = [];
+                sorted.forEach(event => {
+                    const eventTime = Number(event.time || 0);
+                    const current = clusters.length > 0 ? clusters[clusters.length - 1] : null;
+                    if (!current || eventTime - current.endTime > 3000) {
+                        clusters.push({
+                            startTime: eventTime,
+                            endTime: eventTime,
+                            originalEvents: [event],
+                        });
+                    } else {
+                        current.endTime = Math.max(current.endTime, eventTime);
+                        current.originalEvents.push(event);
+                    }
+                });
+                return clusters.map(cluster => {
+                    const first = cluster.originalEvents[0];
+                    const names = cluster.originalEvents.map(event => event.actorName || "Unknown player");
+                    const actorName = names.length === 1
+                        ? names[0]
+                        : `${names.length} players: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", \u2026" : ""}`;
+                    return Object.assign({}, first, {
+                        time: cluster.startTime,
+                        timeLabel: cluster.startTime === cluster.endTime
+                            ? (first.timeLabel || this.formatTime(cluster.startTime))
+                            : `${this.formatTime(cluster.startTime)}\u2013${this.formatTime(cluster.endTime)}`,
+                        actorName: actorName,
+                        outcomeCount: cluster.originalEvents.length,
+                        originalEvents: cluster.originalEvents,
+                    });
+                });
+            },
+            buildSpecificTimelineDrivers: function (config) {
+                const effects = new Map();
+                (config.timeline || []).forEach(bucket => {
+                    (bucket && bucket[config.entriesKey] || []).forEach(entry => {
+                        const id = String(entry && entry[config.idKey] || "");
+                        const name = this.normalizeDriverLabel(entry && entry[config.nameKey] || "");
+                        if (!name) {
+                            return;
+                        }
+                        const key = id || name.toLowerCase();
+                        if (!effects.has(key)) {
+                            effects.set(key, { key: key, name: name });
+                        }
+                    });
+                });
+                return Array.from(effects.values()).map(effect => {
+                    const series = this.buildRollingEffectSeries(
+                        config.times,
+                        config.timeline,
+                        config.entriesKey,
+                        config.idKey,
+                        effect.key,
+                        config.nameKey,
+                        effect.name,
+                        config.valueKey);
+                    return this.buildSeriesDriver({
+                        key: `${config.keyPrefix}-${effect.key}`,
+                        label: effect.name,
+                        category: config.category,
+                        series: series,
+                        eventIndices: config.eventIndices,
+                        controlIndices: config.controlIndices,
+                        events: config.events,
+                        format: "count",
+                        valueLabel: config.valueLabel,
+                        singularValueLabel: config.singularValueLabel,
+                        observability: "Observed",
+                        detail: config.detail,
+                    });
+                }).filter(driver => driver != null && driver.score > 0)
+                    .sort((left, right) => right.score - left.score || left.label.localeCompare(right.label))
+                    .slice(0, 5);
+            },
+            buildRollingEffectSeries: function (times, timeline, entriesKey, idKey, effectKey, nameKey, effectName, valueKey) {
+                return (times || []).map(time => {
+                    const end = Number(time || 0);
+                    const start = Math.max(0, end - 3000);
+                    return (timeline || []).reduce((total, bucket) => {
+                        const bucketTime = Number(bucket && bucket.time || 0);
+                        if (bucketTime < start || bucketTime > end) {
+                            return total;
+                        }
+                        return total + (bucket && bucket[entriesKey] || []).reduce((bucketTotal, entry) => {
+                            const id = String(entry && entry[idKey] || "");
+                            const name = this.normalizeDriverLabel(entry && entry[nameKey] || "");
+                            return id === effectKey || (!id && name === effectName)
+                                ? bucketTotal + Number(entry && entry[valueKey] || 0)
+                                : bucketTotal;
+                        }, 0);
+                    }, 0);
+                });
+            },
+            buildContrastDriver: function (config) {
+                if (!config.events || config.events.length === 0 || !config.controls || config.controls.length === 0) {
+                    return null;
+                }
+                const eventValues = config.events.map(event => Number(config.value(event) || 0));
+                const controlValues = config.controls.map(event => Number(config.value(event) || 0));
+                const eventMean = this.average(eventValues);
+                const controlMean = this.average(controlValues);
+                if (eventMean <= controlMean || !eventValues.some(value => value > 0)) {
+                    return null;
+                }
+                const upperQuartile = this.percentile(controlValues, 0.75);
+                const consistentCount = eventValues.filter(value => value > 0 && value >= upperQuartile).length;
+                const percentileScore = this.average(eventValues.map(value => this.percentileRank(controlValues, value)));
+                const consistencyScore = consistentCount * 100.0 / eventValues.length;
+                const score = Math.round(Math.min(100, Math.max(0, percentileScore * 0.65 + consistencyScore * 0.35)));
+                const effectLabel = controlMean > 0
+                    ? `${this.signedNumber((eventMean - controlMean) * 100.0 / controlMean, 0)}% vs ${config.comparisonName}`
+                    : `${this.formatAverageDriverValue(eventMean, config.format)} average; ${config.comparisonName} near zero`;
+                const evidence = config.events.map((event, index) => ({
+                    time: Number(event.time || 0),
+                    timeLabel: event.timeLabel || this.formatTime(event.time),
+                    actorName: event.actorName || "Unknown player",
+                    value: eventValues[index],
+                    valueLabel: this.formatDriverValue(eventValues[index], config.format),
+                    detail: "Direct evidence in a successful outcome",
+                })).filter(entry => entry.value > 0)
+                    .sort((left, right) => right.value - left.value)
+                    .slice(0, 8);
+                return {
+                    key: config.key,
+                    label: config.label,
+                    category: config.category,
+                    score: score,
+                    observability: "Observed",
+                    confidenceLabel: this.driverConfidence(config.events.length, config.controls.length, "Observed"),
+                    effectLabel: effectLabel,
+                    detail: `${config.detail} Elevated in ${consistentCount} of ${eventValues.length} successful outcomes.`,
+                    evidence: evidence,
+                };
+            },
+            buildSeriesDriver: function (config) {
+                const eventValues = config.eventIndices.map(index => Number(config.series[index] || 0));
+                const controlValues = config.controlIndices.map(index => Number(config.series[index] || 0));
+                if (eventValues.length === 0 || controlValues.length === 0 || !eventValues.some(value => value > 0)) {
+                    return null;
+                }
+                const eventMean = this.average(eventValues);
+                const controlMean = this.average(controlValues);
+                if (eventMean <= controlMean) {
+                    return null;
+                }
+                const upperQuartile = this.percentile(controlValues, 0.75);
+                const consistentCount = eventValues.filter(value => value > 0 && value >= upperQuartile).length;
+                const percentileScore = this.average(eventValues.map(value => this.percentileRank(controlValues, value)));
+                const consistencyScore = eventValues.length > 0 ? consistentCount * 100.0 / eventValues.length : 0.0;
+                let score = Math.round(Math.min(100, Math.max(0, percentileScore * 0.65 + consistencyScore * 0.35)));
+                if (config.observability === "Supporting") {
+                    score = Math.min(score, 85);
+                }
+                const effectLabel = config.format === "binary"
+                    ? `${Math.round(eventMean * 100)}% of outcomes vs ${Math.round(controlMean * 100)}% of ordinary windows`
+                    : config.format === "percent"
+                        ? `${this.signedNumber(eventMean - controlMean, 1)} points vs ordinary windows`
+                        : controlMean > 0
+                            ? `${this.signedNumber((eventMean - controlMean) * 100.0 / controlMean, 0)}% vs ordinary windows`
+                            : config.valueLabel
+                                ? `${this.formatCount(eventValues.reduce((sum, value) => sum + value, 0))} ${config.valueLabel} across ${eventValues.filter(value => value > 0).length} of ${eventValues.length} windows; ordinary baseline near zero`
+                                : `${this.formatDriverValue(eventMean, config.format)} average; ordinary baseline near zero`;
+                const evidence = config.events.map((event, index) => ({
+                    time: Number(event.time || 0),
+                    timeLabel: event.timeLabel || this.formatTime(event.time),
+                    actorName: event.actorName || "Unknown player",
+                    value: eventValues[index],
+                    valueLabel: config.valueLabel
+                        ? `${this.formatCount(eventValues[index])} ${eventValues[index] === 1 && config.singularValueLabel ? config.singularValueLabel : config.valueLabel}`
+                        : this.formatDriverValue(eventValues[index], config.format),
+                    detail: config.format === "binary"
+                        ? (eventValues[index] > 0 ? "Signal present in the event window" : "Signal absent")
+                        : "Final three-second event window",
+                })).filter(entry => entry.value > 0)
+                    .sort((left, right) => right.value - left.value)
+                    .slice(0, 8);
+                return {
+                    key: config.key,
+                    label: config.label,
+                    category: config.category,
+                    score: score,
+                    observability: config.observability,
+                    confidenceLabel: this.driverConfidence(config.events.length, config.controlIndices.length, config.observability),
+                    effectLabel: effectLabel,
+                    detail: `${config.detail} Elevated in ${consistentCount} of ${eventValues.length} outcome windows.`,
+                    evidence: evidence,
+                };
+            },
+            buildCoverageDriver: function (config) {
+                if (!config.events || config.events.length === 0) {
+                    return null;
+                }
+                const values = config.events.map(event => Number(config.value(event) || 0));
+                const presentEntries = config.events.map((event, index) => ({ event: event, value: values[index] }))
+                    .filter(entry => config.present(entry.value));
+                if (presentEntries.length === 0) {
+                    return null;
+                }
+                const coverage = presentEntries.length * 100.0 / config.events.length;
+                const averageValue = this.average(values);
+                const evidence = presentEntries
+                    .sort((left, right) => config.lowerBetter ? left.value - right.value : right.value - left.value)
+                    .slice(0, 8)
+                    .map(entry => ({
+                        time: Number(entry.event.time || 0),
+                        timeLabel: entry.event.timeLabel || this.formatTime(entry.event.time),
+                        actorName: entry.event.actorName || "Unknown player",
+                        value: entry.value,
+                        valueLabel: this.formatDriverValue(entry.value, config.format),
+                        detail: "Direct evidence in this outcome window",
+                    }));
+                const observability = config.observability || "Observed";
+                return {
+                    key: config.key,
+                    label: config.label,
+                    category: config.category,
+                    score: Math.min(Math.round(coverage), Number(config.scoreCap || 100)),
+                    observability: observability,
+                    confidenceLabel: this.driverConfidence(config.events.length, 0, observability),
+                    effectLabel: `${Math.round(coverage)}% of outcomes \u00b7 ${this.formatAverageDriverValue(averageValue, config.format)} average`,
+                    detail: config.detail,
+                    evidence: evidence,
+                };
+            },
+            buildSpecificConditionDriver: function (events) {
+                const totals = new Map();
+                let totalConditionDamage = 0;
+                (events || []).forEach(event => {
+                    (event.conditionDamageBreakdown || []).forEach(entry => {
+                        const name = entry.name || "Unknown condition";
+                        const amount = Number(entry.amount || 0);
+                        totalConditionDamage += amount;
+                        const current = totals.get(name) || { name: name, amount: 0, eventCount: 0 };
+                        current.amount += amount;
+                        current.eventCount++;
+                        totals.set(name, current);
+                    });
+                });
+                const top = Array.from(totals.values()).sort((left, right) => right.amount - left.amount)[0];
+                if (!top || top.amount <= 0 || events.length === 0) {
+                    return null;
+                }
+                const coverage = top.eventCount * 100.0 / events.length;
+                const damageShare = totalConditionDamage > 0 ? top.amount * 100.0 / totalConditionDamage : 0.0;
+                const evidence = events.map(event => {
+                    const entry = (event.conditionDamageBreakdown || []).find(item => item.name === top.name);
+                    return entry ? {
+                        time: Number(event.time || 0),
+                        timeLabel: event.timeLabel || this.formatTime(event.time),
+                        actorName: event.actorName || "Unknown player",
+                        value: Number(entry.amount || 0),
+                        valueLabel: `${this.formatCount(entry.amount)} damage`,
+                        detail: "Directly recorded condition-damage ticks",
+                    } : null;
+                }).filter(entry => entry != null)
+                    .sort((left, right) => right.value - left.value)
+                    .slice(0, 8);
+                return {
+                    key: "specific-condition-" + top.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+                    label: top.name + " damage",
+                    category: "Specific Condition",
+                    score: Math.round(Math.min(100, coverage * 0.6 + damageShare * 0.4)),
+                    observability: "Observed",
+                    confidenceLabel: this.driverConfidence(events.length, 0, "Observed"),
+                    effectLabel: `${Math.round(damageShare)}% of recorded condition damage across these outcomes`,
+                    detail: "Uses direct damage ticks only. It does not claim that the condition was continuously active or reconstruct exact stacks.",
+                    evidence: evidence,
+                };
+            },
+            buildSpecificHardCcDriver: function (events) {
+                const totals = new Map();
+                (events || []).forEach(event => {
+                    (event.crowdControlEffects || []).filter(entry => entry && entry.isHardCc).forEach(entry => {
+                        const name = this.normalizeDriverLabel(entry.label || "Unknown hard CC");
+                        const count = Math.max(1, parseInt(entry.value, 10) || 1);
+                        const current = totals.get(name) || { name: name, count: 0, eventCount: 0 };
+                        current.count += count;
+                        current.eventCount++;
+                        totals.set(name, current);
+                    });
+                });
+                const top = Array.from(totals.values()).sort((left, right) => right.count - left.count)[0];
+                if (!top || events.length === 0) {
+                    return null;
+                }
+                const coverage = top.eventCount * 100.0 / events.length;
+                const evidence = events.map(event => {
+                    const entry = (event.crowdControlEffects || []).find(item =>
+                        item && item.isHardCc && this.normalizeDriverLabel(item.label || "") === top.name);
+                    return entry ? {
+                        time: Number(entry.time || event.time || 0),
+                        timeLabel: entry.timeLabel || event.timeLabel || this.formatTime(event.time),
+                        actorName: event.actorName || "Unknown player",
+                        value: Math.max(1, parseInt(entry.value, 10) || 1),
+                        valueLabel: entry.value || "Hard CC recorded",
+                        detail: entry.secondary || "Direct hard-control evidence",
+                    } : null;
+                }).filter(entry => entry != null)
+                    .sort((left, right) => right.value - left.value)
+                    .slice(0, 8);
+                return {
+                    key: "specific-cc-" + top.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+                    label: top.name,
+                    category: "Specific CC",
+                    score: Math.round(coverage),
+                    observability: "Observed",
+                    confidenceLabel: this.driverConfidence(events.length, 0, "Observed"),
+                    effectLabel: `${top.count} recorded events across ${top.eventCount} of ${events.length} outcomes`,
+                    detail: "Uses directly recorded incoming hard-control events. It does not infer the target's exact Stability state.",
+                    evidence: evidence,
+                };
+            },
+            buildControlIndices: function (times, damage, eventTimes) {
+                let indices = times.map((time, index) => index).filter(index => {
+                    if (Number(damage[index] || 0) <= 0) {
+                        return false;
+                    }
+                    return !eventTimes.some(eventTime => Math.abs(Number(times[index] || 0) - eventTime) <= 5000);
+                });
+                if (indices.length < 30) {
+                    indices = times.map((time, index) => index).filter(index =>
+                        Number(damage[index] || 0) > 0 &&
+                        !eventTimes.some(eventTime => Math.abs(Number(times[index] || 0) - eventTime) <= 1500));
+                }
+                return indices;
+            },
+            normalizeDriverLabel: function (label) {
+                return String(label || "").replace(/^\d+-/, "");
+            },
+            buildRollingBucketSeries: function (times, timeline, valueKey) {
+                return (times || []).map(time => {
+                    const end = Number(time || 0);
+                    const start = Math.max(0, end - 3000);
+                    return (timeline || []).reduce((total, bucket) => {
+                        const bucketTime = Number(bucket && bucket.time || 0);
+                        return bucketTime >= start && bucketTime <= end
+                            ? total + Number(bucket && bucket[valueKey] || 0)
+                            : total;
+                    }, 0);
+                });
+            },
+            getTimelineIndex: function (times, time) {
+                if (!times || times.length === 0) {
+                    return 0;
+                }
+                const target = Number(time || 0);
+                let low = 0;
+                let high = times.length - 1;
+                while (low < high) {
+                    const middle = Math.ceil((low + high) / 2);
+                    if (Number(times[middle] || 0) <= target) {
+                        low = middle;
+                    } else {
+                        high = middle - 1;
+                    }
+                }
+                return low;
+            },
+            percentile: function (values, percentile) {
+                const sorted = (values || []).filter(Number.isFinite).sort((left, right) => left - right);
+                if (sorted.length === 0) {
+                    return 0;
+                }
+                const index = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * percentile)));
+                return sorted[index];
+            },
+            percentileRank: function (values, value) {
+                const finite = (values || []).filter(Number.isFinite);
+                if (finite.length === 0) {
+                    return 0;
+                }
+                return finite.filter(entry => entry <= value).length * 100.0 / finite.length;
+            },
+            average: function (values) {
+                const finite = (values || []).filter(Number.isFinite);
+                return finite.length > 0 ? finite.reduce((sum, value) => sum + value, 0) / finite.length : 0;
+            },
+            signedNumber: function (value, digits) {
+                const rounded = Number(value || 0).toFixed(digits);
+                return Number(value || 0) > 0 ? "+" + rounded : rounded;
+            },
+            formatDriverValue: function (value, format) {
+                if (format === "percent") {
+                    return Number(value || 0).toFixed(1) + "%";
+                }
+                if (format === "seconds") {
+                    return Number(value || 0).toFixed(1) + "s";
+                }
+                if (format === "binary") {
+                    return value > 0 ? "Present" : "Absent";
+                }
+                return this.formatCount(Math.round(Number(value || 0)));
+            },
+            formatAverageDriverValue: function (value, format) {
+                if (format !== "count") {
+                    return this.formatDriverValue(value, format);
+                }
+                return Number(value || 0).toLocaleString(undefined, {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 1,
+                });
+            },
+            confidenceForSampleCount: function (eventCount, controlCount) {
+                if (eventCount >= 10 && (controlCount === 0 || controlCount >= 30)) {
+                    return "High";
+                }
+                if (eventCount >= 5 && (controlCount === 0 || controlCount >= 15)) {
+                    return "Medium";
+                }
+                if (eventCount >= 2) {
+                    return "Limited";
+                }
+                return "Very limited";
+            },
+            driverConfidence: function (eventCount, controlCount, observability) {
+                let confidence = this.confidenceForSampleCount(eventCount, controlCount);
+                if (observability === "Supporting" && confidence === "High") {
+                    confidence = "Medium";
+                }
+                return confidence;
+            },
+            confidencePillClass: function (confidence) {
+                if (confidence === "High") {
+                    return "combat-replay-wvw-analysis-pill-success";
+                }
+                if (confidence === "Medium") {
+                    return "combat-replay-wvw-analysis-pill-normal";
+                }
+                return "combat-replay-wvw-analysis-pill-muted";
+            },
+            observabilityPillClass: function (observability) {
+                if (observability === "Observed") {
+                    return "combat-replay-wvw-analysis-pill-success";
+                }
+                if (observability === "Supporting") {
+                    return "combat-replay-wvw-analysis-pill-normal";
+                }
+                return "combat-replay-wvw-analysis-pill-muted";
+            },
+            buildDriverCaveats: function (againstEnemy) {
+                const caveats = [
+                    {
+                        observability: "Unavailable",
+                        title: "Exact Stability removal",
+                        detail: "General strip and CC timing is shown, but the report does not claim that a specific enemy Stability stack was removed.",
+                    },
+                    {
+                        observability: "Supporting",
+                        title: "Enemy condition state",
+                        detail: "Condition applications and damage ticks can support the timeline; exact current stacks, cleanses, and remaining duration may be incomplete.",
+                    },
+                    {
+                        observability: "Supporting",
+                        title: "Single-fight attribution",
+                        detail: "Scores describe repeated patterns inside this log and should not be treated as universal or causal without many fights.",
+                    },
+                ];
+                if (!againstEnemy) {
+                    caveats.push({
+                        observability: "Unavailable",
+                        title: "Enemy positioning context",
+                        detail: "Squad positioning is replay-visible, but equivalent commander-relative enemy positioning is not scored here.",
+                    });
+                }
+                return caveats;
+            },
+        },
+    });
+
     function getCombatReplayAnalysisNavigationState() {
         if (!window.reactiveCombatReplayAnalysisNavigation && window.Vue && Vue.observable) {
             window.reactiveCombatReplayAnalysisNavigation = Vue.observable({
@@ -484,6 +1533,9 @@
                 </li>
                 <li v-if="hasDiagnosis" class="nav-item">
                     <a class="nav-link" :class="{active: overviewMode === 7}" @click="overviewMode = 7">Diagnosis</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{active: overviewMode === 9}" @click="overviewMode = 9">Drivers</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link" :class="{active: overviewMode === 1}" @click="overviewMode = 1">Burst</a>
@@ -523,6 +1575,7 @@
                 <combat-replay-player-analysis-component v-else-if="hasanalysis && overviewMode === 6" :time="time" :selectedactorid="selectedactorid"></combat-replay-player-analysis-component>
                 <combat-replay-fight-diagnosis-component v-else-if="hasanalysis && overviewMode === 7" :time="time" :selectedactorid="selectedactorid"></combat-replay-fight-diagnosis-component>
                 <combat-replay-incoming-conditions-component v-else-if="hasanalysis && overviewMode === 8" :time="time" :selectedactorid="selectedactorid"></combat-replay-incoming-conditions-component>
+                <combat-replay-outcome-drivers-component v-else-if="hasanalysis && overviewMode === 9" :time="time"></combat-replay-outcome-drivers-component>
             </keep-alive>
             <div v-if="showOverviewHelp" class="wvw-summary-modal-backdrop" @click.self="showOverviewHelp = false">
                 <div class="wvw-summary-modal combat-replay-overview-help-modal" role="dialog" aria-modal="true" aria-label="Combat replay compact card help">

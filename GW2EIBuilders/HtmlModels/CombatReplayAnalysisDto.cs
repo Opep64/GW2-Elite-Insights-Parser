@@ -294,6 +294,16 @@ internal class CombatReplayConditionTimelineBucketDto
     public int ExtensionCount { get; set; }
     public string TopConditionName { get; set; } = "";
     public string TopSourceName { get; set; } = "";
+    public List<CombatReplayConditionTimelineEntryDto> Applications { get; set; } = [];
+}
+
+internal class CombatReplayConditionTimelineEntryDto
+{
+    public long BuffId { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public int ApplyCount { get; set; }
+    public int ExtensionCount { get; set; }
 }
 
 internal class CombatReplayCrowdControlTimelineBucketDto
@@ -304,6 +314,17 @@ internal class CombatReplayCrowdControlTimelineBucketDto
     public double TotalDuration { get; set; }
     public string TopSkillName { get; set; } = "";
     public string TopSourceName { get; set; } = "";
+    public List<CombatReplayCrowdControlTimelineEntryDto> Effects { get; set; } = [];
+}
+
+internal class CombatReplayCrowdControlTimelineEntryDto
+{
+    public long SkillId { get; set; }
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public int EventCount { get; set; }
+    public int EffectiveCount { get; set; }
+    public double TotalDuration { get; set; }
 }
 
 internal class CombatReplayIncomingConditionDto
@@ -914,6 +935,13 @@ internal class CombatReplayDownEventDto
 
 internal class CombatReplayKillEventDto : CombatReplayDownEventDto
 {
+    public int TotalDownedHealing { get; set; }
+    public int DownedHealingEventCount { get; set; }
+    public int RezCastCount { get; set; }
+    public double RezCastDurationSeconds { get; set; }
+    public int SupportContributorCount { get; set; }
+    public List<CombatReplayEventContributionDto> SupportContributors { get; set; } = [];
+    public List<CombatReplayEventContributionDto> SupportActions { get; set; } = [];
 }
 
 internal class CombatReplayRecoveredEventDto : CombatReplayDownEventDto
@@ -1681,7 +1709,7 @@ internal static class CombatReplayAnalysisBuilder
         public long Time { get; } = time;
         public int ApplyCount { get; private set; }
         public int ExtensionCount { get; private set; }
-        public Dictionary<long, (Buff Condition, int Count)> Conditions { get; } = [];
+        public Dictionary<long, (Buff Condition, int ApplyCount, int ExtensionCount)> Conditions { get; } = [];
         public Dictionary<int, (SingleActor Actor, int Count)> Sources { get; } = [];
 
         public void Add(Buff condition, SingleActor source, bool extension)
@@ -1694,11 +1722,14 @@ internal static class CombatReplayAnalysisBuilder
 
             if (Conditions.TryGetValue(condition.ID, out var conditionEntry))
             {
-                Conditions[condition.ID] = (conditionEntry.Condition, conditionEntry.Count + 1);
+                Conditions[condition.ID] = (
+                    conditionEntry.Condition,
+                    conditionEntry.ApplyCount + 1,
+                    conditionEntry.ExtensionCount + (extension ? 1 : 0));
             }
             else
             {
-                Conditions[condition.ID] = (condition, 1);
+                Conditions[condition.ID] = (condition, 1, extension ? 1 : 0);
             }
 
             if (Sources.TryGetValue(source.UniqueID, out var sourceEntry))
@@ -1717,7 +1748,7 @@ internal static class CombatReplayAnalysisBuilder
         public int EventCount { get; private set; }
         public int EffectiveCount { get; private set; }
         public int TotalDuration { get; private set; }
-        public Dictionary<long, (SkillItem Skill, int Count)> Skills { get; } = [];
+        public Dictionary<long, (SkillItem Skill, int EventCount, int EffectiveCount, int TotalDuration)> Skills { get; } = [];
         public Dictionary<int, (SingleActor Actor, int Count)> Sources { get; } = [];
 
         public void Add(SkillItem skill, SingleActor source, bool effective, int duration)
@@ -1731,11 +1762,15 @@ internal static class CombatReplayAnalysisBuilder
 
             if (Skills.TryGetValue(skill.ID, out var skillEntry))
             {
-                Skills[skill.ID] = (skillEntry.Skill, skillEntry.Count + 1);
+                Skills[skill.ID] = (
+                    skillEntry.Skill,
+                    skillEntry.EventCount + 1,
+                    skillEntry.EffectiveCount + (effective ? 1 : 0),
+                    skillEntry.TotalDuration + duration);
             }
             else
             {
-                Skills[skill.ID] = (skill, 1);
+                Skills[skill.ID] = (skill, 1, effective ? 1 : 0, duration);
             }
 
             if (Sources.TryGetValue(source.UniqueID, out var sourceEntry))
@@ -7004,8 +7039,8 @@ internal static class CombatReplayAnalysisBuilder
     private static CombatReplayConditionTimelineBucketDto BuildConditionTimelineBucketDto(
         ConditionTimelineBucketAccumulator accumulator)
     {
-        (Buff Condition, int Count) topCondition = accumulator.Conditions.Values
-            .OrderByDescending(entry => entry.Count)
+        (Buff Condition, int ApplyCount, int ExtensionCount) topCondition = accumulator.Conditions.Values
+            .OrderByDescending(entry => entry.ApplyCount)
             .ThenBy(entry => entry.Condition.Name, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault();
         (SingleActor Actor, int Count) topSource = accumulator.Sources.Values
@@ -7019,6 +7054,17 @@ internal static class CombatReplayAnalysisBuilder
             ExtensionCount = accumulator.ExtensionCount,
             TopConditionName = topCondition.Condition?.Name ?? "",
             TopSourceName = topSource.Actor?.Character ?? "",
+            Applications = [.. accumulator.Conditions.Values
+                .OrderByDescending(entry => entry.ApplyCount)
+                .ThenBy(entry => entry.Condition.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(entry => new CombatReplayConditionTimelineEntryDto
+                {
+                    BuffId = entry.Condition.ID,
+                    Name = entry.Condition.Name,
+                    Icon = entry.Condition.Link,
+                    ApplyCount = entry.ApplyCount,
+                    ExtensionCount = entry.ExtensionCount,
+                })],
         };
     }
 
@@ -7276,8 +7322,8 @@ internal static class CombatReplayAnalysisBuilder
     private static CombatReplayCrowdControlTimelineBucketDto BuildCrowdControlTimelineBucketDto(
         CrowdControlTimelineBucketAccumulator accumulator)
     {
-        (SkillItem Skill, int Count) topSkill = accumulator.Skills.Values
-            .OrderByDescending(entry => entry.Count)
+        (SkillItem Skill, int EventCount, int EffectiveCount, int TotalDuration) topSkill = accumulator.Skills.Values
+            .OrderByDescending(entry => entry.EventCount)
             .ThenBy(entry => GetSkillDisplayName(entry.Skill), StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault();
         (SingleActor Actor, int Count) topSource = accumulator.Sources.Values
@@ -7292,6 +7338,18 @@ internal static class CombatReplayAnalysisBuilder
             TotalDuration = Math.Round(accumulator.TotalDuration / 1000.0, 1),
             TopSkillName = topSkill.Skill != null ? GetSkillDisplayName(topSkill.Skill) : "",
             TopSourceName = topSource.Actor?.Character ?? "",
+            Effects = [.. accumulator.Skills.Values
+                .OrderByDescending(entry => entry.EventCount)
+                .ThenBy(entry => GetSkillDisplayName(entry.Skill), StringComparer.OrdinalIgnoreCase)
+                .Select(entry => new CombatReplayCrowdControlTimelineEntryDto
+                {
+                    SkillId = entry.Skill.ID,
+                    Name = GetSkillDisplayName(entry.Skill),
+                    Icon = entry.Skill.Icon,
+                    EventCount = entry.EventCount,
+                    EffectiveCount = entry.EffectiveCount,
+                    TotalDuration = Math.Round(entry.TotalDuration / 1000.0, 1),
+                })],
         };
     }
 
@@ -9432,8 +9490,8 @@ internal static class CombatReplayAnalysisBuilder
         IReadOnlyList<SingleActor> hostileTargets)
     {
         var events = new List<CombatReplayKillEventDto>();
-        events.AddRange(BuildKillEvents(log, squadPlayers, "Squad", false));
-        events.AddRange(BuildKillEvents(log, hostileTargets, "Enemy", true));
+        events.AddRange(BuildKillEvents(log, squadPlayers, squadPlayers, "Squad", false));
+        events.AddRange(BuildKillEvents(log, hostileTargets, squadPlayers, "Enemy", true));
         events.Sort((left, right) => left.Time.CompareTo(right.Time));
         return new CombatReplayKillAnalysisDto
         {
@@ -9447,6 +9505,7 @@ internal static class CombatReplayAnalysisBuilder
     private static IEnumerable<CombatReplayKillEventDto> BuildKillEvents(
         ParsedEvtcLog log,
         IReadOnlyList<SingleActor> actors,
+        IReadOnlyList<SingleActor> squadPlayers,
         string side,
         bool isEnemy)
     {
@@ -9456,7 +9515,15 @@ internal static class CombatReplayAnalysisBuilder
             Dictionary<HealthDamageEvent, HealthDamageEvent?> previousDamageEventLookup = BuildPreviousDamageEventLookup(trackedDamageEvents);
             foreach (DownEvent downEvent in log.CombatData.GetDownEvents(actor.AgentItem).OrderBy(evt => evt.Time))
             {
-                CombatReplayKillEventDto? killEvent = BuildKillEvent(log, actor, trackedDamageEvents, previousDamageEventLookup, downEvent, side, isEnemy);
+                CombatReplayKillEventDto? killEvent = BuildKillEvent(
+                    log,
+                    actor,
+                    squadPlayers,
+                    trackedDamageEvents,
+                    previousDamageEventLookup,
+                    downEvent,
+                    side,
+                    isEnemy);
                 if (killEvent != null)
                 {
                     yield return killEvent;
@@ -9468,6 +9535,7 @@ internal static class CombatReplayAnalysisBuilder
     private static CombatReplayKillEventDto? BuildKillEvent(
         ParsedEvtcLog log,
         SingleActor actor,
+        IReadOnlyList<SingleActor> squadPlayers,
         IReadOnlyList<HealthDamageEvent> trackedDamageEvents,
         IReadOnlyDictionary<HealthDamageEvent, HealthDamageEvent?> previousDamageEventLookup,
         DownEvent downEvent,
@@ -9484,6 +9552,9 @@ internal static class CombatReplayAnalysisBuilder
         long killTime = outcomeInfo.TransitionTime.Value;
         long conditionSnapshotTime = Math.Max(log.LogData.LogStart, killTime - 1);
         DamageWindowSummary summary = BuildDamageWindowSummary(log, actor, trackedDamageEvents, previousDamageEventLookup, downEvent.Time, killTime, conditionSnapshotTime);
+        RecoverySupportSummary? supportSummary = isEnemy
+            ? null
+            : BuildRecoverySupportSummary(log, actor, squadPlayers, downEvent.Time, killTime);
         return new CombatReplayKillEventDto
         {
             Time = killTime,
@@ -9511,6 +9582,13 @@ internal static class CombatReplayAnalysisBuilder
             ConditionDamageBreakdown = [.. summary.ConditionDamageBreakdown],
             Contributors = [.. summary.Contributors],
             DamageTimeline = [.. summary.DamageTimeline],
+            TotalDownedHealing = supportSummary?.TotalDownedHealing ?? 0,
+            DownedHealingEventCount = supportSummary?.DownedHealingEventCount ?? 0,
+            RezCastCount = supportSummary?.RezCastCount ?? 0,
+            RezCastDurationSeconds = supportSummary?.RezCastDurationSeconds ?? 0.0,
+            SupportContributorCount = supportSummary?.SupportContributorCount ?? 0,
+            SupportContributors = supportSummary.HasValue ? [.. supportSummary.Value.SupportContributors] : [],
+            SupportActions = supportSummary.HasValue ? [.. supportSummary.Value.SupportActions] : [],
         };
     }
 
