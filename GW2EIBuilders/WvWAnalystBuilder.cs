@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Globalization;
 using System.Numerics;
 using GW2EIBuilders.HtmlModels;
@@ -23,6 +24,7 @@ public sealed class WvWAnalystBuilder
     private readonly WvWAnalystFightPayloadDto? _payload;
 
     public bool HasPayload => _payload is not null;
+    public bool HasPressurePreview => !string.IsNullOrWhiteSpace(_payload?.PressurePreviewSvg);
 
     public WvWAnalystBuilder(ParsedEvtcLog log, Version parserVersion, string sourceFileName)
     {
@@ -37,6 +39,18 @@ public sealed class WvWAnalystBuilder
         }
 
         JsonSerializer.Serialize(stream, _payload, indent ? IndentedSerializerOptions : DefaultSerializerOptions);
+    }
+
+    public void CreatePressurePreview(Stream stream)
+    {
+        if (string.IsNullOrWhiteSpace(_payload?.PressurePreviewSvg))
+        {
+            throw new InvalidDataException("No WvW pressure preview is available for this log.");
+        }
+
+        using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true);
+        writer.Write(_payload.PressurePreviewSvg);
+        writer.Flush();
     }
 
     private static WvWAnalystFightPayloadDto? Build(ParsedEvtcLog log, Version parserVersion, string sourceFileName)
@@ -146,6 +160,7 @@ public sealed class WvWAnalystBuilder
             EnemyTopBursts = enemyTopBursts,
             Players = players,
             EnemyPlayers = enemyPlayers,
+            PressurePreviewSvg = WvWAnalystPressurePreviewBuilder.Build(combatReplayAnalysis, encounterLabel),
         };
     }
 
@@ -2671,6 +2686,8 @@ public sealed class WvWAnalystBuilder
 
 internal sealed class WvWAnalystFightPayloadDto
 {
+    [JsonIgnore]
+    public string? PressurePreviewSvg { get; set; }
     public WvWAnalystMetaDto Meta { get; set; } = new();
     public WvWAnalystSourceDto Source { get; set; } = new();
     public WvWAnalystFightDto Fight { get; set; } = new();

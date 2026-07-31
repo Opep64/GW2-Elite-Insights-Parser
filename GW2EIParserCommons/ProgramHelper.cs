@@ -611,6 +611,15 @@ public sealed class ProgramHelper : IDisposable
                 }
 
                 operation.UpdateProgressWithCancellationCheck("Program: Analyst JSON created");
+
+                if (builder.HasPressurePreview)
+                {
+                    string previewOutputFile = Path.Combine(saveDirectory.FullName, $"{fName}.analysis-strips.svg");
+                    using var previewStream = new FileStream(previewOutputFile, FileMode.Create, FileAccess.Write);
+                    builder.CreatePressurePreview(previewStream);
+                    operation.AddFile(previewOutputFile);
+                    operation.UpdateProgressWithCancellationCheck("Program: Analyst pressure preview created");
+                }
             }
             else
             {
