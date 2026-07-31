@@ -92,9 +92,9 @@ public sealed class WvWAnalystBuilder
         {
             Meta = new WvWAnalystMetaDto
             {
-                SchemaVersion = "1.25.0",
+                SchemaVersion = "1.26.0",
                 PayloadType = "wvw-analyst-fight",
-                DetailLevel = "summary+players+boons+lane-metrics+player-fight-impact+spec-fight-coverage+player-boons+provided-boons+top-bursts+enemy-player-performance+enemy-top-bursts+defense-saves+mitigation-summary+negated-hits+shield-of-courage+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context+outcome-analysis",
+                DetailLevel = "summary+players+boons+lane-metrics+player-fight-impact+spec-fight-coverage+player-boons+provided-boons+top-bursts+enemy-player-performance+enemy-top-bursts+defense-saves+mitigation-summary+negated-hits+shield-of-courage+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context+outcome-analysis+condition-sources+crowd-control-sources",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
                 ParserVersion = parserVersion.ToString(),
             },
@@ -2107,6 +2107,14 @@ public sealed class WvWAnalystBuilder
             affectedSideId: "squad"));
         crowdControlEvents.Sort((left, right) => left.TimeMs.CompareTo(right.TimeMs));
 
+        var conditionSources = new List<WvWAnalystConditionSourceSummaryDto>();
+        conditionSources.AddRange(BuildOutcomeConditionSources(analysis.SquadConditions, "squad", "enemy"));
+        conditionSources.AddRange(BuildOutcomeConditionSources(analysis.IncomingConditions, "enemy", "squad"));
+
+        var crowdControlSources = new List<WvWAnalystCrowdControlSourceSummaryDto>();
+        crowdControlSources.AddRange(BuildOutcomeCrowdControlSources(analysis.SquadCrowdControl, "squad", "enemy"));
+        crowdControlSources.AddRange(BuildOutcomeCrowdControlSources(analysis.EnemyCrowdControl, "enemy", "squad"));
+
         return new WvWAnalystOutcomeAnalysisDto
         {
             MethodVersion = "1.0.1",
@@ -2147,6 +2155,8 @@ public sealed class WvWAnalystBuilder
             Events = events,
             ConditionEvents = conditionEvents,
             CrowdControlEvents = crowdControlEvents,
+            ConditionSources = conditionSources,
+            CrowdControlSources = crowdControlSources,
         };
     }
 
@@ -2479,6 +2489,67 @@ public sealed class WvWAnalystBuilder
         }
     }
 
+    private static IEnumerable<WvWAnalystConditionSourceSummaryDto> BuildOutcomeConditionSources(
+        CombatReplayIncomingConditionAnalysisDto analysis,
+        string actingSideId,
+        string affectedSideId)
+    {
+        foreach (CombatReplayIncomingConditionDto condition in analysis.Conditions)
+        {
+            foreach (CombatReplayIncomingConditionActorDto source in condition.Sources)
+            {
+                yield return new WvWAnalystConditionSourceSummaryDto
+                {
+                    ActingSideId = actingSideId,
+                    AffectedSideId = affectedSideId,
+                    ActorId = source.ActorId,
+                    ActorName = source.Name,
+                    ActorIcon = source.Icon,
+                    BuffId = condition.BuffId,
+                    Name = condition.Name,
+                    Icon = condition.Icon,
+                    StackBased = condition.StackBased,
+                    Pressure = source.Pressure,
+                    Presence = source.Presence,
+                    ExtensionPressure = source.ExtensionPressure,
+                    WastedPressure = source.WastedPressure,
+                    ApplyCount = source.ApplyCount,
+                    ExtensionCount = source.ExtensionCount,
+                    ConditionDamage = source.ConditionDamage,
+                    AffectedPlayerCount = source.RelatedActorCount,
+                };
+            }
+        }
+    }
+
+    private static IEnumerable<WvWAnalystCrowdControlSourceSummaryDto> BuildOutcomeCrowdControlSources(
+        CombatReplayIncomingConditionAnalysisDto analysis,
+        string actingSideId,
+        string affectedSideId)
+    {
+        foreach (CombatReplayIncomingConditionDto effect in analysis.Conditions)
+        {
+            foreach (CombatReplayIncomingConditionActorDto source in effect.Sources)
+            {
+                yield return new WvWAnalystCrowdControlSourceSummaryDto
+                {
+                    ActingSideId = actingSideId,
+                    AffectedSideId = affectedSideId,
+                    ActorId = source.ActorId,
+                    ActorName = source.Name,
+                    ActorIcon = source.Icon,
+                    SkillId = effect.BuffId,
+                    Name = effect.Name,
+                    Icon = effect.Icon,
+                    EventCount = source.EventCount,
+                    EffectiveCount = source.EffectiveCount,
+                    DurationSeconds = source.TotalDuration,
+                    AffectedPlayerCount = source.RelatedActorCount,
+                };
+            }
+        }
+    }
+
     private static long GetArrayValue(long[] values, int index) =>
         index >= 0 && index < values.Length ? values[index] : 0;
 
@@ -2768,6 +2839,8 @@ internal sealed class WvWAnalystOutcomeAnalysisDto
     public IReadOnlyList<WvWAnalystOutcomeEventDto> Events { get; set; } = Array.Empty<WvWAnalystOutcomeEventDto>();
     public IReadOnlyList<WvWAnalystConditionEventDto> ConditionEvents { get; set; } = Array.Empty<WvWAnalystConditionEventDto>();
     public IReadOnlyList<WvWAnalystCrowdControlEventDto> CrowdControlEvents { get; set; } = Array.Empty<WvWAnalystCrowdControlEventDto>();
+    public IReadOnlyList<WvWAnalystConditionSourceSummaryDto> ConditionSources { get; set; } = Array.Empty<WvWAnalystConditionSourceSummaryDto>();
+    public IReadOnlyList<WvWAnalystCrowdControlSourceSummaryDto> CrowdControlSources { get; set; } = Array.Empty<WvWAnalystCrowdControlSourceSummaryDto>();
 }
 
 internal sealed class WvWAnalystOutcomeAnalysisAvailabilityDto
@@ -2986,6 +3059,43 @@ internal sealed class WvWAnalystCrowdControlEffectDto
     public int EventCount { get; set; }
     public int EffectiveCount { get; set; }
     public double DurationSeconds { get; set; }
+}
+
+internal sealed class WvWAnalystConditionSourceSummaryDto
+{
+    public string ActingSideId { get; set; } = string.Empty;
+    public string AffectedSideId { get; set; } = string.Empty;
+    public int ActorId { get; set; }
+    public string ActorName { get; set; } = string.Empty;
+    public string ActorIcon { get; set; } = string.Empty;
+    public long BuffId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Icon { get; set; } = string.Empty;
+    public bool StackBased { get; set; }
+    public double Pressure { get; set; }
+    public double Presence { get; set; }
+    public double ExtensionPressure { get; set; }
+    public double WastedPressure { get; set; }
+    public int ApplyCount { get; set; }
+    public int ExtensionCount { get; set; }
+    public long ConditionDamage { get; set; }
+    public int AffectedPlayerCount { get; set; }
+}
+
+internal sealed class WvWAnalystCrowdControlSourceSummaryDto
+{
+    public string ActingSideId { get; set; } = string.Empty;
+    public string AffectedSideId { get; set; } = string.Empty;
+    public int ActorId { get; set; }
+    public string ActorName { get; set; } = string.Empty;
+    public string ActorIcon { get; set; } = string.Empty;
+    public long SkillId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Icon { get; set; } = string.Empty;
+    public int EventCount { get; set; }
+    public int EffectiveCount { get; set; }
+    public double DurationSeconds { get; set; }
+    public int AffectedPlayerCount { get; set; }
 }
 
 internal sealed class WvWAnalystMetaDto
