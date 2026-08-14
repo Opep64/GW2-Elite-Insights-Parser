@@ -25,12 +25,20 @@
 }
 
 .scrollable-y {
+    overflow-x: hidden;
     overflow-y: auto;
     scrollbar-width: thin;
 }
 
 .scrollable-x {
     overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+}
+
+.scrollable-x-y {
+    overflow-x: auto;
+    overflow-y: auto;
     scrollbar-width: thin;
 }
 
@@ -243,11 +251,15 @@ h6.actor-shorten-cr-compact {
     vertical-align: middle;
 }
 
-.theme-slate .player-data.active {
+.actor-data:not(:last-child) {
+    border-bottom: 1px solid #888;
+}
+
+.theme-slate .actor-data.active {
     background-color: rgba(80, 86, 92, 0.9);
 }
 
-.theme-yeti .player-data.active {
+.theme-yeti .actor-data.active {
     background-color: rgba(220, 220, 220, 0.9);
 }
 
@@ -4772,12 +4784,12 @@ canvas {
 
 .combat-replay-mechanics-list-container {
     max-height: 800px;
-    max-width:450px; 
-    overflow-y:auto;
+    max-width: 500px;
 }
 
 .combat-actor-status-container {
     max-height: 830px;
+    width: 250px;
 }
 
 .combat-replay-mechanics-list-row {
