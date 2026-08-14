@@ -84,7 +84,7 @@ public sealed class WvWAnalystBuilder
         var enemyTopBursts = BuildTopBursts(combatReplayAnalysis, hostilePlayerTargets, analysis => analysis.Enemy);
         var enemyPlayers = BuildEnemyPlayerSummaries(log, mainPhase, hostilePlayerTargets, squadPlayers);
         var fightShape = BuildFightShapeDiagnostics(log, mainPhase, squadPlayers, hostilePlayerTargets, combatReplayAnalysis, outcome);
-        var outcomeAnalysis = BuildOutcomeAnalysis(log, combatReplayAnalysis, squadPlayers, hostilePlayerTargets, fightShape);
+        var outcomeAnalysis = BuildOutcomeSourceAnalysis(combatReplayAnalysis);
         var squadClasses = BuildSideClasses(squadPlayers, combatReplayAnalysis?.SpecCapabilities);
         var enemyClasses = BuildSideClasses(hostilePlayerTargets);
 
@@ -94,7 +94,7 @@ public sealed class WvWAnalystBuilder
             {
                 SchemaVersion = "1.26.0",
                 PayloadType = "wvw-analyst-fight",
-                DetailLevel = "summary+players+boons+lane-metrics+player-fight-impact+spec-fight-coverage+player-boons+provided-boons+top-bursts+enemy-player-performance+enemy-top-bursts+defense-saves+mitigation-summary+negated-hits+shield-of-courage+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context+outcome-analysis+condition-sources+crowd-control-sources",
+                DetailLevel = "summary+players+boons+lane-metrics+player-fight-impact+spec-fight-coverage+player-boons+provided-boons+top-bursts+enemy-player-performance+enemy-top-bursts+defense-saves+mitigation-summary+negated-hits+shield-of-courage+obliterate+side-classes+fight-shape-diagnostics+enemy-movement-score+three-way-context+condition-sources+crowd-control-sources",
                 GeneratedAtUtc = DateTime.UtcNow.ToString("O"),
                 ParserVersion = parserVersion.ToString(),
             },
@@ -2032,99 +2032,19 @@ public sealed class WvWAnalystBuilder
             source.Is(player.EnglobingAgentItem);
     }
 
-    private static WvWAnalystOutcomeAnalysisDto? BuildOutcomeAnalysis(
-        ParsedEvtcLog log,
-        CombatReplayAnalysisDto? analysis,
-        IReadOnlyList<SingleActor> squadPlayers,
-        IReadOnlyList<SingleActor> enemyPlayers,
-        WvWAnalystFightShapeDto? fightShape)
+    private static WvWAnalystOutcomeAnalysisDto? BuildOutcomeSourceAnalysis(
+        CombatReplayAnalysisDto? analysis)
     {
-        if (analysis is null || analysis.Times.Length == 0)
+        if (analysis is null)
         {
             return null;
         }
 
-        IReadOnlyDictionary<int, long> squadKillTimes = BuildFightShapeKillTimes(analysis.Events.Kills.Events, isEnemy: false);
-        IReadOnlyDictionary<int, long> enemyKillTimes = BuildFightShapeKillTimes(analysis.Events.Kills.Events, isEnemy: true);
-        var samples = new List<WvWAnalystOutcomeSampleDto>(analysis.Times.Length);
-        for (int index = 0; index < analysis.Times.Length; index++)
-        {
-            long time = analysis.Times[index];
-            WvWAnalystOutcomeSideStateDto squadState = BuildOutcomeSideState(log, squadPlayers, squadKillTimes, time);
-            WvWAnalystOutcomeSideStateDto enemyState = BuildOutcomeSideState(log, enemyPlayers, enemyKillTimes, time);
-            samples.Add(new WvWAnalystOutcomeSampleDto
-            {
-                TimeMs = time,
-                Squad = BuildOutcomeSideSample(analysis.Squad, index, squadState),
-                Enemy = BuildOutcomeSideSample(analysis.Enemy, index, enemyState),
-                SquadPositioning = BuildOutcomePositioningSample(analysis.Positioning, index),
-            });
-        }
-
-        Dictionary<(bool IsEnemy, int ActorId, long DownTime), string> engagementIds =
-            BuildOutcomeEngagementIds(analysis.Events.Downs.Events);
-        var events = new List<WvWAnalystOutcomeEventDto>(
-            analysis.Events.Downs.Events.Count +
-            analysis.Events.Kills.Events.Count +
-            analysis.Events.Recovered.Events.Count);
-        events.AddRange(analysis.Events.Downs.Events.Select(evt =>
-            BuildOutcomeEvent("down", evt, engagementIds)));
-        events.AddRange(analysis.Events.Kills.Events.Select(evt =>
-            BuildOutcomeEvent("kill", evt, engagementIds)));
-        events.AddRange(analysis.Events.Recovered.Events.Select(evt =>
-            BuildOutcomeEvent("recovery", evt, engagementIds)));
-        events = events
-            .GroupBy(evt => evt.EventId, StringComparer.Ordinal)
-            .Select(group => group.First())
-            .ToList();
-        events.Sort((left, right) =>
-        {
-            int timeComparison = left.TimeMs.CompareTo(right.TimeMs);
-            return timeComparison != 0
-                ? timeComparison
-                : string.Compare(left.EventType, right.EventType, StringComparison.Ordinal);
-        });
-
-        var conditionEvents = new List<WvWAnalystConditionEventDto>();
-        conditionEvents.AddRange(BuildOutcomeConditionEvents(
-            analysis.SquadConditions,
-            actingSideId: "squad",
-            affectedSideId: "enemy"));
-        conditionEvents.AddRange(BuildOutcomeConditionEvents(
-            analysis.IncomingConditions,
-            actingSideId: "enemy",
-            affectedSideId: "squad"));
-        conditionEvents.Sort((left, right) => left.TimeMs.CompareTo(right.TimeMs));
-
-        var crowdControlEvents = new List<WvWAnalystCrowdControlEventDto>();
-        crowdControlEvents.AddRange(BuildOutcomeCrowdControlEvents(
-            analysis.SquadCrowdControl,
-            actingSideId: "squad",
-            affectedSideId: "enemy"));
-        crowdControlEvents.AddRange(BuildOutcomeCrowdControlEvents(
-            analysis.EnemyCrowdControl,
-            actingSideId: "enemy",
-            affectedSideId: "squad"));
-        crowdControlEvents.Sort((left, right) => left.TimeMs.CompareTo(right.TimeMs));
-
-        var conditionSources = new List<WvWAnalystConditionSourceSummaryDto>();
-        conditionSources.AddRange(BuildOutcomeConditionSources(analysis.SquadConditions, "squad", "enemy"));
-        conditionSources.AddRange(BuildOutcomeConditionSources(analysis.IncomingConditions, "enemy", "squad"));
-
-        var crowdControlSources = new List<WvWAnalystCrowdControlSourceSummaryDto>();
-        crowdControlSources.AddRange(BuildOutcomeCrowdControlSources(analysis.SquadCrowdControl, "squad", "enemy"));
-        crowdControlSources.AddRange(BuildOutcomeCrowdControlSources(analysis.EnemyCrowdControl, "enemy", "squad"));
-
         return new WvWAnalystOutcomeAnalysisDto
         {
-            MethodVersion = "1.0.1",
-            SampleIntervalMs = ParserHelper.CombatReplayPollingRate,
-            PressureWindowMs = analysis.Lookback,
-            EngagementMergeGapMs = 3000,
-            CompetitiveEndTimeMs = fightShape?.CompetitiveEndTimeMs,
+            MethodVersion = "source-summaries-v1",
             Availability = new WvWAnalystOutcomeAnalysisAvailabilityDto
             {
-                DamageAndBoonRemoval = true,
                 ConditionApplications =
                     analysis.SquadConditions.DataAvailable ||
                     analysis.IncomingConditions.DataAvailable,
@@ -2135,358 +2055,18 @@ public sealed class WvWAnalystBuilder
                     analysis.EnemyCrowdControl.DataAvailable,
                 SquadCrowdControlEvents = analysis.SquadCrowdControl.DataAvailable,
                 EnemyCrowdControlEvents = analysis.EnemyCrowdControl.DataAvailable,
-                SquadPositioning = analysis.Positioning.SummaryEvaluatedSamples > 0,
-                SquadHealing = log.CombatData.HasEXTHealing,
-                SquadBarrier = log.CombatData.HasEXTBarrier,
-                EnemyHealing = false,
-                EnemyBarrier = false,
-                ExactEnemyBoonState = false,
-                ExactEnemyConditionState = false,
-                ExactStabilityState = false,
-                Notes =
-                [
-                    "Damage, boon removal, attributed condition applications, and effective crowd-control events are directly observed when present in the combat log.",
-                    "Vulnerability bonus damage is a supporting estimate derived from observed damage and source-attributed Vulnerability stacks.",
-                    "Enemy healing, exact current enemy conditions, exact enemy boon state, and exact Stability state are not reconstructed.",
-                    "Zero values are measurements; unavailable measurements are identified by the availability fields.",
-                ],
             },
-            Timeline = BuildOutcomeTimeline(samples),
-            Events = events,
-            ConditionEvents = conditionEvents,
-            CrowdControlEvents = crowdControlEvents,
-            ConditionSources = conditionSources,
-            CrowdControlSources = crowdControlSources,
+            ConditionSources =
+            [
+                .. BuildOutcomeConditionSources(analysis.SquadConditions, "squad", "enemy"),
+                .. BuildOutcomeConditionSources(analysis.IncomingConditions, "enemy", "squad"),
+            ],
+            CrowdControlSources =
+            [
+                .. BuildOutcomeCrowdControlSources(analysis.SquadCrowdControl, "squad", "enemy"),
+                .. BuildOutcomeCrowdControlSources(analysis.EnemyCrowdControl, "enemy", "squad"),
+            ],
         };
-    }
-
-    private static WvWAnalystOutcomeTimelineDto BuildOutcomeTimeline(
-        IReadOnlyList<WvWAnalystOutcomeSampleDto> samples)
-    {
-        return new WvWAnalystOutcomeTimelineDto
-        {
-            SampleCount = samples.Count,
-            TimesMs = samples.Select(sample => sample.TimeMs).ToArray(),
-            Squad = BuildOutcomeSideTimeline(samples.Select(sample => sample.Squad)),
-            Enemy = BuildOutcomeSideTimeline(samples.Select(sample => sample.Enemy)),
-            SquadPositioning = BuildOutcomePositioningTimeline(samples.Select(sample => sample.SquadPositioning)),
-        };
-    }
-
-    private static WvWAnalystOutcomeSideTimelineDto BuildOutcomeSideTimeline(
-        IEnumerable<WvWAnalystOutcomeSideSampleDto> source)
-    {
-        WvWAnalystOutcomeSideSampleDto[] samples = source.ToArray();
-        return new WvWAnalystOutcomeSideTimelineDto
-        {
-            Damage = samples.Select(sample => sample.Damage).ToArray(),
-            Downs = samples.Select(sample => sample.Downs).ToArray(),
-            DownsTotal = samples.Select(sample => sample.DownsTotal).ToArray(),
-            Kills = samples.Select(sample => sample.Kills).ToArray(),
-            KillsTotal = samples.Select(sample => sample.KillsTotal).ToArray(),
-            Strips = samples.Select(sample => sample.Strips).ToArray(),
-            Corrupts = samples.Select(sample => sample.Corrupts).ToArray(),
-            StripPeakGapMs = samples.Select(sample => sample.StripPeakGapMs).ToArray(),
-            StripSynced = samples.Select(sample => sample.StripSynced).ToArray(),
-            TopTargetShare = samples.Select(sample => sample.TopTargetShare).ToArray(),
-            TopThreeTargetShare = samples.Select(sample => sample.TopThreeTargetShare).ToArray(),
-            TopTargetContributors = samples.Select(sample => sample.TopTargetContributors).ToArray(),
-            Focused = samples.Select(sample => sample.Focused).ToArray(),
-            TargetSaturationCount = samples.Select(sample => sample.TargetSaturationCount).ToArray(),
-            Healing = samples.Select(sample => sample.Healing).ToArray(),
-            Barrier = samples.Select(sample => sample.Barrier).ToArray(),
-            Cleanses = samples.Select(sample => sample.Cleanses).ToArray(),
-            State = BuildOutcomeSideStateTimeline(samples.Select(sample => sample.State)),
-        };
-    }
-
-    private static WvWAnalystOutcomeSideStateTimelineDto BuildOutcomeSideStateTimeline(
-        IEnumerable<WvWAnalystOutcomeSideStateDto> source)
-    {
-        WvWAnalystOutcomeSideStateDto[] states = source.ToArray();
-        return new WvWAnalystOutcomeSideStateTimelineDto
-        {
-            Total = states.Select(state => state.Total).ToArray(),
-            Observed = states.Select(state => state.Observed).ToArray(),
-            Active = states.Select(state => state.Active).ToArray(),
-            Downed = states.Select(state => state.Downed).ToArray(),
-            DeadOrDisconnected = states.Select(state => state.DeadOrDisconnected).ToArray(),
-            Removed = states.Select(state => state.Removed).ToArray(),
-            Unobserved = states.Select(state => state.Unobserved).ToArray(),
-        };
-    }
-
-    private static WvWAnalystOutcomePositioningTimelineDto BuildOutcomePositioningTimeline(
-        IEnumerable<WvWAnalystOutcomePositioningSampleDto> source)
-    {
-        WvWAnalystOutcomePositioningSampleDto[] samples = source.ToArray();
-        return new WvWAnalystOutcomePositioningTimelineDto
-        {
-            Available = samples.Select(sample => sample.Available).ToArray(),
-            EligiblePlayers = samples.Select(sample => sample.EligiblePlayers).ToArray(),
-            InPositionPlayers = samples.Select(sample => sample.InPositionPlayers).ToArray(),
-            OutOfPositionPlayers = samples.Select(sample => sample.OutOfPositionPlayers).ToArray(),
-            TooFarPlayers = samples.Select(sample => sample.TooFarPlayers).ToArray(),
-            OverextendedPlayers = samples.Select(sample => sample.OverextendedPlayers).ToArray(),
-            LateralRiskPlayers = samples.Select(sample => sample.LateralRiskPlayers).ToArray(),
-            EngagedEnemyCount = samples.Select(sample => sample.EngagedEnemyCount).ToArray(),
-            EnemiesNearCommander = samples.Select(sample => sample.EnemiesNearCommander).ToArray(),
-            Mingled = samples.Select(sample => sample.Mingled).ToArray(),
-            InPositionRate = samples.Select(sample => sample.InPositionRate).ToArray(),
-            TooFarRate = samples.Select(sample => sample.TooFarRate).ToArray(),
-            OverextendedRate = samples.Select(sample => sample.OverextendedRate).ToArray(),
-            LateralRiskRate = samples.Select(sample => sample.LateralRiskRate).ToArray(),
-        };
-    }
-
-    private static WvWAnalystOutcomeSideSampleDto BuildOutcomeSideSample(
-        CombatReplayTeamAnalysisDto team,
-        int index,
-        WvWAnalystOutcomeSideStateDto state)
-    {
-        return new WvWAnalystOutcomeSideSampleDto
-        {
-            Damage = GetArrayValue(team.Damage, index),
-            Downs = GetArrayValue(team.Downs, index),
-            DownsTotal = GetArrayValue(team.DownsTotal, index),
-            Kills = GetArrayValue(team.Kills, index),
-            KillsTotal = GetArrayValue(team.KillsTotal, index),
-            Strips = GetArrayValue(team.Strips, index),
-            Corrupts = GetArrayValue(team.Corrupts, index),
-            StripPeakGapMs = GetArrayValue(team.StripPeakGap, index),
-            StripSynced = GetArrayValue(team.StripSynced, index),
-            TopTargetShare = GetArrayValue(team.TopTargetShare, index),
-            TopThreeTargetShare = GetArrayValue(team.TopThreeTargetShare, index),
-            TopTargetContributors = GetArrayValue(team.TopTargetContributors, index),
-            Focused = GetArrayValue(team.Focused, index),
-            TargetSaturationCount = GetArrayValue(team.TargetSaturationCount, index),
-            Healing = team.Attackers.Values.Sum(timeline => GetArrayValue(timeline.Healing, index)),
-            Barrier = team.Attackers.Values.Sum(timeline => GetArrayValue(timeline.Barrier, index)),
-            Cleanses = team.Attackers.Values.Sum(timeline => GetArrayValue(timeline.Cleanses, index)),
-            State = state,
-        };
-    }
-
-    private static WvWAnalystOutcomePositioningSampleDto BuildOutcomePositioningSample(
-        CombatReplayPositioningAnalysisDto positioning,
-        int index)
-    {
-        int eligible = GetArrayValue(positioning.EligiblePlayerCount, index);
-        int inPosition = GetArrayValue(positioning.InPositionCount, index);
-        int tooFar = GetArrayValue(positioning.TooFarCount, index);
-        int overextended = GetArrayValue(positioning.OverextendedCount, index);
-        int lateralRisk = GetArrayValue(positioning.LateralRiskCount, index);
-        return new WvWAnalystOutcomePositioningSampleDto
-        {
-            Available = positioning.HasCommander && eligible > 0,
-            EligiblePlayers = eligible,
-            InPositionPlayers = inPosition,
-            OutOfPositionPlayers = GetArrayValue(positioning.OutOfPositionCount, index),
-            TooFarPlayers = tooFar,
-            OverextendedPlayers = overextended,
-            LateralRiskPlayers = lateralRisk,
-            EngagedEnemyCount = GetArrayValue(positioning.EngagedEnemyCount, index),
-            EnemiesNearCommander = GetArrayValue(positioning.EnemiesNearCommanderCount, index),
-            Mingled = GetArrayValue(positioning.Mingled, index),
-            InPositionRate = eligible > 0 ? Math.Round(inPosition * 100.0 / eligible, 2) : 0.0,
-            TooFarRate = eligible > 0 ? Math.Round(tooFar * 100.0 / eligible, 2) : 0.0,
-            OverextendedRate = eligible > 0 ? Math.Round(overextended * 100.0 / eligible, 2) : 0.0,
-            LateralRiskRate = eligible > 0 ? Math.Round(lateralRisk * 100.0 / eligible, 2) : 0.0,
-        };
-    }
-
-    private static WvWAnalystOutcomeSideStateDto BuildOutcomeSideState(
-        ParsedEvtcLog log,
-        IReadOnlyList<SingleActor> actors,
-        IReadOnlyDictionary<int, long> killTimes,
-        long time)
-    {
-        var result = new WvWAnalystOutcomeSideStateDto
-        {
-            Total = actors.Count,
-        };
-        foreach (SingleActor actor in actors)
-        {
-            if (actor.FirstAware > time)
-            {
-                result.Unobserved++;
-                continue;
-            }
-
-            if (time > actor.LastAware)
-            {
-                if (killTimes.TryGetValue(actor.UniqueID, out long killTime) && killTime <= time)
-                {
-                    result.Observed++;
-                    result.Removed++;
-                }
-                else
-                {
-                    result.Unobserved++;
-                }
-                continue;
-            }
-
-            result.Observed++;
-            if (actor.IsDead(log, time) || actor.IsDC(log, time))
-            {
-                result.DeadOrDisconnected++;
-            }
-            else if (actor.IsDowned(log, time))
-            {
-                result.Downed++;
-            }
-            else
-            {
-                result.Active++;
-            }
-        }
-        return result;
-    }
-
-    private static Dictionary<(bool IsEnemy, int ActorId, long DownTime), string> BuildOutcomeEngagementIds(
-        IReadOnlyList<CombatReplayDownEventDto> events)
-    {
-        const long mergeGapMs = 3000;
-        var result = new Dictionary<(bool IsEnemy, int ActorId, long DownTime), string>();
-        foreach (IGrouping<bool, CombatReplayDownEventDto> sideEvents in events
-            .OrderBy(evt => evt.Time)
-            .GroupBy(evt => evt.IsEnemy))
-        {
-            long? currentEnd = null;
-            int clusterNumber = 0;
-            string actingSideId = sideEvents.Key ? "squad" : "enemy";
-            foreach (CombatReplayDownEventDto evt in sideEvents)
-            {
-                if (!currentEnd.HasValue || evt.Time - currentEnd.Value > mergeGapMs)
-                {
-                    clusterNumber++;
-                }
-                currentEnd = evt.Time;
-                result[(evt.IsEnemy, evt.ActorId, evt.Time)] =
-                    $"{actingSideId}-engagement-{clusterNumber}";
-            }
-        }
-        return result;
-    }
-
-    private static WvWAnalystOutcomeEventDto BuildOutcomeEvent(
-        string eventType,
-        CombatReplayDownEventDto evt,
-        IReadOnlyDictionary<(bool IsEnemy, int ActorId, long DownTime), string> engagementIds)
-    {
-        long downTime = string.Equals(eventType, "down", StringComparison.Ordinal)
-            ? evt.Time
-            : evt.WindowStart;
-        engagementIds.TryGetValue((evt.IsEnemy, evt.ActorId, downTime), out string? engagementId);
-        var result = new WvWAnalystOutcomeEventDto
-        {
-            EventId = $"{(evt.IsEnemy ? "enemy" : "squad")}:{evt.ActorId}:{eventType}:{evt.Time}",
-            EventType = eventType,
-            EngagementId = engagementId ?? string.Empty,
-            ActingSideId = evt.IsEnemy ? "squad" : "enemy",
-            AffectedSideId = evt.IsEnemy ? "enemy" : "squad",
-            ActorId = evt.ActorId,
-            ActorName = evt.ActorName,
-            TimeMs = evt.Time,
-            DownTimeMs = downTime,
-            WindowStartMs = evt.WindowStart,
-            Outcome = evt.Outcome,
-            OutcomeTimeMs = evt.OutcomeTime,
-            TotalDamage = evt.TotalDamageTaken,
-            StrikeDamage = evt.StrikeDamageTaken,
-            ConditionDamage = evt.ConditionDamageTaken,
-            BarrierDamage = evt.BarrierDamageTaken,
-            HitCount = evt.HitCount,
-            ContributorCount = evt.ContributorCount,
-            CrowdControlImpacts = evt.CcImpactCount,
-            HardCrowdControlImpacts = evt.HardCcImpactCount,
-            ConditionDamageByEffect = evt.ConditionDamageBreakdown
-                .Where(entry => entry.Amount > 0)
-                .Select(entry => new WvWAnalystOutcomeConditionDamageDto
-                {
-                    BuffId = entry.BuffId,
-                    Name = entry.Name,
-                    Damage = entry.Amount,
-                })
-                .ToArray(),
-        };
-
-        if (evt is CombatReplayKillEventDto kill)
-        {
-            result.DownedHealing = kill.TotalDownedHealing;
-            result.DownedHealingEvents = kill.DownedHealingEventCount;
-            result.ResurrectionCasts = kill.RezCastCount;
-            result.ResurrectionCastDurationSeconds = kill.RezCastDurationSeconds;
-            result.SupportContributors = kill.SupportContributorCount;
-            result.ClassRecoveryActions = kill.SupportActions.Count;
-        }
-        else if (evt is CombatReplayRecoveredEventDto recovered)
-        {
-            result.DownedHealing = recovered.TotalDownedHealing;
-            result.DownedHealingEvents = recovered.DownedHealingEventCount;
-            result.ResurrectionCasts = recovered.RezCastCount;
-            result.ResurrectionCastDurationSeconds = recovered.RezCastDurationSeconds;
-            result.SupportContributors = recovered.SupportContributorCount;
-            result.ClassRecoveryActions = recovered.SupportActions.Count;
-        }
-
-        return result;
-    }
-
-    private static IEnumerable<WvWAnalystConditionEventDto> BuildOutcomeConditionEvents(
-        CombatReplayIncomingConditionAnalysisDto analysis,
-        string actingSideId,
-        string affectedSideId)
-    {
-        foreach (CombatReplayConditionTimelineBucketDto bucket in analysis.ConditionTimeline)
-        {
-            yield return new WvWAnalystConditionEventDto
-            {
-                TimeMs = bucket.Time,
-                ActingSideId = actingSideId,
-                AffectedSideId = affectedSideId,
-                ApplyCount = bucket.ApplyCount,
-                ExtensionCount = bucket.ExtensionCount,
-                VulnerabilityBonusDamage = bucket.VulnerabilityBonusDamage,
-                TopSourceName = bucket.TopSourceName,
-                Effects = bucket.Applications.Select(entry => new WvWAnalystConditionEffectDto
-                {
-                    BuffId = entry.BuffId,
-                    Name = entry.Name,
-                    ApplyCount = entry.ApplyCount,
-                    ExtensionCount = entry.ExtensionCount,
-                }).ToArray(),
-            };
-        }
-    }
-
-    private static IEnumerable<WvWAnalystCrowdControlEventDto> BuildOutcomeCrowdControlEvents(
-        CombatReplayIncomingConditionAnalysisDto analysis,
-        string actingSideId,
-        string affectedSideId)
-    {
-        foreach (CombatReplayCrowdControlTimelineBucketDto bucket in analysis.Timeline)
-        {
-            yield return new WvWAnalystCrowdControlEventDto
-            {
-                TimeMs = bucket.Time,
-                ActingSideId = actingSideId,
-                AffectedSideId = affectedSideId,
-                EventCount = bucket.EventCount,
-                EffectiveCount = bucket.EffectiveCount,
-                DurationSeconds = bucket.TotalDuration,
-                TopSourceName = bucket.TopSourceName,
-                Effects = bucket.Effects.Select(entry => new WvWAnalystCrowdControlEffectDto
-                {
-                    SkillId = entry.SkillId,
-                    Name = entry.Name,
-                    EventCount = entry.EventCount,
-                    EffectiveCount = entry.EffectiveCount,
-                    DurationSeconds = entry.TotalDuration,
-                }).ToArray(),
-            };
-        }
     }
 
     private static IEnumerable<WvWAnalystConditionSourceSummaryDto> BuildOutcomeConditionSources(
@@ -2549,18 +2129,6 @@ public sealed class WvWAnalystBuilder
             }
         }
     }
-
-    private static long GetArrayValue(long[] values, int index) =>
-        index >= 0 && index < values.Length ? values[index] : 0;
-
-    private static int GetArrayValue(int[] values, int index) =>
-        index >= 0 && index < values.Length ? values[index] : 0;
-
-    private static double GetArrayValue(double[] values, int index) =>
-        index >= 0 && index < values.Length ? values[index] : 0.0;
-
-    private static bool GetArrayValue(bool[] values, int index) =>
-        index >= 0 && index < values.Length && values[index];
 
     private static WvWAnalystExecutionPillarDto BuildExecutionPillar(WvwSummaryExecutionPillarDto pillar)
     {
@@ -2830,235 +2398,19 @@ internal sealed class WvWAnalystFightShapeSideStateDto
 internal sealed class WvWAnalystOutcomeAnalysisDto
 {
     public string MethodVersion { get; set; } = string.Empty;
-    public int SampleIntervalMs { get; set; }
-    public int PressureWindowMs { get; set; }
-    public int EngagementMergeGapMs { get; set; }
-    public long? CompetitiveEndTimeMs { get; set; }
     public WvWAnalystOutcomeAnalysisAvailabilityDto Availability { get; set; } = new();
-    public WvWAnalystOutcomeTimelineDto Timeline { get; set; } = new();
-    public IReadOnlyList<WvWAnalystOutcomeEventDto> Events { get; set; } = Array.Empty<WvWAnalystOutcomeEventDto>();
-    public IReadOnlyList<WvWAnalystConditionEventDto> ConditionEvents { get; set; } = Array.Empty<WvWAnalystConditionEventDto>();
-    public IReadOnlyList<WvWAnalystCrowdControlEventDto> CrowdControlEvents { get; set; } = Array.Empty<WvWAnalystCrowdControlEventDto>();
     public IReadOnlyList<WvWAnalystConditionSourceSummaryDto> ConditionSources { get; set; } = Array.Empty<WvWAnalystConditionSourceSummaryDto>();
     public IReadOnlyList<WvWAnalystCrowdControlSourceSummaryDto> CrowdControlSources { get; set; } = Array.Empty<WvWAnalystCrowdControlSourceSummaryDto>();
 }
 
 internal sealed class WvWAnalystOutcomeAnalysisAvailabilityDto
 {
-    public bool DamageAndBoonRemoval { get; set; }
     public bool ConditionApplications { get; set; }
     public bool SquadConditionApplications { get; set; }
     public bool EnemyConditionApplications { get; set; }
     public bool CrowdControlEvents { get; set; }
     public bool SquadCrowdControlEvents { get; set; }
     public bool EnemyCrowdControlEvents { get; set; }
-    public bool SquadPositioning { get; set; }
-    public bool SquadHealing { get; set; }
-    public bool SquadBarrier { get; set; }
-    public bool EnemyHealing { get; set; }
-    public bool EnemyBarrier { get; set; }
-    public bool ExactEnemyBoonState { get; set; }
-    public bool ExactEnemyConditionState { get; set; }
-    public bool ExactStabilityState { get; set; }
-    public IReadOnlyList<string> Notes { get; set; } = Array.Empty<string>();
-}
-
-internal sealed class WvWAnalystOutcomeSampleDto
-{
-    public long TimeMs { get; set; }
-    public WvWAnalystOutcomeSideSampleDto Squad { get; set; } = new();
-    public WvWAnalystOutcomeSideSampleDto Enemy { get; set; } = new();
-    public WvWAnalystOutcomePositioningSampleDto SquadPositioning { get; set; } = new();
-}
-
-internal sealed class WvWAnalystOutcomeTimelineDto
-{
-    public int SampleCount { get; set; }
-    public long[] TimesMs { get; set; } = [];
-    public WvWAnalystOutcomeSideTimelineDto Squad { get; set; } = new();
-    public WvWAnalystOutcomeSideTimelineDto Enemy { get; set; } = new();
-    public WvWAnalystOutcomePositioningTimelineDto SquadPositioning { get; set; } = new();
-}
-
-internal sealed class WvWAnalystOutcomeSideTimelineDto
-{
-    public long[] Damage { get; set; } = [];
-    public int[] Downs { get; set; } = [];
-    public int[] DownsTotal { get; set; } = [];
-    public int[] Kills { get; set; } = [];
-    public int[] KillsTotal { get; set; } = [];
-    public int[] Strips { get; set; } = [];
-    public int[] Corrupts { get; set; } = [];
-    public int[] StripPeakGapMs { get; set; } = [];
-    public bool[] StripSynced { get; set; } = [];
-    public double[] TopTargetShare { get; set; } = [];
-    public double[] TopThreeTargetShare { get; set; } = [];
-    public int[] TopTargetContributors { get; set; } = [];
-    public bool[] Focused { get; set; } = [];
-    public int[] TargetSaturationCount { get; set; } = [];
-    public long[] Healing { get; set; } = [];
-    public long[] Barrier { get; set; } = [];
-    public int[] Cleanses { get; set; } = [];
-    public WvWAnalystOutcomeSideStateTimelineDto State { get; set; } = new();
-}
-
-internal sealed class WvWAnalystOutcomeSideStateTimelineDto
-{
-    public int[] Total { get; set; } = [];
-    public int[] Observed { get; set; } = [];
-    public int[] Active { get; set; } = [];
-    public int[] Downed { get; set; } = [];
-    public int[] DeadOrDisconnected { get; set; } = [];
-    public int[] Removed { get; set; } = [];
-    public int[] Unobserved { get; set; } = [];
-}
-
-internal sealed class WvWAnalystOutcomePositioningTimelineDto
-{
-    public bool[] Available { get; set; } = [];
-    public int[] EligiblePlayers { get; set; } = [];
-    public int[] InPositionPlayers { get; set; } = [];
-    public int[] OutOfPositionPlayers { get; set; } = [];
-    public int[] TooFarPlayers { get; set; } = [];
-    public int[] OverextendedPlayers { get; set; } = [];
-    public int[] LateralRiskPlayers { get; set; } = [];
-    public int[] EngagedEnemyCount { get; set; } = [];
-    public int[] EnemiesNearCommander { get; set; } = [];
-    public bool[] Mingled { get; set; } = [];
-    public double[] InPositionRate { get; set; } = [];
-    public double[] TooFarRate { get; set; } = [];
-    public double[] OverextendedRate { get; set; } = [];
-    public double[] LateralRiskRate { get; set; } = [];
-}
-
-internal sealed class WvWAnalystOutcomeSideSampleDto
-{
-    public long Damage { get; set; }
-    public int Downs { get; set; }
-    public int DownsTotal { get; set; }
-    public int Kills { get; set; }
-    public int KillsTotal { get; set; }
-    public int Strips { get; set; }
-    public int Corrupts { get; set; }
-    public int StripPeakGapMs { get; set; }
-    public bool StripSynced { get; set; }
-    public double TopTargetShare { get; set; }
-    public double TopThreeTargetShare { get; set; }
-    public int TopTargetContributors { get; set; }
-    public bool Focused { get; set; }
-    public int TargetSaturationCount { get; set; }
-    public long Healing { get; set; }
-    public long Barrier { get; set; }
-    public int Cleanses { get; set; }
-    public WvWAnalystOutcomeSideStateDto State { get; set; } = new();
-}
-
-internal sealed class WvWAnalystOutcomeSideStateDto
-{
-    public int Total { get; set; }
-    public int Observed { get; set; }
-    public int Active { get; set; }
-    public int Downed { get; set; }
-    public int DeadOrDisconnected { get; set; }
-    public int Removed { get; set; }
-    public int Unobserved { get; set; }
-}
-
-internal sealed class WvWAnalystOutcomePositioningSampleDto
-{
-    public bool Available { get; set; }
-    public int EligiblePlayers { get; set; }
-    public int InPositionPlayers { get; set; }
-    public int OutOfPositionPlayers { get; set; }
-    public int TooFarPlayers { get; set; }
-    public int OverextendedPlayers { get; set; }
-    public int LateralRiskPlayers { get; set; }
-    public int EngagedEnemyCount { get; set; }
-    public int EnemiesNearCommander { get; set; }
-    public bool Mingled { get; set; }
-    public double InPositionRate { get; set; }
-    public double TooFarRate { get; set; }
-    public double OverextendedRate { get; set; }
-    public double LateralRiskRate { get; set; }
-}
-
-internal sealed class WvWAnalystOutcomeEventDto
-{
-    public string EventId { get; set; } = string.Empty;
-    public string EventType { get; set; } = string.Empty;
-    public string EngagementId { get; set; } = string.Empty;
-    public string ActingSideId { get; set; } = string.Empty;
-    public string AffectedSideId { get; set; } = string.Empty;
-    public int ActorId { get; set; }
-    public string ActorName { get; set; } = string.Empty;
-    public long TimeMs { get; set; }
-    public long DownTimeMs { get; set; }
-    public long WindowStartMs { get; set; }
-    public string Outcome { get; set; } = string.Empty;
-    public long? OutcomeTimeMs { get; set; }
-    public int TotalDamage { get; set; }
-    public int StrikeDamage { get; set; }
-    public int ConditionDamage { get; set; }
-    public int BarrierDamage { get; set; }
-    public int HitCount { get; set; }
-    public int ContributorCount { get; set; }
-    public int CrowdControlImpacts { get; set; }
-    public int HardCrowdControlImpacts { get; set; }
-    public int DownedHealing { get; set; }
-    public int DownedHealingEvents { get; set; }
-    public int ResurrectionCasts { get; set; }
-    public double ResurrectionCastDurationSeconds { get; set; }
-    public int SupportContributors { get; set; }
-    public int ClassRecoveryActions { get; set; }
-    public IReadOnlyList<WvWAnalystOutcomeConditionDamageDto> ConditionDamageByEffect { get; set; } = Array.Empty<WvWAnalystOutcomeConditionDamageDto>();
-}
-
-internal sealed class WvWAnalystOutcomeConditionDamageDto
-{
-    public long? BuffId { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public double Damage { get; set; }
-}
-
-internal sealed class WvWAnalystConditionEventDto
-{
-    public long TimeMs { get; set; }
-    public string ActingSideId { get; set; } = string.Empty;
-    public string AffectedSideId { get; set; } = string.Empty;
-    public int ApplyCount { get; set; }
-    public int ExtensionCount { get; set; }
-    public double VulnerabilityBonusDamage { get; set; }
-    public string TopSourceName { get; set; } = string.Empty;
-    public IReadOnlyList<WvWAnalystConditionEffectDto> Effects { get; set; } = Array.Empty<WvWAnalystConditionEffectDto>();
-}
-
-internal sealed class WvWAnalystConditionEffectDto
-{
-    public long BuffId { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public int ApplyCount { get; set; }
-    public int ExtensionCount { get; set; }
-}
-
-internal sealed class WvWAnalystCrowdControlEventDto
-{
-    public long TimeMs { get; set; }
-    public string ActingSideId { get; set; } = string.Empty;
-    public string AffectedSideId { get; set; } = string.Empty;
-    public int EventCount { get; set; }
-    public int EffectiveCount { get; set; }
-    public double DurationSeconds { get; set; }
-    public string TopSourceName { get; set; } = string.Empty;
-    public IReadOnlyList<WvWAnalystCrowdControlEffectDto> Effects { get; set; } = Array.Empty<WvWAnalystCrowdControlEffectDto>();
-}
-
-internal sealed class WvWAnalystCrowdControlEffectDto
-{
-    public long SkillId { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public int EventCount { get; set; }
-    public int EffectiveCount { get; set; }
-    public double DurationSeconds { get; set; }
 }
 
 internal sealed class WvWAnalystConditionSourceSummaryDto
