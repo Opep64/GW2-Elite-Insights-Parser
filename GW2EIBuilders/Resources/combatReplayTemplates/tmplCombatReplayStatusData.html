@@ -708,6 +708,7 @@
                 <template v-if="comparisonMode === 'cc'">Three-second rolling damage uses the left scale; one-second hard-CC events use the right scale.</template>
                 <template v-else-if="comparisonMode === 'conditions'">Three-second rolling damage uses the left scale; one-second condition applications use the right scale.</template>
                 <template v-else>Three-second rolling damage uses the left scale; boon strips use the right scale.</template>
+                <template v-if="hasPositioningLane"> Squad positioning uses its own 0–100% lane.</template>
                 Event lanes show downs and kills credited to each side. Click the graph to jump the replay.
             </div>
             <div class="combat-replay-wvw-analysis-grid mb-2" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
@@ -735,11 +736,26 @@
                         <template v-else>{{formatStripCount(enemyStripsNow, enemyCorruptsNow)}}</template>
                     </div>
                 </div>
+                <div class="combat-replay-wvw-analysis-metric">
+                    <div class="combat-replay-wvw-analysis-label">Squad In Position</div>
+                    <template v-if="!positioningAnalysis || !positioningAnalysis.hasCommander">
+                        <div class="combat-replay-wvw-analysis-value">Unavailable</div>
+                        <div class="combat-replay-wvw-analysis-detail">No commander found</div>
+                    </template>
+                    <template v-else-if="eligiblePlayersNow <= 0">
+                        <div class="combat-replay-wvw-analysis-value">Not evaluated</div>
+                        <div class="combat-replay-wvw-analysis-detail">No eligible squad players</div>
+                    </template>
+                    <template v-else>
+                        <div class="combat-replay-wvw-analysis-value">{{formatPercent(inPositionRateNow)}} ({{formatCount(inPositionCountNow)}}/{{formatCount(eligiblePlayersNow)}})</div>
+                        <div class="combat-replay-wvw-analysis-detail">{{formatCount(tooFarCountNow)}} too far, {{formatCount(lateralRiskCountNow)}} left/right, {{formatCount(overextendedCountNow)}} overextended</div>
+                    </template>
+                </div>
             </div>
             <div v-if="chartUnavailable" class="combat-replay-wvw-analysis-helper">
                 The comparison graph could not be initialized.
             </div>
-            <div v-else ref="chart" style="width: 100%; height: 540px;"></div>
+            <div v-else ref="chart" :style="{ width: '100%', height: chartHeight + 'px' }"></div>
         </div>
         `,
         data: function () {
@@ -758,6 +774,15 @@
             },
             eventAnalysis: function () {
                 return this.getEventAnalysis();
+            },
+            positioningAnalysis: function () {
+                return this.getPositioningAnalysis();
+            },
+            hasPositioningLane: function () {
+                return !!(this.positioningAnalysis && this.positioningAnalysis.hasCommander && Array.isArray(this.positioningAnalysis.inPositionRate));
+            },
+            chartHeight: function () {
+                return this.hasPositioningLane ? 660 : 540;
             },
             squadDamageNow: function () {
                 return this.getSeriesValue(this.squadAnalysis ? this.squadAnalysis.damage : null, this.snapshotIndex);
@@ -809,6 +834,24 @@
             enemyCrowdControlNow: function () {
                 return this.getTimelineBucketAtTime(this.enemyCrowdControlTimeline, this.time);
             },
+            eligiblePlayersNow: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.eligiblePlayerCount : null, this.snapshotIndex);
+            },
+            inPositionCountNow: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.inPositionCount : null, this.snapshotIndex);
+            },
+            inPositionRateNow: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.inPositionRate : null, this.snapshotIndex);
+            },
+            tooFarCountNow: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.tooFarCount : null, this.snapshotIndex);
+            },
+            lateralRiskCountNow: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.lateralRiskCount : null, this.snapshotIndex);
+            },
+            overextendedCountNow: function () {
+                return this.getSeriesValue(this.positioningAnalysis ? this.positioningAnalysis.overextendedCount : null, this.snapshotIndex);
+            },
         },
         mounted: function () {
             this.$nextTick(this.renderChart);
@@ -851,6 +894,7 @@
                 const textColor = computedStyle && computedStyle.color ? computedStyle.color : "#c9d1d9";
                 const squadColor = "#56d6c9";
                 const enemyColor = "#ff7272";
+                const positioningColor = "#e5bd56";
                 const downEvents = this.eventAnalysis && this.eventAnalysis.downs && this.eventAnalysis.downs.events
                     ? this.eventAnalysis.downs.events
                     : [];
@@ -910,15 +954,20 @@
                         y: this.enemyAnalysis.damage || [],
                         line: { color: enemyColor, width: 2.5 },
                         hovertemplate: "Enemy damage<br>%{x:.1f}s: %{y:,.0f}<extra></extra>",
-                    },
+                    }
+                );
+                if (this.hasPositioningLane) {
+                    traces.push(this.buildPositioningTrace(times, positioningColor));
+                }
+                traces.push(
                     this.buildEventTrace(downEvents, true, "down", squadColor),
                     this.buildEventTrace(downEvents, false, "down", enemyColor),
                     this.buildEventTrace(killEvents, true, "kill", squadColor),
                     this.buildEventTrace(killEvents, false, "kill", enemyColor)
                 );
                 const layout = {
-                    height: 540,
-                    margin: { t: 76, r: 72, b: 58, l: 108 },
+                    height: this.chartHeight,
+                    margin: { t: this.hasPositioningLane ? 96 : 76, r: 72, b: 58, l: 108 },
                     paper_bgcolor: "rgba(0,0,0,0)",
                     plot_bgcolor: "rgba(0,0,0,0)",
                     font: { color: textColor },
@@ -941,7 +990,7 @@
                     },
                     yaxis: {
                         title: "Damage (last 3s)",
-                        domain: [0.24, 1],
+                        domain: this.hasPositioningLane ? [0.39, 1] : [0.24, 1],
                         color: textColor,
                         gridcolor: "rgba(160, 170, 180, 0.16)",
                         rangemode: "tozero",
@@ -959,7 +1008,7 @@
                         zeroline: false,
                     },
                     yaxis3: {
-                        domain: [0, 0.13],
+                        domain: this.hasPositioningLane ? [0, 0.10] : [0, 0.13],
                         range: [-0.55, 1.55],
                         tickmode: "array",
                         tickvals: [1, 0],
@@ -971,6 +1020,20 @@
                     },
                     shapes: [this.replayCursorShape()],
                 };
+                if (this.hasPositioningLane) {
+                    layout.yaxis4 = {
+                        title: "Squad in position",
+                        domain: [0.16, 0.31],
+                        range: [0, 100],
+                        tickmode: "array",
+                        tickvals: [0, 50, 100],
+                        ticksuffix: "%",
+                        color: textColor,
+                        gridcolor: "rgba(160, 170, 180, 0.16)",
+                        zeroline: false,
+                        fixedrange: true,
+                    };
+                }
 
                 const renderResult = Plotly.react(chart, traces, layout, {
                     displayModeBar: false,
@@ -1023,6 +1086,39 @@
             formatCrowdControlBucket: function (bucket) {
                 return this.formatCount(bucket && bucket.eventCount || 0) +
                     " (" + this.formatCount(bucket && bucket.effectiveCount || 0) + " effective)";
+            },
+            buildPositioningTrace: function (times, color) {
+                const positioning = this.positioningAnalysis || {};
+                const eligible = positioning.eligiblePlayerCount || [];
+                const inPosition = positioning.inPositionCount || [];
+                const rates = positioning.inPositionRate || [];
+                const tooFar = positioning.tooFarCount || [];
+                const lateralRisk = positioning.lateralRiskCount || [];
+                const overextended = positioning.overextendedCount || [];
+                return {
+                    type: "scatter",
+                    mode: "lines",
+                    name: "Squad In Position",
+                    x: times,
+                    y: times.map((_, index) => Number(eligible[index] || 0) > 0 ? Number(rates[index] || 0) : null),
+                    yaxis: "y4",
+                    customdata: times.map((_, index) => [
+                        Number(inPosition[index] || 0),
+                        Number(eligible[index] || 0),
+                        Number(tooFar[index] || 0),
+                        Number(lateralRisk[index] || 0),
+                        Number(overextended[index] || 0),
+                    ]),
+                    line: { color: color, width: 2.5 },
+                    fill: "tozeroy",
+                    fillcolor: "rgba(229, 189, 86, 0.12)",
+                    connectgaps: false,
+                    hovertemplate:
+                        "<b>Squad in position</b><br>" +
+                        "%{x:.1f}s: %{y:.1f}% (%{customdata[0]:,.0f}/%{customdata[1]:,.0f})<br>" +
+                        "%{customdata[2]:,.0f} too far · %{customdata[3]:,.0f} left/right · %{customdata[4]:,.0f} overextended" +
+                        "<extra></extra>",
+                };
             },
             buildConditionBarTrace: function (timeline, isSquadEvent, color) {
                 const sideLabel = isSquadEvent ? "Squad" : "Enemy";
